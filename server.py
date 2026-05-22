@@ -5,9 +5,11 @@ use it as a sub-agent. Solves the headless print-mode bug in agy 1.0.x
 (verified still present in 1.0.1) by running `agy -p` and reading the
 response from agy's own transcript files instead of relying on stdout.
 
-Auth: piggybacks on Antigravity's existing Windows Credential Manager entry
-(target `gemini:antigravity`). User must have logged in interactively at least
-once via the Antigravity IDE or `agy -i`. Uses the same AI Pro quota.
+Auth: piggybacks on whatever credential store `agy` itself uses on the host
+OS (Windows Credential Manager, macOS Keychain, libsecret on Linux). User
+must have logged in interactively at least once via the Antigravity IDE or
+`agy -i`. Uses the same AI Pro quota. The bridge itself only does cross-
+platform filesystem reads under `~/.gemini/antigravity-cli/`.
 
 Model: agy print mode is hardcoded to Gemini 3.5 Flash (High). We
 verified no env var (CASCADE_DEFAULT_MODEL_OVERRIDE, AGY_MODEL, etc.) or

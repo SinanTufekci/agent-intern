@@ -51,11 +51,12 @@ Flash High is the speed-optimized tool-calling model, so this fits best as a
 
 ## Auth
 
-Piggybacks on Antigravity's existing Windows Credential Manager entry
-(`gemini:antigravity`). Log in **once** interactively — either through the
-Antigravity IDE or with:
+Piggybacks on whatever credential store `agy` itself uses on your OS
+(Windows Credential Manager on Windows, Keychain on macOS, libsecret /
+similar on Linux — the bridge never touches it directly). Log in **once**
+interactively, either through the Antigravity IDE or with:
 
-```powershell
+```
 agy -i
 ```
 
@@ -64,7 +65,7 @@ quota you already pay for. No keys to copy, no tokens to manage.
 
 ## Install
 
-```powershell
+```
 git clone https://github.com/SinanTufekci/Claude-Code-Antigravity-CLI-MCP-Server.git
 cd Claude-Code-Antigravity-CLI-MCP-Server
 pip install fastmcp
@@ -76,12 +77,24 @@ bit of your AI Pro quota and takes ~30–60 seconds.
 
 ## Register with Claude Code
 
-Add to `~/.claude.json` under `mcpServers`:
+Add an entry under `mcpServers` in `~/.claude.json`. Use the absolute path
+to `server.py` on your machine.
+
+**Windows:**
 
 ```json
 "agy": {
   "command": "python",
   "args": ["C:\\path\\to\\Claude-Code-Antigravity-CLI-MCP-Server\\server.py"]
+}
+```
+
+**macOS / Linux:**
+
+```json
+"agy": {
+  "command": "python3",
+  "args": ["/path/to/Claude-Code-Antigravity-CLI-MCP-Server/server.py"]
 }
 ```
 
@@ -99,11 +112,16 @@ under the workspace root, and the response comes back as a plain string.
 
 ## Requirements
 
-- Windows (auth path hardcoded to Windows Credential Manager — porting to
-  macOS/Linux keyrings is straightforward but not yet done)
 - Python 3.10+
 - [`agy`](https://antigravity.google/) 1.0.0 or newer on `PATH`
 - An active Antigravity / AI Pro session
+
+The bridge itself uses only cross-platform Python (`Path.home()`,
+`subprocess`) and reads paths under `~/.gemini/antigravity-cli/` — which
+`agy` writes the same way on every OS. **Developed and verified on
+Windows; macOS and Linux should work without modification provided
+`agy -i` runs there successfully.** If you test it on those platforms,
+please open an issue / PR to confirm.
 
 ## How it works (the workaround in one paragraph)
 
