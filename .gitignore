@@ -5,6 +5,9 @@ __pycache__/
 .venv/
 venv/
 .antigravitycli/
+# agy drops a workspace-local cache/ (projects.json with your home path) when
+# run with cwd set to a project dir — keep it out of the repo.
+/cache/
 .idea/
 .vscode/
 *.log
