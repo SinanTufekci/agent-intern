@@ -1,207 +1,235 @@
+<div align="center">
+
 # Claude Code × Antigravity CLI — MCP Bridge
 
-An MCP server that lets [Claude Code](https://claude.com/claude-code) (or any
-MCP-compatible host) call Google's **Antigravity CLI** (`agy`) as a sub-agent,
-backed by your existing AI Pro quota.
+**Use Google's [Antigravity](https://antigravity.google/) (Gemini 3.5 Flash) as a sub-agent inside [Claude Code](https://claude.com/claude-code) — on the AI Pro quota you already pay for.**
 
-Use it when you want Claude to delegate a fast tool-calling task to Gemini
-3.5 Flash (High) without leaving your terminal — for second opinions, quick
-file reads inside another workspace, or burning Antigravity quota instead of
-Claude tokens for cheap work.
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
+[![MCP server](https://img.shields.io/badge/MCP-server-7c3aed)](https://modelcontextprotocol.io/)
+[![agy 1.0.4 verified](https://img.shields.io/badge/agy-1.0.4%20verified-2ea44f)](https://antigravity.google/)
+[![platform](https://img.shields.io/badge/platform-Windows%20·%20macOS%20·%20Linux-lightgrey)](#requirements)
 
-> **Heads up — read before you depend on this:**
-> - This is a workaround that reads `agy`'s **internal, undocumented** state
->   files (`brain/.../transcript.jsonl`, `cache/last_conversations.json`). A
->   future `agy` release can change those paths or schemas and break the
->   bridge silently. Expect bitrot; pin to a known-good `agy` version if
->   you're using this for anything real.
-> - It runs the **official `agy` CLI under your own AI Pro session** — no
->   private APIs, no token theft, no quota abuse. It just bridges what the
->   CLI already does. Still, your AI Pro / Antigravity ToS apply; you are
->   responsible for using it within them.
-> - Personal project, **best-effort maintenance**. Issues and PRs welcome,
->   but I make no uptime/compat promises. If `agy -p` ever starts printing
->   to stdout correctly, this whole repo becomes a fun historical artefact.
+</div>
 
-## ⚠️ Security — this runs unsandboxed code with your privileges
+---
 
-`agy -p` runs the model as an **autonomous agent that auto-executes its own
-tools** — reading/writing files, running shell commands, and reaching the
-network — with **no approval gate and no opt-out**. This isn't a choice the
-bridge makes; it's how agy's print mode works. Verified empirically on
-**agy 1.0.4 / Windows**:
+`agy`, Google's Antigravity CLI, ships a headless print mode (`agy -p`) that's **broken**: it
+authenticates, talks to the model, gets the answer back… and then never prints it. This bridge
+runs `agy -p` anyway, reads the answer straight out of agy's *own* transcript files, and hands it
+to Claude Code as two clean MCP tools. Delegate cheap tool-calling work to Gemini without leaving
+your terminal.
 
-- Print mode runs out-of-workspace file writes and live network fetches
-  **even without** `--dangerously-skip-permissions` — that flag is a **no-op**
-  for `-p`. There is no agy flag that disables tool execution in print mode.
-- `--sandbox` does **not** constrain filesystem writes or network egress on
-  Windows, so it buys no real protection here.
+> [!WARNING]
+> **This runs unsandboxed code with your privileges.** `agy -p` auto-executes its tools
+> (read/write files, run shell commands, reach the network) with **no approval gate and no
+> opt-out** — we verified there is no agy flag that changes this. The `workspace` argument is a
+> *starting context*, **not** a security boundary. Only use it with **trusted prompts on trusted
+> content**; for real isolation, run the bridge inside a container or VM. **[Full details →](#security)**
 
-**Implications:**
+## Why you'd want this
 
-- The `workspace` argument is only a *starting context*, **not a security
-  boundary** — the agent can and does act outside it.
-- Every call effectively runs **arbitrary code with your user privileges**.
-- Only invoke this with **trusted prompts on trusted content**. Feeding it
-  untrusted text/files is the classic prompt-injection *lethal trifecta*
-  (private-data access + code execution + network egress).
-- For real isolation, run the **whole bridge inside a container or VM**.
+| | |
+|---|---|
+| 🧠 **Second opinion** | Ask a different model family mid-task without switching tools. |
+| 💸 **Cheap delegation** | Burn Antigravity AI Pro quota on grunt work instead of Claude tokens. |
+| 📁 **Cross-repo reads** | Point it at another project directory and let Gemini read/answer there. |
+| 🔌 **Zero new auth** | Piggybacks the login you already did in the Antigravity IDE — no keys to manage. |
 
-## The problem this solves
+## How it works
 
-`agy 1.0.x` ships a `--print` / `-p` flag for non-interactive use, but the
-flag was broken in non-TTY contexts (verified through **1.0.1**): the CLI
-authenticates, sends the message, gets a response back from the model... and
-then never writes that response to stdout. Exit code is 0; pipe is empty.
-The stdout behaviour wasn't re-tested on **1.0.4**, but the on-disk
-workaround below is re-verified working there.
+```mermaid
+flowchart LR
+    A([Claude Code]) -- "MCP tool call" --> B["agy bridge<br/>(server.py)"]
+    B -- "agy -p prompt" --> C[Antigravity CLI]
+    C -- "Gemini 3.5 Flash (High)" --> M((model))
+    M -- "answer" --> C
+    C -. "writes (but never prints)" .-> T[("transcript.jsonl")]
+    B -- "reads final PLANNER_RESPONSE" --> T
+    B -- "plain text" --> A
+```
 
-The response *is*, however, persisted to disk under:
+`agy -p` persists its real answer — the one it forgets to print — to:
 
 ```
 ~/.gemini/antigravity-cli/brain/<conv-id>/.system_generated/logs/transcript.jsonl
 ```
 
-This server runs `agy -p` under the hood, locates the conversation in agy's
-own state files, parses the transcript, and returns the model's final
-`PLANNER_RESPONSE` as plain text. From Claude's perspective it's just two
-clean MCP tools.
+The bridge runs agy, locates the conversation via `cache/last_conversations.json` (falling back to
+the newest `brain/` directory touched since launch), streams the transcript, and returns the final
+`source=MODEL, status=DONE, type=PLANNER_RESPONSE` entry — the answer, minus the intermediate
+tool-calling steps. `agy_continue` pins the workspace's **exact** conversation id via
+`--conversation`, so it never resumes the wrong thread.
 
-## Tools exposed
+## Set up in 60 seconds
 
-| Tool | Purpose |
-| --- | --- |
-| `agy_ask(prompt, workspace?, timeout_s?=180)` | Start a **new** Antigravity conversation. |
-| `agy_continue(prompt, workspace?, timeout_s?=180)` | Continue the most recent conversation rooted at `workspace`. |
-
-`workspace` defaults to the current working directory of the MCP server.
-Point it at a real project directory if you want context-aware answers — agy
-gives the model access to files under that root.
-
-## Model
-
-Always **Gemini 3.5 Flash (High)**. `agy -p` hardcodes the print-mode model;
-neither env vars (`CASCADE_DEFAULT_MODEL_OVERRIDE`, `AGY_MODEL`, `GEMINI_MODEL`,
-…) nor `settings.json` fields (`model`, `modelId`, `selectedModel`, …) override
-it. Switching to Pro/Sonnet/etc. headlessly would require speaking to agy's
-gRPC language server directly — out of scope for this bridge.
-
-Flash High is the speed-optimized tool-calling model, so this fits best as a
-"fast sub-agent for cheap work" rather than as a heavy reasoning partner.
-
-## Auth
-
-Piggybacks on whatever credential store `agy` itself uses on your OS
-(Windows Credential Manager on Windows, Keychain on macOS, libsecret /
-similar on Linux — the bridge never touches it directly). Log in **once**
-interactively, either through the Antigravity IDE or with:
-
-```
-agy -i
-```
-
-After that this server silent-auths on every call, using the same AI Pro
-quota you already pay for. No keys to copy, no tokens to manage.
-
-## Install
-
-```
+```bash
 git clone https://github.com/SinanTufekci/Claude-Code-Antigravity-CLI-MCP-Server.git
 cd Claude-Code-Antigravity-CLI-MCP-Server
 pip install fastmcp
-python test_smoke.py   # end-to-end sanity check; should print two PASS lines
+python test_smoke.py        # 2 real round-trips through agy — should print two PASS lines
 ```
 
-The smoke test makes two real round-trips through `agy`, so it costs a tiny
-bit of your AI Pro quota and takes ~30–60 seconds.
+> [!NOTE]
+> The smoke test costs a tiny bit of AI Pro quota and takes ~30–60 s. You must have logged into
+> Antigravity **once** (via the IDE or `agy -i`) so agy has a credential to reuse.
 
-## Register with Claude Code
+Then register the server with Claude Code — add this under `mcpServers` in `~/.claude.json`,
+using the absolute path to `server.py`:
 
-Add an entry under `mcpServers` in `~/.claude.json`. Use the absolute path
-to `server.py` on your machine.
-
-**Windows:**
+<table>
+<tr><th>Windows</th><th>macOS / Linux</th></tr>
+<tr><td>
 
 ```json
 "agy": {
   "command": "python",
-  "args": ["C:\\path\\to\\Claude-Code-Antigravity-CLI-MCP-Server\\server.py"]
+  "args": ["C:\\path\\to\\server.py"]
 }
 ```
 
-**macOS / Linux:**
+</td><td>
 
 ```json
 "agy": {
   "command": "python3",
-  "args": ["/path/to/Claude-Code-Antigravity-CLI-MCP-Server/server.py"]
+  "args": ["/path/to/server.py"]
 }
 ```
 
-Restart Claude Code. Two new tools will appear: `mcp__agy__agy_ask` and
-`mcp__agy__agy_continue`.
+</td></tr>
+</table>
 
-## Quick example
+Restart Claude Code. Two tools appear: **`mcp__agy__agy_ask`** and **`mcp__agy__agy_continue`**.
 
-From inside a Claude Code session:
+> *"Use agy_ask to summarize the README of this repo in three bullets."* → Claude routes the prompt
+> through the bridge, agy reads the file under the workspace root, and the answer comes back as a
+> plain string.
 
-> *"Use agy_ask to summarize the README of this repo in three bullets."*
+## Tools
 
-Claude will route the prompt through the MCP server, agy will read the file
-under the workspace root, and the response comes back as a plain string.
+| Tool | Purpose |
+|---|---|
+| `agy_ask(prompt, workspace?, timeout_s?=180)` | Start a **new** Antigravity conversation. |
+| `agy_continue(prompt, workspace?, timeout_s?=180)` | Continue the conversation **rooted at `workspace`** (pinned by id). |
+
+`workspace` defaults to the MCP server's current working directory. Point it at a real project dir
+for context-aware answers — agy gives the model access to files under that root.
+
+## Model & auth
+
+- **Model:** always **Gemini 3.5 Flash (High)**. `agy -p` hardcodes the print-mode model; no env
+  var (`CASCADE_DEFAULT_MODEL_OVERRIDE`, `AGY_MODEL`, …) or `settings.json` field overrides it.
+  Flash High is speed-optimized for tool-calling, so this fits best as a *fast sub-agent for cheap
+  work*, not a heavy reasoning partner.
+- **Auth:** piggybacks whatever credential store `agy` uses on your OS (Windows Credential Manager,
+  macOS Keychain, libsecret on Linux — the bridge never touches it directly). Log in once; every
+  call after that silent-auths on the **same AI Pro quota** you already pay for.
+
+<a id="security"></a>
+
+## ⚠️ Security
+
+`agy -p` runs the model as an **autonomous agent that auto-executes its own tools** — reading and
+writing files, running shell commands, and reaching the network — with **no approval gate and no
+opt-out**. This isn't a choice the bridge makes; it's how agy's print mode works. Verified
+empirically on **agy 1.0.4 / Windows**:
+
+- Print mode runs out-of-workspace file writes and live network fetches **even without**
+  `--dangerously-skip-permissions` — that flag is a **no-op** for `-p`. There is **no** agy flag
+  that disables tool execution in print mode.
+- `--sandbox` does **not** constrain filesystem writes or network egress on Windows, so it buys no
+  real protection here.
+
+**What that means for you:**
+
+- The `workspace` argument is only a *starting context*, **not a security boundary** — the agent
+  can and does act outside it.
+- Every call effectively runs **arbitrary code with your user privileges**.
+- Only invoke this with **trusted prompts on trusted content**. Untrusted input here is the classic
+  prompt-injection *lethal trifecta*: private-data access + code execution + network egress.
+- For real isolation, run the **whole bridge inside a container or VM**.
+
+The bridge itself does only cross-platform filesystem reads under `~/.gemini/antigravity-cli/` — no
+private APIs, no token theft. The risk above is entirely in what the agy sub-agent is allowed to do.
+
+## FAQ
+
+<details>
+<summary><b>Is this against Google's Terms of Service?</b></summary>
+
+It runs the **official `agy` CLI under your own AI Pro session** — no private APIs, no token theft,
+no quota abuse. It just bridges what the CLI already does. That said, your AI Pro / Antigravity ToS
+apply, and you're responsible for staying within them.
+</details>
+
+<details>
+<summary><b>Will it break when agy updates?</b></summary>
+
+Possibly — it reads agy's **internal, undocumented** state files, so a release can change paths or
+schemas and break it silently. Re-verified working on **1.0.4**. The known future risk is agy's
+**SQLite (`.db`) conversation format** (added in 1.0.4, slated to become the default): once JSONL
+transcripts stop being written, the reader needs updating. Pin a known-good `agy` version if you
+depend on this.
+</details>
+
+<details>
+<summary><b>Why only Gemini 3.5 Flash?</b></summary>
+
+`agy -p` hardcodes the print-mode model. Switching it headlessly would mean talking to agy's gRPC
+language server directly — out of scope for this bridge.
+</details>
+
+<details>
+<summary><b>Does it cost extra money?</b></summary>
+
+No. It uses the same **AI Pro quota** you already pay for. The smoke test spends a negligible
+amount.
+</details>
+
+<details>
+<summary><b>Does it stream responses?</b></summary>
+
+No. `agy -p` is request/response only, so the bridge is too. Each call typically takes 10–30 s.
+</details>
+
+<details>
+<summary><b>Can I run several calls at once?</b></summary>
+
+They're **serialized** inside the server. agy rewrites `last_conversations.json` on every call, so
+concurrent runs would race and could return the wrong conversation. A `threading.Lock` makes extra
+requests queue rather than race — plan latency accordingly under load.
+</details>
+
+## Status & caveats
+
+- ✅ **Verified on agy 1.0.4** — base dir, `last_conversations.json`, the
+  `brain/.../transcript.jsonl` path, the transcript schema, and the `-p`/`-c`/`--print-timeout`
+  flags are all unchanged. (The new 1.0.4 `projects.json` is a *different* file from the one the
+  bridge reads — no impact.)
+- ⏳ **SQLite migration is the real risk** — see the [FAQ](#faq). `_read_response` raises a clear,
+  SQLite-aware error if the JSONL transcript ever disappears.
+- 🐛 **Stdout bug** — verified broken through 1.0.1; not re-tested on 1.0.4. If a future release
+  fixes stdout, this workaround becomes redundant but harmless.
+- 🔒 **No real sandbox** — see [Security](#security).
 
 ## Requirements
 
 - Python 3.10+
-- [`agy`](https://antigravity.google/) 1.0.0 or newer on `PATH` (state-file
-  layout re-verified on **1.0.4**)
+- [`agy`](https://antigravity.google/) 1.0.0 or newer on `PATH` (state-file layout re-verified on **1.0.4**)
 - An active Antigravity / AI Pro session
 
-The bridge itself uses only cross-platform Python (`Path.home()`,
-`subprocess`) and reads paths under `~/.gemini/antigravity-cli/` — which
-`agy` writes the same way on every OS. **Developed and verified on
-Windows; macOS and Linux should work without modification provided
-`agy -i` runs there successfully.** If you test it on those platforms,
-please open an issue / PR to confirm.
+The bridge uses only cross-platform Python (`Path.home()`, `subprocess`) and reads paths under
+`~/.gemini/antigravity-cli/`, which `agy` writes the same way on every OS. **Developed and verified
+on Windows; macOS and Linux should work unmodified provided `agy -i` runs there.** If you test it on
+those platforms, please open an issue / PR to confirm.
 
-## How it works (the workaround in one paragraph)
+## Contributing
 
-`agy -p "<prompt>"` is invoked with `--print-timeout` and a working directory.
-When it exits, the server reads `~/.gemini/antigravity-cli/cache/last_conversations.json`
-to map `workspace → conversation id`, falling back to "newest dir under
-`brain/` modified since launch" if the cache hasn't been updated yet. It
-then streams the conversation's `transcript.jsonl`, collects every entry
-matching `source=MODEL, status=DONE, type=PLANNER_RESPONSE`, and returns the
-last one — that's the final answer (earlier ones are intermediate
-tool-calling steps). `agy_continue` looks up the workspace's conversation id
-first and passes it with `--conversation <id>`, so it resumes exactly that
-thread rather than agy's global "most recent".
-
-## Status & caveats
-
-- **Verified on agy 1.0.4**: base dir, `last_conversations.json`, the
-  `brain/.../transcript.jsonl` path, and the transcript schema
-  (`source=MODEL, status=DONE, type=PLANNER_RESPONSE`) are all unchanged from
-  earlier releases. The `-p`, `-c`, and `--print-timeout` flags still exist.
-  The new 1.0.4 `projects.json` is a *different* file from the
-  `last_conversations.json` this bridge reads — no impact.
-- **SQLite migration is the real risk**: agy 1.0.4 added a `.db` conversation
-  format and says it "will be the CLI's conversation format". JSONL transcripts
-  still exist today, but once `.db` becomes the default the transcript this
-  bridge parses may vanish. `_read_response` then raises a clear, SQLite-aware
-  error, and the reader will need updating to read the `.db` store. Pin to a
-  known-good `agy` version if you depend on this.
-- **Stdout bug**: verified broken through 1.0.1; not re-tested on 1.0.4. If a
-  future release fixes stdout, the workaround becomes redundant but harmless.
-- **No streaming**: the bridge is request/response only. `agy -p` doesn't
-  stream, so neither does this.
-- **Calls are serialized inside the server**: agy rewrites
-  `last_conversations.json` on every invocation, so concurrent runs would
-  race and could return the wrong conversation's transcript. The server
-  guards `_run_agy` with a `threading.Lock`, meaning additional requests
-  simply queue up rather than racing or erroring. Each `agy` call typically
-  takes 10–30 s, so plan latency accordingly under load.
+Personal project, **best-effort maintenance** — issues and PRs welcome, but no uptime/compat
+promises. If `agy -p` ever starts printing to stdout correctly, this whole repo becomes a fun
+historical artefact.
 
 ## License
 
-MIT. Do whatever you want with it.
+[MIT](LICENSE). Do whatever you want with it.
