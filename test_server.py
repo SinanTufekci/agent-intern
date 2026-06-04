@@ -348,3 +348,74 @@ def test_run_agy_reraises_after_poll_deadline(monkeypatch):
 
     with pytest.raises(RuntimeError, match="No conversation found"):
         server._run_agy("hi", "C:\\ws", continue_conv=False, timeout_s=10)
+
+
+# --------------------------------------------------------------------------
+# _run_agy orchestration (subprocess mocked)
+# --------------------------------------------------------------------------
+
+
+@pytest.fixture
+def fake_agy(monkeypatch, brain_dir, last_conv_file):
+    """Mock subprocess.run, capture args, no-op the poll sleep."""
+    cap = {"args": None, "returncode": 0, "stdout": "", "stderr": ""}
+
+    def fake_run(args, **kwargs):
+        cap["args"] = args
+        return subprocess.CompletedProcess(
+            args, cap["returncode"], stdout=cap["stdout"], stderr=cap["stderr"]
+        )
+
+    monkeypatch.setattr(server.subprocess, "run", fake_run)
+    monkeypatch.setattr(server.time, "sleep", lambda *a, **k: None)
+    monkeypatch.setattr(server, "_RESPONSE_POLL_DEADLINE_S", 0.0)
+    return cap
+
+
+def test_run_agy_continue_with_pinned_id(fake_agy, brain_dir, last_conv_file):
+    last_conv_file.write_text(json.dumps({"C:\\ws": "c1"}), encoding="utf-8")
+    _write_transcript(brain_dir, "c1", [_entry("PLANNER_RESPONSE", "ans")])
+    out = server._run_agy("hi", "C:\\ws", continue_conv=True, timeout_s=10)
+    assert out == "ans"
+    assert "--conversation" in fake_agy["args"]
+    assert "c1" in fake_agy["args"]
+
+
+def test_run_agy_continue_without_id_uses_dash_c(fake_agy, brain_dir, last_conv_file):
+    last_conv_file.write_text(json.dumps({}), encoding="utf-8")
+    _write_transcript(brain_dir, "newest", [_entry("PLANNER_RESPONSE", "ans")])
+    out = server._run_agy("hi", "C:\\ws", continue_conv=True, timeout_s=10)
+    assert out == "ans"
+    assert "-c" in fake_agy["args"]
+    assert "--conversation" not in fake_agy["args"]
+
+
+def test_run_agy_ask_has_no_continue_flags(fake_agy, brain_dir, last_conv_file):
+    last_conv_file.write_text(json.dumps({"C:\\ws": "c1"}), encoding="utf-8")
+    _write_transcript(brain_dir, "c1", [_entry("PLANNER_RESPONSE", "ans")])
+    server._run_agy("hi", "C:\\ws", continue_conv=False, timeout_s=10)
+    assert "-c" not in fake_agy["args"]
+    assert "--conversation" not in fake_agy["args"]
+
+
+def test_run_agy_nonzero_exit_raises(fake_agy):
+    fake_agy["returncode"] = 1
+    fake_agy["stderr"] = "boom"
+    with pytest.raises(RuntimeError, match="boom"):
+        server._run_agy("hi", "C:\\ws", continue_conv=False, timeout_s=10)
+
+
+def test_run_agy_unresolved_conversation_raises(fake_agy, last_conv_file):
+    last_conv_file.write_text(json.dumps({}), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="No conversation found"):
+        server._run_agy("hi", "C:\\ws", continue_conv=False, timeout_s=10)
+
+
+def test_run_agy_args_include_print_timeout_and_prompt(fake_agy, brain_dir, last_conv_file):
+    last_conv_file.write_text(json.dumps({"C:\\ws": "c1"}), encoding="utf-8")
+    _write_transcript(brain_dir, "c1", [_entry("PLANNER_RESPONSE", "ans")])
+    server._run_agy("my-prompt", "C:\\ws", continue_conv=False, timeout_s=42)
+    args = fake_agy["args"]
+    assert "--print-timeout" in args
+    assert "42s" in args
+    assert args[-2:] == ["-p", "my-prompt"]
