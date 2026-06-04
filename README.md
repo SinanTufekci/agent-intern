@@ -18,7 +18,7 @@
 `agy`, Google's Antigravity CLI, ships a headless print mode (`agy -p`) that's **broken**: it
 authenticates, talks to the model, gets the answer back… and then never prints it. This bridge
 runs `agy -p` anyway, reads the answer straight out of agy's *own* transcript files, and hands it
-to Claude Code as two clean MCP tools. Delegate cheap tool-calling work to Gemini without leaving
+to Claude Code as clean MCP tools. Delegate cheap tool-calling work to Gemini without leaving
 your terminal.
 
 > [!WARNING]
