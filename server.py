@@ -545,6 +545,57 @@ def agy_continue(prompt: str, workspace: Optional[str] = None, timeout_s: int = 
 
 
 @mcp.tool()
+def agy_image(
+    prompt: str,
+    output_path: Optional[str] = None,
+    workspace: Optional[str] = None,
+    timeout_s: int = 240,
+) -> str:
+    """Generate an image with Antigravity (Gemini image model via agy CLI).
+
+    Drives agy to produce a raster image on your existing AI Pro quota, saves it,
+    and returns the absolute file path plus its real format and byte size. The
+    host can then read the path to view the image.
+
+    agy emits JPEG even when asked for a .png name, so the returned path's
+    extension is corrected to match the actual bytes (a requested out.png may
+    come back as out.jpg). Runs a normal, unsandboxed agy session — same
+    privileges/caveats as the other tools (see the module SECURITY note).
+
+    Args:
+        prompt: Description of the image to generate.
+        output_path: Where to save. Absolute, or relative to `workspace`. If
+                     omitted, a timestamped name under `workspace` is used.
+        workspace: Working directory for the conversation. Defaults to cwd.
+        timeout_s: Max seconds to wait for agy to complete. Default 240
+                   (image generation is slower than text).
+    """
+    ws = _normalize_workspace(workspace)
+    target = _resolve_output_path(output_path, ws)
+    os.makedirs(os.path.dirname(target) or ".", exist_ok=True)
+    wrapped = _wrap_image_prompt(prompt, target)
+
+    start = time.time()
+    agy_text: Optional[str] = None
+    agy_error: Optional[Exception] = None
+    try:
+        agy_text = _run_agy(wrapped, ws, continue_conv=False, timeout_s=timeout_s)
+    except RuntimeError as e:
+        # The transcript read may fail even though agy wrote the image. Don't
+        # lose a successfully generated file to a transcript hiccup — try to
+        # locate it anyway, and only surface this error if nothing was produced.
+        agy_error = e
+
+    try:
+        final_path, fmt, size = _finalize_image(target, agy_text, start)
+    except RuntimeError as fin_err:
+        if agy_error is not None:
+            raise RuntimeError(f"{fin_err} (agy also failed: {agy_error})") from agy_error
+        raise
+    return f"{final_path}\nformat={fmt}  size={size} bytes"
+
+
+@mcp.tool()
 def agy_status() -> str:
     """Report offline diagnostics for the agy bridge setup (spends no quota).
 

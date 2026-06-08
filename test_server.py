@@ -668,3 +668,45 @@ def test_finalize_image_non_image_raises(tmp_path, scratch_dir):
     target = str(tmp_path / "refusal.png")
     with pytest.raises(RuntimeError, match="not a recognized image"):
         server._finalize_image(target, None, time.time())
+
+
+# --------------------------------------------------------------------------
+# agy_image (orchestration; _run_agy mocked)
+# --------------------------------------------------------------------------
+
+
+def test_agy_image_happy_path(tmp_path, scratch_dir, monkeypatch):
+    target = str(tmp_path / "art.png")
+
+    def fake_run(prompt, ws, continue_conv, timeout_s):
+        (tmp_path / "art.png").write_bytes(_JPEG)  # agy saves JPEG under .png
+        return target
+
+    monkeypatch.setattr(server, "_run_agy", fake_run)
+    out = server.agy_image("a cat", output_path=target, workspace=str(tmp_path))
+    assert str(tmp_path / "art.jpg") in out
+    assert "format=JPEG" in out
+    assert os.path.isfile(tmp_path / "art.jpg")
+
+
+def test_agy_image_recovers_when_run_agy_raises(tmp_path, scratch_dir, monkeypatch):
+    (tmp_path / "art.png").write_bytes(_JPEG)  # file already on disk
+    target = str(tmp_path / "art.png")
+
+    def boom(prompt, ws, continue_conv, timeout_s):
+        raise RuntimeError("transcript read failed")
+
+    monkeypatch.setattr(server, "_run_agy", boom)
+    out = server.agy_image("a cat", output_path=target, workspace=str(tmp_path))
+    assert "format=JPEG" in out
+
+
+def test_agy_image_raises_when_nothing_produced(tmp_path, scratch_dir, monkeypatch):
+    target = str(tmp_path / "art.png")
+
+    def boom(prompt, ws, continue_conv, timeout_s):
+        raise RuntimeError("agy exited 1")
+
+    monkeypatch.setattr(server, "_run_agy", boom)
+    with pytest.raises(RuntimeError, match="no image file found"):
+        server.agy_image("a cat", output_path=target, workspace=str(tmp_path))
