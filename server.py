@@ -66,6 +66,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 import threading
 import time
@@ -336,6 +337,47 @@ def _wrap_image_prompt(prompt: str, target: str) -> str:
         f"{target} . After saving, reply with ONLY the absolute file path where "
         f"you actually saved the image, nothing else."
     )
+
+
+def _finalize_image(target: str, agy_text: Optional[str], start: float):
+    """Locate the generated image, move it to `target`, fix its extension.
+
+    Candidate order: the resolved `target`, then an absolute path agy reported in
+    `agy_text`, then the newest image in the scratch dir created at/after `start`.
+    Renames to the canonical extension for the real (magic-byte) format, so the
+    returned path never lies about its bytes.
+
+    Returns (final_path, format, size_bytes). Raises RuntimeError if no image
+    file is found, or if the located file is not a recognized image.
+    """
+    candidates = [target]
+    if agy_text:
+        candidates.append(agy_text.strip().strip('"'))
+    scratch = _newest_scratch_image_after(start)
+    if scratch:
+        candidates.append(scratch)
+
+    src = next((c for c in candidates if c and os.path.isfile(c)), None)
+    if src is None:
+        raise RuntimeError(
+            f"agy_image: no image file found. Looked at target {target!r} and "
+            f"scratch dir {SCRATCH_DIR}."
+        )
+
+    fmt = _detect_image_format(src)
+    if fmt is None:
+        raise RuntimeError(
+            f"agy_image: {src!r} is not a recognized image. agy may have refused "
+            "the request or returned text instead of an image."
+        )
+
+    final_path = _with_ext(target, _canonical_ext(fmt))
+    os.makedirs(os.path.dirname(final_path) or ".", exist_ok=True)
+    if os.path.abspath(src) != os.path.abspath(final_path):
+        if os.path.exists(final_path):
+            os.remove(final_path)
+        shutil.move(src, final_path)
+    return final_path, fmt, os.path.getsize(final_path)
 
 
 def _collect_status() -> list[tuple[str, bool, str]]:

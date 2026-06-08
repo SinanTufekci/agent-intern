@@ -626,3 +626,45 @@ def test_wrap_image_prompt_embeds_target_and_prompt():
     assert "a red cat" in w
     assert "C:\\out\\img.png" in w
     assert "absolute file path" in w
+
+
+# --------------------------------------------------------------------------
+# _finalize_image
+# --------------------------------------------------------------------------
+
+
+def test_finalize_image_corrects_extension_at_target(tmp_path, scratch_dir):
+    (tmp_path / "art.png").write_bytes(_JPEG)  # JPEG bytes under a .png name
+    target = str(tmp_path / "art.png")
+    final, fmt, size = server._finalize_image(target, None, time.time())
+    assert final == str(tmp_path / "art.jpg")
+    assert fmt == "JPEG"
+    assert size == len(_JPEG)
+    assert os.path.isfile(tmp_path / "art.jpg")
+    assert not os.path.isfile(target)
+
+
+def test_finalize_image_moves_scratch_file_to_target(tmp_path, scratch_dir):
+    start = time.time()
+    s = scratch_dir / "gen.png"
+    s.write_bytes(_JPEG)
+    os.utime(s, (start + 5, start + 5))
+    target = str(tmp_path / "out.png")  # does not exist
+    final, fmt, size = server._finalize_image(target, None, start)
+    assert final == str(tmp_path / "out.jpg")
+    assert fmt == "JPEG"
+    assert os.path.isfile(final)
+    assert not os.path.exists(s)
+
+
+def test_finalize_image_not_found_raises(tmp_path, scratch_dir):
+    target = str(tmp_path / "missing.png")
+    with pytest.raises(RuntimeError, match="no image file found"):
+        server._finalize_image(target, None, time.time())
+
+
+def test_finalize_image_non_image_raises(tmp_path, scratch_dir):
+    (tmp_path / "refusal.png").write_bytes(b"I cannot create that image.")
+    target = str(tmp_path / "refusal.png")
+    with pytest.raises(RuntimeError, match="not a recognized image"):
+        server._finalize_image(target, None, time.time())
