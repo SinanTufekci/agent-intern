@@ -301,6 +301,29 @@ def _resolve_output_path(output_path: Optional[str], workspace: str) -> str:
     return os.path.abspath(os.path.join(workspace, output_path))
 
 
+def _newest_scratch_image_after(start: float) -> Optional[str]:
+    """Newest recognized image file in agy's scratch dir created at/after `start`.
+
+    agy falls back to ~/.gemini/antigravity-cli/scratch/ when not given an
+    explicit absolute save path. Returns an absolute path string, or None.
+    """
+    if not SCRATCH_DIR.exists():
+        return None
+    best: Optional[str] = None
+    best_mtime = start - 2
+    for child in SCRATCH_DIR.iterdir():
+        if not child.is_file():
+            continue
+        try:
+            mtime = child.stat().st_mtime
+        except OSError:
+            continue
+        if mtime > best_mtime and _detect_image_format(str(child)):
+            best = str(child)
+            best_mtime = mtime
+    return best
+
+
 def _collect_status() -> list[tuple[str, bool, str]]:
     """Gather offline setup diagnostics as (label, ok, detail) rows.
 

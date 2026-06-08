@@ -572,3 +572,45 @@ def test_resolve_output_path_relative_joined_to_workspace(tmp_path):
 def test_resolve_output_path_absolute_kept(tmp_path):
     p = str(tmp_path / "abs.png")
     assert server._resolve_output_path(p, "C:\\other") == os.path.abspath(p)
+
+
+# --------------------------------------------------------------------------
+# _newest_scratch_image_after
+# --------------------------------------------------------------------------
+
+
+@pytest.fixture
+def scratch_dir(tmp_path, monkeypatch):
+    d = tmp_path / "scratch"
+    d.mkdir()
+    monkeypatch.setattr(server, "SCRATCH_DIR", d)
+    return d
+
+
+def test_newest_scratch_image_after_picks_newest_image(scratch_dir):
+    start = time.time()
+    img = scratch_dir / "x.png"
+    img.write_bytes(_JPEG)
+    os.utime(img, (start + 5, start + 5))
+    assert server._newest_scratch_image_after(start) == str(img)
+
+
+def test_newest_scratch_image_after_ignores_nonimage(scratch_dir):
+    start = time.time()
+    f = scratch_dir / "notes.txt"
+    f.write_bytes(b"hello")
+    os.utime(f, (start + 5, start + 5))
+    assert server._newest_scratch_image_after(start) is None
+
+
+def test_newest_scratch_image_after_ignores_old(scratch_dir):
+    start = time.time()
+    img = scratch_dir / "old.png"
+    img.write_bytes(_JPEG)
+    os.utime(img, (start - 100, start - 100))
+    assert server._newest_scratch_image_after(start) is None
+
+
+def test_newest_scratch_image_after_missing_dir_returns_none(tmp_path, monkeypatch):
+    monkeypatch.setattr(server, "SCRATCH_DIR", tmp_path / "nope")
+    assert server._newest_scratch_image_after(time.time()) is None
