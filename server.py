@@ -84,6 +84,8 @@ AGY_DATA = Path.home() / ".gemini" / "antigravity-cli"
 LAST_CONVERSATIONS = AGY_DATA / "cache" / "last_conversations.json"
 BRAIN_DIR = AGY_DATA / "brain"
 CONVERSATIONS_DIR = AGY_DATA / "conversations"  # agy 1.0.4+ SQLite store
+SCRATCH_DIR = AGY_DATA / "scratch"  # agy saves generated images here when not
+                                    # given an explicit absolute save path
 
 # Serializes agy invocations within this process. Concurrent runs would race
 # on last_conversations.json (agy rewrites it on every call), so a second
@@ -249,6 +251,39 @@ def _read_response(conv_id: str) -> str:
         )
     # Last completed planner response is the final answer (tool steps come earlier).
     return chunks[-1]
+
+
+# Canonical extension per detected image format. Drives extension-correction:
+# agy's image model emits JPEG even when the requested filename ends in .png.
+_IMAGE_EXT = {"JPEG": ".jpg", "PNG": ".png", "GIF": ".gif", "WEBP": ".webp"}
+
+
+def _detect_image_format(path: str) -> Optional[str]:
+    """Sniff an image format from a file's magic bytes, or None if not an image."""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(16)
+    except OSError:
+        return None
+    if head[:3] == b"\xff\xd8\xff":
+        return "JPEG"
+    if head[:8] == b"\x89PNG\r\n\x1a\n":
+        return "PNG"
+    if head[:4] == b"GIF8":
+        return "GIF"
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return "WEBP"
+    return None
+
+
+def _canonical_ext(fmt: str) -> str:
+    """Canonical file extension (with dot) for a detected image format."""
+    return _IMAGE_EXT[fmt]
+
+
+def _with_ext(path: str, ext: str) -> str:
+    """Return `path` with its extension replaced by `ext` (e.g. '.jpg')."""
+    return os.path.splitext(path)[0] + ext
 
 
 def _collect_status() -> list[tuple[str, bool, str]]:

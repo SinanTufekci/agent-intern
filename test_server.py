@@ -495,3 +495,59 @@ def test_agy_status_formats_report(status_dirs, monkeypatch):
     assert out.startswith("agy bridge status")
     assert "[ok]" in out
     assert "Overall:" in out
+
+
+# --------------------------------------------------------------------------
+# image generation: byte fixtures + _detect_image_format / ext helpers
+# --------------------------------------------------------------------------
+
+_JPEG = b"\xff\xd8\xff\xe0\x00\x10JFIF" + b"\x00" * 8
+_PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 8
+_GIF = b"GIF89a" + b"\x00" * 8
+_WEBP = b"RIFF\x24\x00\x00\x00WEBPVP8 " + b"\x00" * 4
+
+
+def test_detect_image_format_jpeg(tmp_path):
+    p = tmp_path / "a"
+    p.write_bytes(_JPEG)
+    assert server._detect_image_format(str(p)) == "JPEG"
+
+
+def test_detect_image_format_png(tmp_path):
+    p = tmp_path / "a"
+    p.write_bytes(_PNG)
+    assert server._detect_image_format(str(p)) == "PNG"
+
+
+def test_detect_image_format_gif(tmp_path):
+    p = tmp_path / "a"
+    p.write_bytes(_GIF)
+    assert server._detect_image_format(str(p)) == "GIF"
+
+
+def test_detect_image_format_webp(tmp_path):
+    p = tmp_path / "a"
+    p.write_bytes(_WEBP)
+    assert server._detect_image_format(str(p)) == "WEBP"
+
+
+def test_detect_image_format_text_is_none(tmp_path):
+    p = tmp_path / "a"
+    p.write_bytes(b"not an image at all")
+    assert server._detect_image_format(str(p)) is None
+
+
+def test_detect_image_format_missing_file_is_none(tmp_path):
+    assert server._detect_image_format(str(tmp_path / "nope")) is None
+
+
+def test_canonical_ext_maps_known_formats():
+    assert server._canonical_ext("JPEG") == ".jpg"
+    assert server._canonical_ext("PNG") == ".png"
+    assert server._canonical_ext("GIF") == ".gif"
+    assert server._canonical_ext("WEBP") == ".webp"
+
+
+def test_with_ext_replaces_extension():
+    assert server._with_ext("C:\\a\\b.png", ".jpg") == "C:\\a\\b.jpg"
+    assert server._with_ext("/a/b/c.jpeg", ".jpg") == "/a/b/c.jpg"
