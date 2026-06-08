@@ -199,6 +199,28 @@ would hang on any real switch.
 </details>
 
 <details>
+<summary><b>Can it generate images?</b></summary>
+
+**Yes** — agy's print mode can generate real images on your AI Pro quota, and the bridge surfaces
+them **today with no code changes**, as long as your prompt tells agy to report the saved path.
+Verified on **agy 1.0.6 / Windows**: an `agy_ask` prompt of *"generate an image of … and reply with
+ONLY the absolute file path"* produced a photorealistic ~360–480 KB image and returned its path as
+plain text. Two gotchas to know:
+
+- **Give it an explicit absolute path.** With a full path like `C:\…\out.png`, agy saves the image
+  exactly there. With a vague destination (e.g. *"the current directory"*) it ignores the
+  `workspace`/cwd and falls back to its own scratch dir, `~/.gemini/antigravity-cli/scratch/` — so
+  spell out the full path you want. Verified both ways.
+- **The extension may not match the real bytes.** Files agy named `*.png` were actually **JPEG**
+  (`FF D8 FF E0`/JFIF) in two runs. If the format matters, detect it from the bytes rather than
+  trusting the name.
+
+It's request/response only and *prompt-dependent* (agy has to choose to report the path), so treat it
+as a handy trick rather than a hardened feature. A dedicated tool that watches the scratch dir and
+returns the artifact would make it reliable — **not built yet**.
+</details>
+
+<details>
 <summary><b>Does it cost extra money?</b></summary>
 
 No. It uses the same **AI Pro quota** you already pay for. The smoke test spends a negligible
