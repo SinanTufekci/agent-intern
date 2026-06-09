@@ -2,7 +2,7 @@
 
 # Claude Code × Antigravity CLI — MCP Bridge
 
-**Use Google's [Antigravity](https://antigravity.google/) (Gemini 3.5 Flash) as a sub-agent inside [Claude Code](https://claude.com/claude-code) — on the AI Pro quota you already pay for.**
+**Use Google's [Antigravity](https://antigravity.google/) (Gemini 3.5 Flash) as a sub-agent inside [Claude Code](https://claude.com/claude-code) — for text answers *and* image generation, on the AI Pro quota you already pay for.**
 
 [![GitHub release](https://img.shields.io/github/v/release/SinanTufekci/Claude-Code-Antigravity-CLI-MCP-Server?color=2ea44f)](https://github.com/SinanTufekci/Claude-Code-Antigravity-CLI-MCP-Server/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -34,6 +34,7 @@ your terminal.
 | | |
 |---|---|
 | 🧠 **Second opinion** | Ask a different model family mid-task without switching tools. |
+| 🎨 **Image generation** | Have Gemini draw an image and get the saved file back — no extra API key or image tool. |
 | 💸 **Cheap delegation** | Burn Antigravity AI Pro quota on grunt work instead of Claude tokens. |
 | 📁 **Cross-repo reads** | Point it at another project directory and let Gemini read/answer there. |
 | 🔌 **Zero new auth** | Piggybacks the login you already did in the Antigravity IDE — no keys to manage. |
