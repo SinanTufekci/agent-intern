@@ -7,7 +7,12 @@ import time
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
-from server import agy_ask, agy_continue  # noqa: E402  (after stdout/stderr rewrap above)
+from server import (  # noqa: E402  (after stdout/stderr rewrap above)
+    _detect_image_format,
+    agy_ask,
+    agy_continue,
+    agy_image,
+)
 
 
 def main() -> int:
@@ -25,6 +30,23 @@ def main() -> int:
     print(f"elapsed: {time.time() - t0:.1f}s")
     print(f"response ({len(resp2)} chars): {resp2!r}")
     assert resp2.strip(), "empty response"
+    print("PASS")
+
+    print("\n=== smoke 3: agy_image generates a file ===")
+    import os
+    import tempfile
+
+    out_path = os.path.join(tempfile.gettempdir(), "agy_smoke_image.png")
+    t0 = time.time()
+    result = agy_image(
+        prompt="A simple solid blue circle centered on a plain white background.",
+        output_path=out_path,
+    )
+    print(f"elapsed: {time.time() - t0:.1f}s")
+    print(f"result: {result!r}")
+    final = result.splitlines()[0].strip()
+    assert os.path.isfile(final), f"image not found: {final}"
+    assert _detect_image_format(final), f"not a recognized image: {final}"
     print("PASS")
 
     return 0
