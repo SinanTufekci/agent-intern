@@ -18,3 +18,6 @@ venv/
 
 # Local-only superpowers planning/spec docs — keep these out of the public repo.
 docs/superpowers/
+
+# Local git-bundle backups (e.g. agy-repo-backup-pre-scrub.bundle) — never publish.
+*.bundle

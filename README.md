@@ -8,7 +8,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![MCP server](https://img.shields.io/badge/MCP-server-7c3aed)](https://modelcontextprotocol.io/)
-[![agy 1.0.7 verified](https://img.shields.io/badge/agy-1.0.7%20verified-2ea44f)](https://antigravity.google/)
+[![agy 1.0.8 verified](https://img.shields.io/badge/agy-1.0.8%20verified-2ea44f)](https://antigravity.google/)
 [![platform](https://img.shields.io/badge/platform-Windows%20·%20macOS%20·%20Linux-lightgrey)](#requirements)
 
 </div>
@@ -148,7 +148,7 @@ format.
 `agy -p` runs the model as an **autonomous agent that auto-executes its own tools** — reading and
 writing files, running shell commands, and reaching the network — with **no approval gate and no
 opt-out**. This isn't a choice the bridge makes; it's how agy's print mode works. Re-verified
-empirically on **agy 1.0.7 / Windows**:
+empirically on **agy 1.0.8 / Windows**:
 
 - Print mode runs out-of-workspace file writes and live network fetches **even without**
   `--dangerously-skip-permissions` — that flag is a **no-op** for `-p`. There is **no** agy flag
@@ -190,9 +190,9 @@ apply, and you're responsible for staying within them.
 <summary><b>Will it break when agy updates?</b></summary>
 
 Possibly — it reads agy's **internal, undocumented** state files, so a release can change paths or
-schemas and break it silently. Re-verified working on **1.0.7** (transcript schema and `-p` JSONL
+schemas and break it silently. Re-verified working on **1.0.8** (transcript schema and `-p` JSONL
 output unchanged; live smoke test passes). The known future risk is agy's **SQLite (`.db`)
-conversation format** (added in 1.0.4, slated to become the default): agy 1.0.7 already
+conversation format** (added in 1.0.4, slated to become the default): agy 1.0.8 already
 **dual-writes** every conversation to `~/.gemini/antigravity-cli/conversations/<id>.db` alongside
 the JSONL transcript, so once it stops writing JSONL the reader needs a SQLite path. Pin a
 known-good `agy` version if you depend on this.
@@ -213,7 +213,7 @@ would hang on any real switch.
 **Yes — that's the `agy_image` tool.** agy's print mode generates real images on
 your AI Pro quota; `agy_image` drives it, saves the file to a path you choose (or
 a timestamped default in your workspace), fixes the extension to match the real
-bytes (agy picks JPEG or PNG itself), and returns the path. Verified on **agy 1.0.7 / Windows**.
+bytes (agy picks JPEG or PNG itself), and returns the path. Verified on **agy 1.0.8 / Windows**.
 It's request/response only and runs a normal, unsandboxed agy session (see
 [Security](#security)).
 </details>
@@ -241,23 +241,23 @@ requests queue rather than race — plan latency accordingly under load.
 
 ## Status & caveats
 
-- ✅ **Verified on agy 1.0.7** — base dir, `last_conversations.json`, the
+- ✅ **Verified on agy 1.0.8** — base dir, `last_conversations.json`, the
   `brain/.../transcript.jsonl` path, the transcript schema, and the `-p`/`-c`/`--print-timeout`
   flags are all unchanged; a live smoke test passes all three round-trips (text ask/continue plus
   image generation). The 1.0.5 `-p` metadata fix also means agy no longer litters the workspace dir.
-- ⏳ **SQLite migration is the real risk** — agy 1.0.7 already dual-writes a `.db` per conversation;
+- ⏳ **SQLite migration is the real risk** — agy 1.0.8 already dual-writes a `.db` per conversation;
   see the [FAQ](#faq). `_read_response` raises a clear, SQLite-aware error if the JSONL transcript
   ever disappears.
-- 🐛 **Stdout bug** — `-p` still doesn't print the answer on 1.0.7. If a future release fixes
+- 🐛 **Stdout bug** — `-p` still doesn't print the answer on 1.0.8. If a future release fixes
   stdout, this workaround becomes redundant but harmless.
-- 🔒 **No real sandbox** — agy 1.0.7's `--sandbox` now blocks shell commands in `-p` but still
+- 🔒 **No real sandbox** — agy's `--sandbox` (since 1.0.6) blocks only shell commands in `-p` but still
   leaves file writes and network egress open (and breaks transcript reading), so it's no boundary;
   see [Security](#security).
 
 ## Requirements
 
 - Python 3.10+
-- [`agy`](https://antigravity.google/) 1.0.0 or newer on `PATH` (state-file layout re-verified on **1.0.7**)
+- [`agy`](https://antigravity.google/) 1.0.0 or newer on `PATH` (state-file layout re-verified on **1.0.8**)
 - An active Antigravity / AI Pro session
 
 The bridge uses only cross-platform Python (`Path.home()`, `subprocess`) and reads paths under
