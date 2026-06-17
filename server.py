@@ -89,6 +89,13 @@ mcp = FastMCP("agy")
 # set AGY_BRIDGE_DEBUG=1 for per-call diagnostics. See _configure_logging.
 log = logging.getLogger("agy_bridge")
 
+# The agy executable to invoke. Defaults to "agy" (resolved via PATH); set the
+# AGY_BIN env var to an explicit path when agy isn't reliably on PATH — e.g. on
+# Windows where a new terminal/reboot can drop it:
+#   AGY_BIN=%LOCALAPPDATA%\agy\bin\agy.exe
+# Read once at import; the launching process's environment wins.
+AGY_BIN = os.environ.get("AGY_BIN", "agy")
+
 AGY_DATA = Path.home() / ".gemini" / "antigravity-cli"
 LAST_CONVERSATIONS = AGY_DATA / "cache" / "last_conversations.json"
 BRAIN_DIR = AGY_DATA / "brain"
@@ -176,7 +183,7 @@ def _get_agy_version() -> Optional[str]:
     """Return `agy --version` output, or None if agy can't be run."""
     try:
         proc = subprocess.run(
-            ["agy", "--version"],
+            [AGY_BIN, "--version"],
             stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
@@ -535,7 +542,7 @@ def _build_agy_args(
     is no agy flag that makes print mode safe; see the module docstring's SECURITY
     note.
     """
-    args = ["agy", "--print-timeout", f"{timeout_s}s"]
+    args = [AGY_BIN, "--print-timeout", f"{timeout_s}s"]
     pinned_conv: Optional[str] = None
     if continue_conv:
         # Pin to the exact conversation rooted at this workspace instead of `-c`

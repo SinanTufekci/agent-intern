@@ -282,6 +282,27 @@ def test_spawn_kwargs_is_subprocess_run_compatible(monkeypatch):
 
 
 # --------------------------------------------------------------------------
+# AGY_BIN  (configurable agy executable; AGY_BIN env var overrides "agy")
+# --------------------------------------------------------------------------
+
+
+def test_build_agy_args_uses_default_agy_bin(monkeypatch):
+    monkeypatch.setattr(server, "AGY_BIN", "agy")
+    args, _ = server._build_agy_args("hi", "C:\\ws", continue_conv=False, timeout_s=10)
+    assert args[0] == "agy"
+
+
+def test_build_agy_args_honors_custom_agy_bin(monkeypatch):
+    custom = "C:\\Users\\x\\AppData\\Local\\agy\\bin\\agy.exe"
+    monkeypatch.setattr(server, "AGY_BIN", custom)
+    args, _ = server._build_agy_args("hi", "C:\\ws", continue_conv=False, timeout_s=10)
+    assert args[0] == custom
+    # only argv[0] changes; the rest of the command line is unaffected
+    assert "--print-timeout" in args
+    assert args[-2:] == ["-p", "hi"]
+
+
+# --------------------------------------------------------------------------
 # _startup_checks  (composition of the tested helpers; agy version injected)
 # --------------------------------------------------------------------------
 

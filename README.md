@@ -279,6 +279,11 @@ requests queue rather than race — plan latency accordingly under load.
 - [`agy`](https://antigravity.google/) 1.0.0 or newer on `PATH` (state-file layout re-verified on **1.0.9**)
 - An active Antigravity / AI Pro session
 
+> [!TIP]
+> If `agy` isn't reliably on `PATH` (e.g. a new terminal or reboot drops it on Windows), set the
+> **`AGY_BIN`** env var to its full path and the bridge will use that instead of `"agy"` — e.g.
+> `AGY_BIN=%LOCALAPPDATA%\agy\bin\agy.exe`.
+
 The bridge uses only cross-platform Python (`Path.home()`, `subprocess`) and reads paths under
 `~/.gemini/antigravity-cli/`, which `agy` writes the same way on every OS. **Developed and verified
 on Windows; macOS and Linux should work unmodified provided `agy -i` runs there.** If you test it on
