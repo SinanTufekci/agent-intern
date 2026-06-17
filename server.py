@@ -228,7 +228,7 @@ def _update_warning(latest: Optional[tuple[int, int, int]]) -> Optional[str]:
     )
 
 
-def _spawn_kwargs() -> dict:
+def _spawn_kwargs(name: str = "") -> dict:
     """Extra subprocess kwargs that detach agy from the host's controlling terminal.
 
     agy -p writes its progress/answer to the controlling terminal (TTY/console)
@@ -240,9 +240,15 @@ def _spawn_kwargs() -> dict:
     does not change what the bridge captures (the response is read from the
     transcript regardless). Windows: CREATE_NO_WINDOW. POSIX: a new session
     (no controlling tty).
+
+    `name` overrides the platform (defaults to os.name) so both branches stay
+    unit-testable without globally mutating os.name — which would break pathlib
+    (and pytest's own bookkeeping) on non-Windows hosts.
     """
-    if os.name == "nt":
-        return {"creationflags": subprocess.CREATE_NO_WINDOW}
+    if (name or os.name) == "nt":
+        # CREATE_NO_WINDOW is Windows-only; the literal fallback lets the "nt"
+        # branch be exercised on any OS (the value is only ever used on Windows).
+        return {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)}
     return {"start_new_session": True}
 
 

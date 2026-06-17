@@ -420,16 +420,12 @@ def test_run_with_progress_survives_progress_errors(monkeypatch):
 # --------------------------------------------------------------------------
 
 
-def test_spawn_kwargs_detaches_per_platform(monkeypatch):
-    monkeypatch.setattr(server.os, "name", "nt")
-    nt = server._spawn_kwargs()
-    # CREATE_NO_WINDOW == 0x08000000; reference the literal so the assertion is
-    # portable (the constant only exists on the Windows subprocess module).
-    assert nt == {"creationflags": 0x08000000}
-
-    monkeypatch.setattr(server.os, "name", "posix")
-    posix = server._spawn_kwargs()
-    assert posix == {"start_new_session": True}
+def test_spawn_kwargs_detaches_per_platform():
+    # Pass the platform explicitly — monkeypatching os.name globally would break
+    # pathlib (and pytest's own per-test bookkeeping) on non-Windows CI runners.
+    # CREATE_NO_WINDOW == 0x08000000; assert the literal so it's host-portable.
+    assert server._spawn_kwargs("nt") == {"creationflags": 0x08000000}
+    assert server._spawn_kwargs("posix") == {"start_new_session": True}
 
 
 def test_spawn_kwargs_is_subprocess_run_compatible(monkeypatch):
