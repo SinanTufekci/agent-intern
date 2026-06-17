@@ -168,8 +168,19 @@ def _labels(prompts: list[str]) -> list[str]:
     return out
 
 
+def _basename_any(path: str) -> str:
+    """Last path component, handling both '/' and '\\' regardless of host OS.
+
+    os.path.basename uses only the host's separator, so on Linux a Windows-style
+    workspace ("C:\\a\\b\\repo") wouldn't be shortened (and a POSIX path on Windows
+    likewise). Splitting on both separators keeps worker labels clean everywhere.
+    """
+    cleaned = path.replace("\\", "/").rstrip("/")
+    return cleaned.rsplit("/", 1)[-1] or path
+
+
 def _repos(workspaces: list[str]) -> list[str]:
-    return [os.path.basename(os.path.normpath(w)) or w for w in workspaces]
+    return [_basename_any(w) for w in workspaces]
 
 
 # ----------------------------------------------------------------------------- text swarm
@@ -485,7 +496,7 @@ def format_text_results(results: list[WorkerResult]) -> str:
     for r in sorted(results, key=lambda r: r.index):
         head = f"[worker {r.index}] {'OK' if r.ok else 'ERROR'} ({r.elapsed}s)"
         if r.workspace:
-            head += f" @ {os.path.basename(os.path.normpath(r.workspace))}"
+            head += f" @ {_basename_any(r.workspace)}"
         body = r.answer if r.ok else f"(failed) {r.error}"
         parts.append(f"{head}\n{body}")
     ok = sum(1 for r in results if r.ok)
