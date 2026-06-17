@@ -2,6 +2,8 @@
 
 # Claude Code × Antigravity CLI — MCP Bridge
 
+<img src="assets/bridge-animation.svg" width="100%" alt="Claude Code x Antigravity CLI Bridge Animation" />
+
 **Use Google's [Antigravity](https://antigravity.google/) (Gemini 3.5 Flash) as a sub-agent inside [Claude Code](https://claude.com/claude-code) — for text answers *and* image generation, on the AI Pro quota you already pay for.**
 
 [![GitHub release](https://img.shields.io/github/v/release/SinanTufekci/antigravity-intern?color=2ea44f)](https://github.com/SinanTufekci/antigravity-intern/releases/latest)
