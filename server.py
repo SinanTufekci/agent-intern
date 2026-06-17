@@ -1385,6 +1385,111 @@ def antigravity_image_watch(
     return _run_agy_image_watched(wrapped, target, ws, timeout_s, prompt)
 
 
+def _broadcast_workspaces(workspaces: Optional[list], n: int):
+    """Map the MCP `workspaces` arg to swarm's None|str|list contract.
+
+    None -> server cwd for all; a 1-item list -> that dir for all N; an N-item
+    list -> one workspace per prompt. (MCP can't pass a bare str for a list field,
+    so a 1-item list is the "same dir for everyone" shorthand.)
+    """
+    if not workspaces:
+        return None
+    if len(workspaces) == 1:
+        return workspaces[0]
+    return workspaces
+
+
+@mcp.tool()
+def antigravity_swarm(
+    prompts: list[str],
+    workspaces: Optional[list[str]] = None,
+    max_concurrency: int = 4,
+    timeout_s: int = 180,
+    watch: bool = False,
+) -> str:
+    """Run several Antigravity (Gemini 3.5 Flash High) prompts IN PARALLEL.
+
+    Fans the prompts out to independent agy workers that run truly concurrently
+    (each in its own isolated state dir, so they never race), capped at
+    `max_concurrency`. Returns one combined text block with every worker's answer,
+    labelled by index. A worker that fails is reported in place — the others still
+    return (error isolation).
+
+    Use this to parallelise independent, cheap sub-tasks (e.g. summarise N files,
+    ask the same question about N repos). For a single prompt use antigravity_ask.
+
+    SECURITY: this launches N unsandboxed agy agents at once — N times the
+    prompt-injection surface of a single call (see the module SECURITY note). Only
+    use it with trusted prompts on trusted content.
+
+    Args:
+        prompts: One prompt per parallel worker.
+        workspaces: Working directory per worker. Omit for the server cwd; pass a
+                    1-item list to point every worker at the same dir; pass one
+                    entry per prompt to give each worker its own dir.
+        max_concurrency: Max workers running at once (default 4). Higher = faster
+                         but more quota/rate-limit pressure and more agents at once.
+        timeout_s: Per-worker timeout in seconds. Default 180.
+        watch: If true, open the live "Antigravity Swarm" dashboard window (one row
+               per worker; click a row to open that agent's full step log beside it).
+    """
+    import swarm
+
+    results = swarm.swarm_ask(
+        prompts,
+        workspaces=_broadcast_workspaces(workspaces, len(prompts)),
+        max_concurrency=max_concurrency,
+        timeout_s=timeout_s,
+        watch=watch,
+    )
+    return swarm.format_text_results(results)
+
+
+@mcp.tool()
+def antigravity_image_swarm(
+    prompts: list[str],
+    output_paths: Optional[list[str]] = None,
+    workspaces: Optional[list[str]] = None,
+    max_concurrency: int = 4,
+    timeout_s: int = 240,
+    watch: bool = False,
+) -> str:
+    """Generate several images IN PARALLEL with Antigravity (one worker per prompt).
+
+    Like antigravity_image, but runs N image generations concurrently in isolated
+    workers (capped at `max_concurrency`). Returns one block listing each image's
+    final path/format/size (or its error). Extensions are corrected to the real
+    bytes, exactly like antigravity_image. Same unsandboxed privileges/caveats as
+    antigravity_swarm.
+
+    Args:
+        prompts: One image description per parallel worker.
+        output_paths: Where to save each image (aligned to prompts). Omit to write
+                      timestamped files in the first workspace (or server cwd).
+        workspaces: Working directory per worker (same shorthand as antigravity_swarm).
+        max_concurrency: Max workers running at once (default 4).
+        timeout_s: Per-worker timeout in seconds. Default 240 (images are slower).
+        watch: If true, open the live dashboard; each finished image shows in its
+               pane, and clicking a row opens that agent's window beside the dashboard.
+    """
+    import swarm
+
+    n = len(prompts)
+    if output_paths is None:
+        stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
+        base = workspaces[0] if workspaces else os.getcwd()
+        output_paths = [os.path.join(base, f"agy-swarm-image-{stamp}-{i}.png") for i in range(n)]
+    results = swarm.swarm_image(
+        prompts,
+        output_paths,
+        workspaces=_broadcast_workspaces(workspaces, n),
+        max_concurrency=max_concurrency,
+        timeout_s=timeout_s,
+        watch=watch,
+    )
+    return swarm.format_image_results(results)
+
+
 @mcp.tool()
 def antigravity_status() -> str:
     """Report offline diagnostics for the agy bridge setup (spends no quota).

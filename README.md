@@ -107,7 +107,7 @@ using the absolute path to `server.py`:
 </td></tr>
 </table>
 
-Restart Claude Code. Six tools appear: **`mcp__antigravity-intern__antigravity_ask`**, **`mcp__antigravity-intern__antigravity_continue`**, **`mcp__antigravity-intern__antigravity_ask_watch`**, **`mcp__antigravity-intern__antigravity_image`**, **`mcp__antigravity-intern__antigravity_image_watch`**, and **`mcp__antigravity-intern__antigravity_status`**.
+Restart Claude Code. Eight tools appear: **`antigravity_ask`**, **`antigravity_continue`**, **`antigravity_ask_watch`**, **`antigravity_image`**, **`antigravity_image_watch`**, **`antigravity_swarm`**, **`antigravity_image_swarm`**, and **`antigravity_status`** (each prefixed `mcp__antigravity-intern__`).
 
 > *"Use antigravity_ask to summarize the README of this repo in three bullets."* → Claude routes the prompt
 > through the bridge, agy reads the file under the workspace root, and the answer comes back as a
@@ -122,6 +122,8 @@ Restart Claude Code. Six tools appear: **`mcp__antigravity-intern__antigravity_a
 | `antigravity_ask_watch(prompt, workspace?, timeout_s?=180)` | 🧪 **Experimental.** Like `antigravity_ask`, but opens the **Antigravity Intern** live browser window so you can watch agy work (see [Watch mode](#watch-mode)). |
 | `antigravity_image(prompt, output_path?, workspace?, timeout_s?=240)` | Generate an image with Antigravity; saves the file (extension corrected to the real bytes) and returns its path + format/size. |
 | `antigravity_image_watch(prompt, output_path?, workspace?, timeout_s?=240)` | 🧪 **Experimental.** Like `antigravity_image`, but streams progress and **shows the generated image** in the Antigravity Intern window. |
+| `antigravity_swarm(prompts, workspaces?, max_concurrency?=4, timeout_s?=180, watch?=false)` | Run **several prompts in parallel** as independent agy workers; returns every answer in one block (see [Swarm](#swarm)). |
+| `antigravity_image_swarm(prompts, output_paths?, workspaces?, max_concurrency?=4, timeout_s?=240, watch?=false)` | Generate **several images in parallel** (one worker per prompt). |
 | `antigravity_status()` | Offline setup diagnostics (agy version/compat, state dirs, newest transcript readable). Spends no quota. |
 
 `workspace` defaults to the MCP server's current working directory. Point it at a real project dir
@@ -155,6 +157,49 @@ read live from the transcript, with the final answer rendered as Markdown (and, 
 - **Coarse, not token-level.** agy flushes its transcript in chunks, so you get a
   handful of live steps, not character streaming. The returned value is identical to
   the non-watch tool. Nothing is sent anywhere but your own machine.
+
+<a id="swarm"></a>
+
+## 🐝 Swarm — run agy workers in parallel
+
+`antigravity_swarm` and `antigravity_image_swarm` fan a list of prompts out to
+**independent agy workers that run truly concurrently** (capped at
+`max_concurrency`, default 4), then return every worker's result in one block.
+Good for independent, cheap sub-tasks — summarise N files, ask the same question
+about N repos, generate N images — without paying for them one at a time.
+
+```
+antigravity_swarm(prompts=[
+  "Summarise src/auth.py in 2 bullets.",
+  "Summarise src/db.py in 2 bullets.",
+  "List the public functions in src/api.py.",
+])
+```
+
+**How it stays correct under concurrency.** The single-agent tools serialize
+through a lock because agy rewrites `last_conversations.json` on every call, so
+concurrent runs sharing one state dir would race. The swarm sidesteps this
+entirely: each worker runs with its **own isolated `HOME`/`USERPROFILE`**, so
+agy's `brain/`, `cache/`, and `last_conversations.json` never collide — no lock
+needed. Auth still works because agy reads it from the **OS credential store**,
+not from `~/.gemini` (verified on agy 1.0.9). Each worker's `cwd` is still its
+real `workspace`, so file access there is unchanged — HOME redirection isolates
+*state only*. Measured ~**2.8× speedup at 3 workers** (the AI Pro backend does
+not serialize per-account); higher `max_concurrency` trades quota/rate-limit
+pressure for wall-clock.
+
+- **`workspaces`** — omit for the server cwd; pass a **1-item list** to point every
+  worker at the same dir; pass **one entry per prompt** for per-worker dirs.
+- **Error isolation** — a worker that fails is reported in place; the others still
+  return.
+- **`watch=true`** — opens a thin live **Antigravity Swarm** dashboard (one row per
+  worker showing the repo, prompt, and latest step). **Click a row** to pop that
+  agent out into its own window streaming its full step log, beside the dashboard.
+
+> [!WARNING]
+> A swarm launches **N unsandboxed agy agents at once** — N× the prompt-injection
+> "lethal trifecta" surface of a single call (see [Security](#security)). Only use
+> it with **trusted prompts on trusted content**.
 
 ## Model & auth
 
@@ -269,9 +314,14 @@ value is identical to the non-watch tool.
 <details>
 <summary><b>Can I run several calls at once?</b></summary>
 
-They're **serialized** inside the server. agy rewrites `last_conversations.json` on every call, so
-concurrent runs would race and could return the wrong conversation. A `threading.Lock` makes extra
-requests queue rather than race — plan latency accordingly under load.
+The **single-agent** tools (`antigravity_ask` / `antigravity_continue` / `antigravity_image`) are
+**serialized** inside the server: agy rewrites `last_conversations.json` on every call, so concurrent
+runs sharing one state dir would race and could return the wrong conversation. A `threading.Lock`
+makes extra requests queue rather than race.
+
+For real parallelism use **[`antigravity_swarm`](#swarm)** — it runs each worker in its own isolated
+state dir, so they don't race and the lock isn't needed (~2.8× at 3 workers). That's the supported
+way to run many agy calls at once.
 </details>
 
 ## Status & caveats
@@ -316,13 +366,14 @@ those platforms, please open an issue / PR to confirm.
 ## Development
 
 ```bash
-pip install -e ".[dev]"      # fastmcp + pytest + ruff
-pytest test_server.py        # offline unit tests — no agy, no quota
+pip install -e ".[dev]"          # fastmcp + pytest + ruff
+pytest test_server.py test_swarm.py   # offline unit tests — no agy, no quota
 ruff check . && ruff format --check .
 ```
 
-`test_server.py` covers the pure parsing/version logic with temp fixtures (no agy needed);
-`test_smoke.py` is the live end-to-end check that spends a little quota. Set **`AGY_BRIDGE_DEBUG=1`**
+`test_server.py` and `test_swarm.py` cover the pure parsing/version/swarm logic with temp fixtures
+(no agy needed); `test_smoke.py` is the live end-to-end check (ask, continue, image, and a parallel
+swarm) that spends a little quota. Set **`AGY_BRIDGE_DEBUG=1`**
 to log per-call diagnostics (resolved conversation id, agy exit code, elapsed) to stderr — and on
 startup the server warns if your installed agy is newer than the version it was verified against.
 

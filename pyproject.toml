@@ -1,6 +1,6 @@
 [project]
 name = "agy-mcp-server"
-version = "0.7.0"
+version = "0.8.0"
 description = "MCP server bridging Antigravity CLI (agy) so Claude Code can use it as a sub-agent"
 requires-python = ">=3.10"
 dependencies = [
@@ -17,10 +17,11 @@ dev = [
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
-# Flat layout: the distributable is the single `server` module. Without this,
-# setuptools auto-discovery aborts because the repo root also holds test_*.py.
+# Flat layout: the distributable is the server module plus its swarm helpers.
+# Without this, setuptools auto-discovery aborts because the repo root also holds
+# test_*.py.
 [tool.setuptools]
-py-modules = ["server"]
+py-modules = ["server", "swarm", "swarm_watch"]
 
 [tool.ruff]
 line-length = 100
@@ -28,3 +29,8 @@ target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# swarm_watch.py is mostly one embedded HTML/CSS/JS page; its long style/script
+# lines are an asset, not code to hard-wrap.
+"swarm_watch.py" = ["E501"]

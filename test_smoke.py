@@ -12,6 +12,7 @@ from server import (  # noqa: E402  (after stdout/stderr rewrap above)
     antigravity_ask,
     antigravity_continue,
     antigravity_image,
+    antigravity_swarm,
 )
 
 
@@ -47,6 +48,22 @@ def main() -> int:
     final = result.splitlines()[0].strip()
     assert os.path.isfile(final), f"image not found: {final}"
     assert _detect_image_format(final), f"not a recognized image: {final}"
+    print("PASS")
+
+    print("\n=== smoke 4: antigravity_swarm runs prompts in parallel ===")
+    t0 = time.time()
+    resp4 = antigravity_swarm(
+        prompts=[
+            "Reply with exactly this token and nothing else: ALPHA",
+            "Reply with exactly this token and nothing else: BETA",
+        ],
+        max_concurrency=2,
+        timeout_s=120,
+    )
+    print(f"elapsed: {time.time() - t0:.1f}s")
+    print(f"result:\n{resp4}")
+    assert "2/2 succeeded" in resp4, "swarm reported a failure"
+    assert "ALPHA" in resp4 and "BETA" in resp4, "swarm missing an answer"
     print("PASS")
 
     return 0
