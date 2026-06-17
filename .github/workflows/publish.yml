@@ -3,7 +3,7 @@ name: Publish to PyPI
 # Fires on every version tag (release.yml drafts the GitHub Release notes from
 # the same tag, in parallel). Builds the sdist + wheel and uploads to PyPI via
 # Trusted Publishing — no stored token: configure the trusted publisher once at
-# https://pypi.org/manage/project/agy-mcp-server/settings/publishing/
+# https://pypi.org/manage/project/antigravity-intern/settings/publishing/
 #   Owner: SinanTufekci  Repo: antigravity-intern
 #   Workflow: publish.yml  Environment: pypi
 
@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/p/agy-mcp-server
+      url: https://pypi.org/p/antigravity-intern
     permissions:
       id-token: write # OIDC token for PyPI Trusted Publishing
     steps:

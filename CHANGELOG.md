@@ -14,9 +14,9 @@ summary.
 
 ### Added
 
-- **PyPI packaging + `uvx` install.** `agy-mcp-server` is now an installable
-  package with an `agy-mcp-server` console entry point, so it can be launched
-  with `uvx agy-mcp-server` (isolated, always-latest) instead of a hardcoded
+- **PyPI packaging + `uvx` install.** `antigravity-intern` is now an installable
+  package with an `antigravity-intern` console entry point, so it can be launched
+  with `uvx antigravity-intern` (isolated, always-latest) instead of a hardcoded
   path to `server.py`.
 - **MCP tool annotations.** All eight tools now carry MCP annotations
   (`readOnlyHint` / `idempotentHint` / `openWorldHint` / `title`) so clients can

@@ -116,7 +116,7 @@ using the absolute path to `server.py`:
 > ```json
 > "antigravity-intern": {
 >   "command": "uvx",
->   "args": ["agy-mcp-server"]
+>   "args": ["antigravity-intern"]
 > }
 > ```
 > Each launch runs the newest version in an isolated environment. (The bridge is published to PyPI
@@ -413,7 +413,7 @@ git tag vX.Y.Z && git push origin vX.Y.Z
 The tag triggers two workflows: `release.yml` cuts a GitHub Release with auto-generated notes, and
 `publish.yml` builds and uploads to PyPI via [Trusted Publishing](https://docs.pypi.org/trusted-publishers/)
 (no stored token — `publish.yml` verifies the tag matches `pyproject.toml` first). One-time setup:
-register the trusted publisher at `pypi.org/manage/project/agy-mcp-server/settings/publishing/`
+register the trusted publisher at `pypi.org/manage/project/antigravity-intern/settings/publishing/`
 (repo `SinanTufekci/antigravity-intern`, workflow `publish.yml`, environment `pypi`).
 
 ## Contributing

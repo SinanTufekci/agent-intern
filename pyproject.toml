@@ -1,5 +1,5 @@
 [project]
-name = "agy-mcp-server"
+name = "antigravity-intern"
 version = "0.10.0"
 description = "MCP server bridging Antigravity CLI (agy) so Claude Code can use it as a sub-agent"
 readme = "README.md"
@@ -30,7 +30,7 @@ dev = [
 ]
 
 [project.scripts]
-agy-mcp-server = "server:main"
+antigravity-intern = "server:main"
 
 [project.urls]
 Homepage = "https://github.com/SinanTufekci/antigravity-intern"

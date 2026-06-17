@@ -1691,8 +1691,8 @@ def antigravity_status() -> str:
 def main() -> None:
     """Console entry point (also `python server.py`).
 
-    Exposed as the `agy-mcp-server` script so the bridge can be launched with
-    `uvx agy-mcp-server` (isolated, always-latest) instead of a hardcoded path.
+    Exposed as the `antigravity-intern` script so the bridge can be launched with
+    `uvx antigravity-intern` (isolated, always-latest) instead of a hardcoded path.
     """
     _configure_logging()
     _startup_checks()
