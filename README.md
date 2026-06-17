@@ -238,9 +238,13 @@ do too (each call typically takes 10–30 s). But there's an **experimental** `a
 reports agy's *intermediate* steps as MCP **progress notifications** while it works, read live from
 agy's transcript. It's deliberately **coarse**: agy flushes its transcript in chunks (observed on
 1.0.9: it can sit empty for ~15 s, then append several steps at once), so you get a handful of
-progress ticks — agy's planner narration and tool runs — not token-by-token streaming. Whether you
-*see* the ticks depends on your MCP client surfacing progress/log notifications; the returned text is
-identical to `agy_ask`.
+progress ticks — agy's planner narration and tool runs — not token-by-token streaming.
+
+**Visibility (verified):** the notifications really are sent — confirmed against a compliant MCP
+client (FastMCP's in-memory client receives both the `report_progress` ticks *and* the matching log
+notifications). The catch is the *client*: **Claude Code does not currently surface these mid-call**,
+so there you'll only see the final answer — identical to `agy_ask`. A progress-aware MCP client will
+show the live ticks. So this is a client-display limitation, not a bug in the bridge.
 </details>
 
 <details>
@@ -267,8 +271,9 @@ requests queue rather than race — plan latency accordingly under load.
 - 🐛 **Stdout bug persists** — `-p` still doesn't print the answer to stdout on 1.0.9 (the 1.0.9
   "print-mode resumption" changelog fix did **not** change this for fresh `-p`). If a future release
   fixes stdout, this workaround becomes redundant but harmless.
-- 🧪 **Streaming is experimental** — `agy_ask_stream` surfaces coarse progress only; see the
-  [FAQ](#faq).
+- 🧪 **Streaming is experimental** — `agy_ask_stream` emits coarse progress notifications (verified
+  sent via a compliant MCP client), but **Claude Code doesn't surface them mid-call**, so there you
+  see only the final answer; see the [FAQ](#faq).
 - 🔒 **No real sandbox** — agy's `--sandbox` (since 1.0.6) blocks only shell commands in `-p` but still
   leaves file writes and network egress open (and breaks transcript reading), so it's no boundary;
   see [Security](#security).
