@@ -4,7 +4,7 @@
 
 **Use Google's [Antigravity](https://antigravity.google/) (Gemini 3.5 Flash) as a sub-agent inside [Claude Code](https://claude.com/claude-code) — for text answers *and* image generation, on the AI Pro quota you already pay for.**
 
-[![GitHub release](https://img.shields.io/github/v/release/SinanTufekci/Claude-Code-Antigravity-CLI-MCP-Server?color=2ea44f)](https://github.com/SinanTufekci/Claude-Code-Antigravity-CLI-MCP-Server/releases/latest)
+[![GitHub release](https://img.shields.io/github/v/release/SinanTufekci/antigravity-intern?color=2ea44f)](https://github.com/SinanTufekci/antigravity-intern/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![MCP server](https://img.shields.io/badge/MCP-server-7c3aed)](https://modelcontextprotocol.io/)
@@ -69,8 +69,8 @@ tool-calling steps. `antigravity_continue` pins the workspace's **exact** conver
 ## Set up in 60 seconds
 
 ```bash
-git clone https://github.com/SinanTufekci/Claude-Code-Antigravity-CLI-MCP-Server.git
-cd Claude-Code-Antigravity-CLI-MCP-Server
+git clone https://github.com/SinanTufekci/antigravity-intern.git
+cd antigravity-intern
 pip install fastmcp
 python test_smoke.py        # 3 real round-trips (ask, continue, image) — should print three PASS lines
 ```
