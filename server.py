@@ -81,10 +81,9 @@ import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Optional
 
-import anyio
-from fastmcp import Context, FastMCP
+from fastmcp import FastMCP
 
 mcp = FastMCP("antigravity-intern")
 
@@ -319,26 +318,6 @@ def _transcript_entries(conv_id: str) -> list[dict]:
     return out
 
 
-def _entry_to_progress(entry: dict) -> Optional[str]:
-    """One-line human progress string for a transcript entry, or None to skip.
-
-    Only the model's own steps are surfaced: PLANNER_RESPONSE (the narration agy
-    writes as it works — the exact text that used to leak to the host terminal)
-    and RUN_COMMAND (a tool step). USER_INPUT / CONVERSATION_HISTORY / system
-    rows are skipped. The final PLANNER_RESPONSE is also the answer, so callers
-    get the last narration line as a 'finishing' tick — harmless.
-    """
-    if entry.get("source") != "MODEL":
-        return None
-    etype = entry.get("type")
-    content = entry.get("content")
-    if etype == "PLANNER_RESPONSE" and content:
-        return content.strip().splitlines()[0][:160]
-    if etype == "RUN_COMMAND":
-        return "running a command…"
-    return None
-
-
 def _clean_tool_arg(value) -> str:
     """Unwrap a tool-call arg. agy stores them JSON-encoded (a quoted/escaped
     string inside the string), so one json.loads turns e.g. CommandLine into the
@@ -359,9 +338,8 @@ def _entry_to_watch_lines(entry: dict) -> list[tuple[str, str]]:
     the ACTUAL command it runs (from tool_calls), and a command-finished marker.
 
     Returns a list of (kind, text) where kind is 'narration' | 'command' |
-    'result'; the viewer maps kind to colour/symbol. Unlike _entry_to_progress
-    (one plain line, used for MCP notifications), this can yield two lines for one
-    planner step (its narration + the command) and surfaces the real command.
+    'result'; the viewer maps kind to colour/symbol. A single planner step can
+    yield two lines (its narration + the actual command it runs).
     """
     if entry.get("source") != "MODEL":
         return []
@@ -681,98 +659,6 @@ def _newest_new_conv(start: float, exclude: set[str]) -> Optional[str]:
     return best
 
 
-class _ProgressStream:
-    """Emits transcript steps for ONE conversation, each new step exactly once.
-
-    For a continued conversation the id is pinned up front and the cursor starts
-    past the existing history (so prior turns aren't replayed — the same problem
-    agy 1.0.9 fixed for stdout). For a new conversation the id is unknown at
-    launch, so the stream locks onto the first brain dir that appears after launch
-    and didn't pre-exist, and never switches away from it.
-    """
-
-    def __init__(
-        self,
-        pinned_conv: Optional[str],
-        start: float,
-        on_progress: Callable[[int, str], None],
-    ) -> None:
-        self._start = start
-        self._on_progress = on_progress
-        self._pre_existing = set() if pinned_conv else _existing_conv_names()
-        self._conv = pinned_conv
-        self._cursor = len(_transcript_entries(pinned_conv)) if pinned_conv else 0
-
-    def poll(self) -> None:
-        """Read the locked conversation and emit any steps past the cursor."""
-        if self._conv is None:
-            self._conv = _newest_new_conv(self._start, self._pre_existing)
-            if self._conv is None:
-                return
-            self._cursor = 0
-        entries = _transcript_entries(self._conv)
-        for idx, entry in enumerate(entries[self._cursor :], start=self._cursor):
-            msg = _entry_to_progress(entry)
-            if msg:
-                self._on_progress(idx + 1, msg)
-        self._cursor = max(self._cursor, len(entries))
-
-
-def _run_agy_streamed(
-    prompt: str,
-    workspace: str,
-    continue_conv: bool,
-    timeout_s: int,
-    on_progress: Callable[[int, str], None],
-) -> str:
-    """Like _run_agy, but spawn agy non-blocking and stream transcript progress.
-
-    EXPERIMENTAL. Polls the transcript while agy works and calls
-    `on_progress(step, message)` for each new model step. Progress is coarse —
-    agy flushes the transcript in chunks (see _PROGRESS_POLL_INTERVAL_S) — so
-    expect a handful of ticks per run, with an initial blind window, not
-    token-level streaming. The final answer is still read from the transcript
-    exactly as _run_agy does.
-    """
-    args, pinned_conv = _build_agy_args(prompt, workspace, continue_conv, timeout_s)
-
-    with _AGY_LOCK:
-        start = time.time()
-        stream = _ProgressStream(pinned_conv, start, on_progress)
-        log.debug("streaming agy: pinned=%s", pinned_conv)
-        proc = subprocess.Popen(
-            args,
-            cwd=workspace,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            **_spawn_kwargs(),  # keep agy's TTY writes out of the host terminal
-        )
-        hard_deadline = start + timeout_s + 30
-        while proc.poll() is None:
-            if time.time() > hard_deadline:
-                proc.kill()
-                raise RuntimeError(f"agy timed out after {timeout_s + 30}s (streaming)")
-            stream.poll()
-            time.sleep(_PROGRESS_POLL_INTERVAL_S)
-
-        # Drain any entries flushed between the last poll and exit.
-        stream.poll()
-        _, stderr = proc.communicate()
-        if proc.returncode != 0:
-            raise RuntimeError(f"agy exited {proc.returncode}\nstderr: {(stderr or '')[-1000:]}")
-
-        deadline = time.time() + _RESPONSE_POLL_DEADLINE_S
-        while True:
-            try:
-                return _resolve_and_read(pinned_conv, workspace, start)
-            except RuntimeError:
-                if time.time() >= deadline:
-                    raise
-                time.sleep(_RESPONSE_POLL_INTERVAL_S)
-
-
 # Live "watch" viewer state, served over a localhost HTTP server to a browser
 # page. One server + one shared state per bridge process (agy runs are serialized
 # by _AGY_LOCK, so only one run writes at a time). The browser polls /events.
@@ -830,7 +716,8 @@ def _watch_snapshot() -> dict:
 class _WatchFeed:
     """Locks onto this run's conversation and turns new transcript entries into
     rich step events (narration / command / result) appended to the shared watch
-    state. Mirrors _ProgressStream's lock-on, but emits the richer watch lines."""
+    state. For a new conversation it locks onto the first brain dir that appears
+    after launch and didn't pre-exist, and never switches away from it."""
 
     def __init__(self, pinned_conv: Optional[str], start: float) -> None:
         self._start = start
@@ -1388,49 +1275,6 @@ def antigravity_continue(prompt: str, workspace: Optional[str] = None, timeout_s
     """
     ws = _normalize_workspace(workspace)
     return _run_agy(prompt, ws, continue_conv=True, timeout_s=timeout_s)
-
-
-@mcp.tool()
-def antigravity_ask_stream(
-    prompt: str,
-    workspace: Optional[str] = None,
-    timeout_s: int = 180,
-    ctx: Context = None,
-) -> str:
-    """EXPERIMENTAL: like antigravity_ask, but stream agy's progress while it works.
-
-    Starts a NEW conversation and returns the same final text as antigravity_ask, but as
-    agy works it reports each intermediate step — its planner narration (the same
-    text that, pre-fix, leaked into the host terminal) and its tool runs — as MCP
-    progress notifications, read live from agy's transcript.
-
-    Progress is intentionally coarse: agy flushes its transcript in chunks, so
-    expect a few ticks per run with an initial blind window, not token-level
-    streaming. Whether you SEE the ticks depends on your MCP client surfacing
-    progress/log notifications; the final return value is identical to antigravity_ask.
-
-    Args:
-        prompt: Question or instruction for Antigravity.
-        workspace: Working directory for the conversation. Defaults to cwd.
-        timeout_s: Max seconds to wait for agy to complete. Default 180.
-    """
-    ws = _normalize_workspace(workspace)
-
-    def emit(step: int, message: str) -> None:
-        if ctx is None:
-            return
-        # Bridge from this worker thread into the event loop to fire the async
-        # notifications. Best-effort: a progress hiccup must never fail the call.
-        try:
-            anyio.from_thread.run(ctx.report_progress, float(step), None, message)
-        except Exception:  # noqa: BLE001 - progress is best-effort
-            pass
-        try:
-            anyio.from_thread.run(ctx.info, f"agy step {step}: {message}")
-        except Exception:  # noqa: BLE001 - progress is best-effort
-            pass
-
-    return _run_agy_streamed(prompt, ws, continue_conv=False, timeout_s=timeout_s, on_progress=emit)
 
 
 @mcp.tool()

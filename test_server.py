@@ -474,29 +474,8 @@ def test_run_agy_args_include_print_timeout_and_prompt(fake_agy, brain_dir, last
 
 
 # --------------------------------------------------------------------------
-# streaming: _entry_to_progress / _transcript_entries / _emit_new_progress
+# transcript reading: _transcript_entries
 # --------------------------------------------------------------------------
-
-
-def test_entry_to_progress_planner_first_line():
-    e = {"source": "MODEL", "type": "PLANNER_RESPONSE", "content": "narrate this\nand more"}
-    assert server._entry_to_progress(e) == "narrate this"
-
-
-def test_entry_to_progress_run_command_label():
-    e = {"source": "MODEL", "type": "RUN_COMMAND", "content": "Created At: ..."}
-    assert server._entry_to_progress(e) == "running a command…"
-
-
-def test_entry_to_progress_skips_user_and_system():
-    user = {"source": "USER_EXPLICIT", "type": "USER_INPUT", "content": "x"}
-    system = {"source": "SYSTEM", "type": "CONVERSATION_HISTORY"}
-    assert server._entry_to_progress(user) is None
-    assert server._entry_to_progress(system) is None
-
-
-def test_entry_to_progress_planner_without_content_is_none():
-    assert server._entry_to_progress({"source": "MODEL", "type": "PLANNER_RESPONSE"}) is None
 
 
 def test_transcript_entries_parses_and_skips_malformed(brain_dir):
@@ -555,59 +534,8 @@ def test_entry_to_watch_lines_run_command_marker_and_skips_non_model():
     assert server._entry_to_watch_lines(user) == []
 
 
-def test_progress_stream_pinned_skips_history_then_emits_fresh(brain_dir):
-    _write_transcript(
-        brain_dir,
-        "sc",
-        [_entry("PLANNER_RESPONSE", "history a"), _entry("PLANNER_RESPONSE", "history b")],
-    )
-    got = []
-    stream = server._ProgressStream("sc", time.time(), lambda s, m: got.append(m))
-    stream.poll()  # cursor starts past the two history entries
-    assert got == []
-    # a new entry lands for this turn (append to the existing transcript file)
-    transcript = brain_dir / "sc" / ".system_generated" / "logs" / "transcript.jsonl"
-    transcript.write_text(
-        "\n".join(
-            [
-                _entry("PLANNER_RESPONSE", "history a"),
-                _entry("PLANNER_RESPONSE", "history b"),
-                _entry("PLANNER_RESPONSE", "fresh"),
-            ]
-        ),
-        encoding="utf-8",
-    )
-    stream.poll()
-    assert got == ["fresh"]  # only the post-baseline entry, history not replayed
-
-
-def test_progress_stream_new_conv_locks_on_and_ignores_others(brain_dir):
-    # a prior conversation already exists before the stream starts
-    _write_transcript(brain_dir, "old", [_entry("PLANNER_RESPONSE", "OLD STEP")])
-    start = time.time()
-    got = []
-    stream = server._ProgressStream(None, start, lambda s, m: got.append(m))  # snapshots {"old"}
-    # this run's new conversation appears after launch
-    _write_transcript(
-        brain_dir,
-        "new",
-        [_entry("PLANNER_RESPONSE", "NEW STEP"), _entry("RUN_COMMAND", "Created At: ...")],
-    )
-    os.utime(brain_dir / "new", (start + 5, start + 5))
-    stream.poll()
-    assert got == ["NEW STEP", "running a command…"]  # locked to 'new', 'old' ignored
-
-
-def test_progress_stream_new_conv_emits_nothing_without_new_conv(brain_dir):
-    _write_transcript(brain_dir, "old", [_entry("PLANNER_RESPONSE", "OLD STEP")])
-    got = []
-    stream = server._ProgressStream(None, time.time(), lambda s, m: got.append(m))
-    stream.poll()
-    assert got == []  # no brand-new conversation -> nothing
-
-
 # --------------------------------------------------------------------------
-# streaming: _run_agy_streamed (subprocess.Popen mocked)
+# subprocess test double (shared by the watched-run tests)
 # --------------------------------------------------------------------------
 
 
@@ -627,70 +555,6 @@ class _FakePopen:
 
     def kill(self):
         self.returncode = -9
-
-
-def test_run_agy_streamed_emits_progress_and_returns(monkeypatch, brain_dir, last_conv_file):
-    last_conv_file.write_text(json.dumps({"C:\\ws": "sc"}), encoding="utf-8")
-
-    def create_transcript():
-        # agy "writes" the transcript mid-run; it must appear AFTER the stream
-        # snapshots existing convs, so it's seen as this run's new conversation.
-        _write_transcript(
-            brain_dir,
-            "sc",
-            [
-                _entry("PLANNER_RESPONSE", "step one narration"),
-                _entry("RUN_COMMAND", "Created At: ..."),
-                _entry("PLANNER_RESPONSE", "final answer"),
-            ],
-        )
-        os.utime(brain_dir / "sc", (time.time() + 5, time.time() + 5))
-
-    class _CreatingPopen:
-        def __init__(self, *a, **k):
-            self.returncode = 0
-            self._n = 2
-
-        def poll(self):
-            self._n -= 1
-            if self._n == 1:
-                create_transcript()  # appears during the run
-            return None if self._n > 0 else self.returncode
-
-        def communicate(self):
-            return ("", "")
-
-        def kill(self):
-            pass
-
-    monkeypatch.setattr(server.subprocess, "Popen", lambda *a, **k: _CreatingPopen())
-    monkeypatch.setattr(server.time, "sleep", lambda *a, **k: None)
-    monkeypatch.setattr(server, "_RESPONSE_POLL_DEADLINE_S", 0.0)
-
-    progress = []
-    out = server._run_agy_streamed(
-        "hi",
-        "C:\\ws",
-        continue_conv=False,
-        timeout_s=10,
-        on_progress=lambda step, msg: progress.append(msg),
-    )
-    assert out == "final answer"
-    assert "step one narration" in progress
-    assert "running a command…" in progress
-
-
-def test_run_agy_streamed_nonzero_exit_raises(monkeypatch, brain_dir, last_conv_file):
-    last_conv_file.write_text(json.dumps({"C:\\ws": "sc"}), encoding="utf-8")
-    _write_transcript(brain_dir, "sc", [_entry("PLANNER_RESPONSE", "x")])
-    monkeypatch.setattr(
-        server.subprocess, "Popen", lambda *a, **k: _FakePopen(polls=0, returncode=1)
-    )
-    monkeypatch.setattr(server.time, "sleep", lambda *a, **k: None)
-    with pytest.raises(RuntimeError, match="agy exited 1"):
-        server._run_agy_streamed(
-            "hi", "C:\\ws", continue_conv=False, timeout_s=10, on_progress=lambda s, m: None
-        )
 
 
 # --------------------------------------------------------------------------
