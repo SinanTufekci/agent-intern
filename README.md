@@ -11,6 +11,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![MCP server](https://img.shields.io/badge/MCP-server-7c3aed)](https://modelcontextprotocol.io/)
+[![Glama](https://glama.ai/mcp/servers/SinanTufekci/antigravity-intern/badges/score.svg)](https://glama.ai/mcp/servers/SinanTufekci/antigravity-intern)
 [![agy 1.0.10 verified](https://img.shields.io/badge/agy-1.0.10%20verified-2ea44f)](https://antigravity.google/)
 [![platform](https://img.shields.io/badge/platform-Windows%20·%20macOS%20·%20Linux-lightgrey)](#requirements)
 [![Sponsor](https://img.shields.io/github/sponsors/SinanTufekci?logo=githubsponsors&label=Sponsor&color=ea4aaa)](https://github.com/sponsors/SinanTufekci)
