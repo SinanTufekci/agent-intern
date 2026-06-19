@@ -179,6 +179,20 @@ its planner narration (▸), the **real commands** it runs (`$`), and completion
 read live from the transcript, with the final answer rendered as Markdown (and, for
 `antigravity_image` with `watch=true`, the generated image shown inline).
 
+<div align="center">
+<table>
+<tr>
+<td width="50%" align="center"><b><code>antigravity_ask</code> / <code>antigravity_continue</code></b></td>
+<td width="50%" align="center"><b><code>antigravity_image</code> — image inline</b></td>
+</tr>
+<tr>
+<td><img src="assets/watch-ask.gif" width="100%" alt="Antigravity Intern watch window streaming agy's steps for a text ask — narration, the real commands it runs, completions — then rendering the final Markdown answer"></td>
+<td><img src="assets/watch-image.gif" width="100%" alt="Antigravity Intern watch window streaming an image generation and rendering the finished image inline"></td>
+</tr>
+</table>
+<sub>Real captures — agy runs headless while the <b>Antigravity Intern</b> window live-streams its steps (▸ narration · <code>$</code> commands · ✓ completions), then shows the final answer or image.</sub>
+</div>
+
 - **Cross-platform & best-effort.** Prefers a Chromium browser (`--app` mode) for the
   windowed look; falls back to a normal browser window. If nothing can open, the run
   still completes and returns normally.
@@ -216,6 +230,12 @@ antigravity_swarm(prompts=[
   "List the public functions in src/api.py.",
 ])
 ```
+
+<div align="center">
+<img src="assets/watch-swarm.gif" width="62%" alt="Antigravity Swarm dashboard: three agy workers running in parallel, each row showing its repo, prompt, latest step and a per-worker time bar, while the overall done/total counter climbs 0/3 → 2/3 → 3/3">
+<br>
+<sub><code>antigravity_swarm(..., watch=true)</code> — one row per worker; the done/total bar climbs as workers finish. Click a row (or <b>↑/↓</b> then <b>↵</b>) to pop that agent into its own window.</sub>
+</div>
 
 **How it stays correct under concurrency.** The single-agent tools serialize
 through a lock because agy rewrites `last_conversations.json` on every call, so
