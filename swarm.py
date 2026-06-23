@@ -292,30 +292,6 @@ def _run_text_worker_watched(index, prompt, workspace, timeout_s) -> WorkerResul
         shutil.rmtree(home, ignore_errors=True)
 
 
-def swarm_ask(
-    prompts: list[str],
-    workspaces: Union[None, str, list] = None,
-    max_concurrency: int = DEFAULT_MAX_CONCURRENCY,
-    timeout_s: int = 180,
-    watch: bool = False,
-) -> list[WorkerResult]:
-    """Run N text prompts as parallel agy workers; results aligned to prompts."""
-    ws = _normalize_workspaces(len(prompts), workspaces)
-    runner = _run_text_worker_watched if watch else _run_text_worker
-    if watch:
-        import swarm_watch
-
-        swarm_watch.init(_labels(prompts), _repos(ws), time.time(), prompts, timeout_s)
-        swarm_watch.open_window(len(prompts))
-    results: list[Optional[WorkerResult]] = [None] * len(prompts)
-    with ThreadPoolExecutor(max_workers=max(1, max_concurrency)) as ex:
-        futs = [ex.submit(runner, i, p, ws[i], timeout_s) for i, p in enumerate(prompts)]
-        for fut in futs:
-            r = fut.result()
-            results[r.index] = r
-    return [r for r in results if r is not None]
-
-
 # ----------------------------------------------------------------------------- image swarm
 def _finalize_image_isolated(home: Path, target: str, agy_text: Optional[str], start: float):
     """Locate the generated image (target / agy-reported path / isolated scratch),
@@ -491,19 +467,6 @@ def swarm_image(
 
 
 # ----------------------------------------------------------------------------- formatting
-def format_text_results(results: list[WorkerResult]) -> str:
-    """Render text-swarm results as one readable block for the MCP host."""
-    parts = []
-    for r in sorted(results, key=lambda r: r.index):
-        head = f"[worker {r.index}] {'OK' if r.ok else 'ERROR'} ({r.elapsed}s)"
-        if r.workspace:
-            head += f" @ {_basename_any(r.workspace)}"
-        body = r.answer if r.ok else f"(failed) {r.error}"
-        parts.append(f"{head}\n{body}")
-    ok = sum(1 for r in results if r.ok)
-    return f"swarm: {ok}/{len(results)} succeeded\n\n" + "\n\n".join(parts)
-
-
 def format_image_results(results: list[WorkerResult]) -> str:
     """Render image-swarm results as one readable block for the MCP host."""
     parts = []

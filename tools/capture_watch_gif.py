@@ -225,14 +225,30 @@ def mode_image(out_path: str) -> None:
 def mode_swarm(out_path: str) -> None:
     ws = _make_workspace()
     port = swarm_watch.ensure_server()
-    prompts = [
-        "Read README.md and summarize this project in one sentence.",
-        "Read pyproject.toml and list this package's name and version.",
-        "Read CHANGELOG.md and name the latest released version in one line.",
+    # A mixed swarm — Antigravity + Codex workers side by side — to show
+    # agent_swarm's per-worker backend badges. Needs both `agy` and `codex` logged in.
+    tasks = [
+        {
+            "backend": "antigravity",
+            "prompt": "Read README.md and summarize this project in one sentence.",
+            "workspace": ws,
+        },
+        {
+            "backend": "codex",
+            "prompt": "Read pyproject.toml and list this package's name and version.",
+            "workspace": ws,
+        },
+        {
+            "backend": "antigravity",
+            "prompt": "Read CHANGELOG.md and name the latest released version in one line.",
+            "workspace": ws,
+        },
     ]
 
     def start_run():
-        return _run_thread(lambda: swarm.swarm_ask(prompts, ws, 3, 150, watch=True))
+        return _run_thread(
+            lambda: swarm.swarm_agents(tasks, max_concurrency=3, timeout_s=150, watch=True)
+        )
 
     frames = _capture(port, (440, 640), start_run, "swarm")
     _build_gif(frames, out_path, "swarm")

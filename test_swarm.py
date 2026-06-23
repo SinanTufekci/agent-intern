@@ -152,18 +152,6 @@ def test_finalize_image_missing_raises(tmp_path):
 # --------------------------------------------------------------------------
 
 
-def test_format_text_results_orders_and_marks():
-    results = [
-        swarm.WorkerResult(1, False, error="boom", elapsed=0.0, workspace="C:\\x\\repo"),
-        swarm.WorkerResult(0, True, answer="hello", elapsed=1.2, workspace="C:\\x\\repo"),
-    ]
-    out = swarm.format_text_results(results)
-    assert "1/2 succeeded" in out
-    assert out.index("[worker 0]") < out.index("[worker 1]")  # sorted by index
-    assert "hello" in out and "boom" in out
-    assert "@ repo" in out
-
-
 def test_format_image_results():
     results = [
         swarm.WorkerResult(
