@@ -38,7 +38,7 @@ without leaving your terminal.
 
 > [!NOTE]
 > **Now with OpenAI Codex too.** The same bridge exposes `codex_ask` / `codex_continue` /
-> `codex_ask_watch` / `codex_swarm` / `codex_status`, driving OpenAI's `codex exec` on your existing
+> `codex_swarm` / `codex_status` (the single-prompt tools take a `watch=true` flag), driving OpenAI's `codex exec` on your existing
 > Codex login. Codex is the *well-behaved* sibling: it writes its answer straight to a file the bridge
 > requests (no transcript-scraping), supports model selection, and has a **real** sandbox. See
 > [Codex bridge](#codex-bridge).
@@ -148,7 +148,7 @@ Then point Claude Code at the absolute path to `server.py` under `mcpServers` in
 </td></tr>
 </table>
 
-Restart Claude Code. **Eleven tools** appear — six for Antigravity (**`antigravity_ask`**, **`antigravity_continue`**, **`antigravity_image`**, **`antigravity_swarm`**, **`antigravity_image_swarm`**, **`antigravity_status`**) and five for Codex (**`codex_ask`**, **`codex_continue`**, **`codex_ask_watch`**, **`codex_swarm`**, **`codex_status`**) — each prefixed `mcp__agent-intern__`. The single-prompt Antigravity tools take a **`watch=true`** flag for the live browser view; Codex has a dedicated **`codex_ask_watch`**.
+Restart Claude Code. **Ten tools** appear — six for Antigravity (**`antigravity_ask`**, **`antigravity_continue`**, **`antigravity_image`**, **`antigravity_swarm`**, **`antigravity_image_swarm`**, **`antigravity_status`**) and four for Codex (**`codex_ask`**, **`codex_continue`**, **`codex_swarm`**, **`codex_status`**) — each prefixed `mcp__agent-intern__`. The single-prompt tools — Antigravity **and** Codex — take a **`watch=true`** flag for the live browser view.
 
 > *"Use antigravity_ask to summarize the README of this repo in three bullets."* → Claude routes the prompt
 > through the bridge, agy reads the file under the workspace root, and the answer comes back as a
@@ -188,9 +188,8 @@ with `codex exec resume <id>`.
 
 | Tool | Purpose |
 |---|---|
-| `codex_ask(prompt, workspace?, sandbox?="read-only", model?, timeout_s?=180)` | Start a **new** Codex session. `sandbox` is a **real** boundary (see below); `model` selects the model (`-m`). |
-| `codex_continue(prompt, workspace?, timeout_s?=180)` | Continue the Codex session **rooted at `workspace`** — resumes the exact session id, falling back to the newest on-disk session for that cwd after a server restart. |
-| `codex_ask_watch(prompt, workspace?, sandbox?, model?, timeout_s?=180)` | Like `codex_ask`, but open the live browser view, streaming codex's steps from its `--json` event stream (same viewer as the Antigravity watch — see [Watch mode](#watch-mode)). |
+| `codex_ask(prompt, workspace?, sandbox?="read-only", model?, timeout_s?=180, watch?=false)` | Start a **new** Codex session. `sandbox` is a **real** boundary (see below); `model` selects the model (`-m`). `watch=true` opens the live browser view, streaming codex's steps from its `--json` event stream (same viewer as the Antigravity watch — see [Watch mode](#watch-mode)). |
+| `codex_continue(prompt, workspace?, timeout_s?=180, watch?=false)` | Continue the Codex session **rooted at `workspace`** — resumes the exact session id, falling back to the newest on-disk session for that cwd after a server restart. `watch=true` opens the live view. |
 | `codex_swarm(prompts, workspaces?, sandbox?, model?, max_concurrency?=4, timeout_s?=180)` | Run **several Codex prompts in parallel** as independent one-shot workers; every result in one block. |
 | `codex_status()` | Setup diagnostics: codex version, login status (`codex login status`), sessions dir. Spends no quota. |
 

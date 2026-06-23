@@ -1763,6 +1763,7 @@ async def codex_ask(
     sandbox: str = codex_bridge.DEFAULT_SANDBOX,
     model: Optional[str] = None,
     timeout_s: int = 180,
+    watch: bool = False,
     ctx: Optional[Context] = None,
 ) -> str:
     """Ask OpenAI Codex (`codex exec`) a question or task in a NEW session.
@@ -1783,9 +1784,18 @@ async def codex_ask(
                  boundary; opt into write access deliberately.
         model: Optional model override (`-m`); omit to use codex's configured default.
         timeout_s: Max seconds to wait for codex to complete. Default 180.
+        watch: If true, open a live "watch" view in your browser that streams
+               codex's steps (reasoning, the commands it runs, file changes) from
+               its `--json` event stream. codex still runs headless; the same final
+               text is returned. Best-effort — if the browser can't open, the run
+               completes normally. Default false.
     """
     ws = codex_bridge.normalize_workspace(workspace)
     codex_bridge.validate_sandbox(sandbox)  # fail fast with a clear message
+    if watch:
+        return await asyncio.to_thread(
+            _run_codex_watched, prompt, ws, sandbox, model, False, timeout_s
+        )
     return await _run_with_progress(
         codex_bridge.run_codex,
         (prompt, ws, sandbox, model, False, timeout_s),
@@ -1807,6 +1817,7 @@ async def codex_continue(
     prompt: str,
     workspace: Optional[str] = None,
     timeout_s: int = 180,
+    watch: bool = False,
     ctx: Optional[Context] = None,
 ) -> str:
     """Continue the Codex session rooted at this workspace (`codex exec resume`).
@@ -1821,8 +1832,20 @@ async def codex_continue(
         prompt: Follow-up message for the existing session.
         workspace: Working root used by the prior session. Defaults to the server cwd.
         timeout_s: Max seconds to wait for codex to complete. Default 180.
+        watch: If true, open the live "watch" view streaming codex's steps as it
+               works (same viewer as codex_ask). Default false.
     """
     ws = codex_bridge.normalize_workspace(workspace)
+    if watch:
+        return await asyncio.to_thread(
+            _run_codex_watched,
+            prompt,
+            ws,
+            codex_bridge.DEFAULT_SANDBOX,
+            None,
+            True,
+            timeout_s,
+        )
     return await _run_with_progress(
         codex_bridge.run_codex,
         (prompt, ws, codex_bridge.DEFAULT_SANDBOX, None, True, timeout_s),
@@ -1927,42 +1950,6 @@ def _run_codex_watched(
         raise
     _watch_finish("done", answer, time.time() - start)
     return answer
-
-
-@mcp.tool(
-    annotations={
-        "title": "Ask Codex (live browser watch)",
-        "readOnlyHint": False,
-        "idempotentHint": False,
-        "openWorldHint": True,
-    }
-)
-def codex_ask_watch(
-    prompt: str,
-    workspace: Optional[str] = None,
-    sandbox: str = codex_bridge.DEFAULT_SANDBOX,
-    model: Optional[str] = None,
-    timeout_s: int = 180,
-) -> str:
-    """EXPERIMENTAL: like codex_ask, but open a live "watch" window in your browser.
-
-    Starts a NEW codex session and returns the same final text as codex_ask. codex
-    runs headless; alongside it the bridge serves a small localhost page and opens
-    your browser to it, live-streaming codex's steps (reasoning, the commands it
-    runs, file changes) read from codex's own --json event stream. Same viewer as
-    the agy watch tools. Best-effort and cross-platform: if the browser can't open,
-    the run still completes normally.
-
-    Args:
-        prompt: Question or instruction for Codex.
-        workspace: Working root for the session. Defaults to the server cwd.
-        sandbox: Filesystem policy (read-only default; see codex_ask for the options).
-        model: Optional model override (`-m`); omit for codex's configured default.
-        timeout_s: Max seconds to wait for codex to complete. Default 180.
-    """
-    ws = codex_bridge.normalize_workspace(workspace)
-    codex_bridge.validate_sandbox(sandbox)
-    return _run_codex_watched(prompt, ws, sandbox, model, False, timeout_s)
 
 
 @mcp.tool(

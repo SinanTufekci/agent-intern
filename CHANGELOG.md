@@ -10,6 +10,14 @@ summary.
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING:** folded Codex's live watch view into a `watch=true` flag on `codex_ask` and
+  `codex_continue` (and **removed the separate `codex_ask_watch` tool**), matching how the
+  Antigravity tools have worked since v0.11.0. `codex_continue` gains watch mode (it had none
+  before). Codex tool count drops 5 → 4; total 11 → 10. Update any client that called
+  `codex_ask_watch` to pass `watch=true` to `codex_ask` instead.
+
 ## [0.13.0] - 2026-06-23
 
 ### Added
