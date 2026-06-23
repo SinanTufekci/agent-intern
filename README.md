@@ -477,12 +477,12 @@ those platforms, please open an issue / PR to confirm.
 
 ```bash
 pip install -e ".[dev]"          # fastmcp + pytest + ruff
-pytest test_server.py test_swarm.py   # offline unit tests — no agy, no quota
+pytest test_server.py test_swarm.py test_codex.py   # offline unit tests — no agy/codex, no quota
 ruff check . && ruff format --check .
 ```
 
-`test_server.py` and `test_swarm.py` cover the pure parsing/version/swarm logic with temp fixtures
-(no agy needed); `test_smoke.py` is the live end-to-end check (ask, continue, image, and a parallel
+`test_server.py`, `test_swarm.py`, and `test_codex.py` cover the pure parsing/version/swarm/Codex
+logic with temp fixtures (no agy or codex needed); `test_smoke.py` is the live end-to-end check (ask, continue, image, and a parallel
 swarm) that spends a little quota. Set **`AGY_BRIDGE_DEBUG=1`**
 to log per-call diagnostics (resolved conversation id, agy exit code, elapsed) to stderr — and on
 startup the server warns if your installed agy is newer than the version it was verified against.
