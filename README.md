@@ -118,7 +118,7 @@ Clone it instead if you want to hack on the bridge or pin a local copy:
 git clone https://github.com/SinanTufekci/agent-intern.git
 cd agent-intern
 pip install fastmcp
-python test_smoke.py        # 3 real round-trips (ask, continue, image) — should print three PASS lines
+python test_smoke.py        # 4 real round-trips (ask, continue, image, swarm) — prints four PASS lines
 ```
 
 > [!NOTE]
@@ -349,8 +349,8 @@ empirically on **agy 1.0.9 / Windows** (all three checks below still hold):
   1.0.9 hardened the sandbox's *command* path (stricter exact-match command checks; `.git` added to
   its dangerous-paths list), but none of that closes the out-of-workspace `write_to_file` hole. On
   top of that, a `--sandbox` run whose blocked terminal command halts it writes **no JSONL
-  transcript** (only the SQLite `.db`, re-confirmed on 1.0.9), so the bridge couldn't read a
-  response — so the bridge deliberately never passes `--sandbox`.
+  transcript** (only the SQLite `.db`, re-confirmed on 1.0.9). The bridge can now read that `.db`,
+  but still never passes `--sandbox` — it's no boundary, with file writes and network left open.
 
 **What that means for you:**
 
@@ -460,9 +460,9 @@ workers). That's the supported way to run many calls at once, across either back
 - 👁️ **Watch mode is experimental** — pass `watch=true` to `antigravity_ask` / `antigravity_continue` /
   `antigravity_image` to open the **Agent Intern** browser window and watch agy work live (coarse
   steps; image shown inline). Best-effort and cross-platform; see [Watch mode](#watch-mode).
-- 🔒 **No real sandbox** — agy's `--sandbox` (since 1.0.6) blocks only shell commands in `-p` but still
-  leaves file writes and network egress open (and breaks transcript reading), so it's no boundary;
-  see [Security](#security).
+- 🔒 **No real sandbox** — agy's `--sandbox` (since 1.0.6) blocks only shell commands in `-p`; file
+  writes and network egress stay open, so it's no boundary. The bridge never passes it; see
+  [Security](#security).
 
 ## Requirements
 
