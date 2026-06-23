@@ -69,7 +69,7 @@
       84%, 90%, 96% { transform: translate(400px, 180px) scale(1.5) translateY(-8px); }
       87%, 93%, 98% { transform: translate(400px, 180px) scale(1.5) translateY(0px); }
     }
-    .claude-crab-group {
+    .claude-body-group {
       animation: claude-body-anim 15s ease-in-out infinite;
     }
 
@@ -86,7 +86,7 @@
       86%, 92%, 98% { transform: rotate(-5deg); }
     }
     .claude-left-arm {
-      transform-origin: -40px 4px;
+      transform-origin: -30px -13px;
       animation: claude-left-arm 15s ease-in-out infinite;
     }
 
@@ -102,7 +102,7 @@
       86%, 92%, 98% { transform: rotate(5deg); }
     }
     .claude-right-arm {
-      transform-origin: 40px 4px;
+      transform-origin: 30px -13px;
       animation: claude-right-arm 15s ease-in-out infinite;
     }
 
@@ -134,6 +134,19 @@
       transform-origin: center;
       animation: eye-blink 4s ease-in-out infinite;
     }
+
+    /* Expression swap: solid squares normally, happy "∧∧" carets only while celebrating */
+    @keyframes claude-eyes-normal {
+      0%, 82.5%, 96.5%, 100% { opacity: 1; }
+      83%, 96% { opacity: 0; }
+    }
+    .eye-normal { animation: claude-eyes-normal 15s ease-in-out infinite; }
+
+    @keyframes claude-eyes-happy {
+      0%, 82.5%, 96.5%, 100% { opacity: 0; }
+      83%, 96% { opacity: 1; }
+    }
+    .eye-happy { animation: claude-eyes-happy 15s ease-in-out infinite; }
 
     /* Blinking indicator dot */
     @keyframes blink-rec {
@@ -465,9 +478,6 @@
   <circle cx="680" cy="250" r="70" fill="#38bdf8" opacity="0.03" />
   <circle cx="120" cy="250" r="70" fill="#38bdf8" opacity="0.03" />
 
-  <!-- Static Faint Hologram Guideline under Claude -->
-  <ellipse cx="400" cy="208" rx="42" ry="10" fill="none" stroke="#ff7a59" stroke-width="1" stroke-dasharray="6 4" opacity="0.2" />
-
   <!-- ==================== GRACEFUL CURVED CONNECTING ARCS ==================== -->
   <g>
     <!-- Background Faint Lines -->
@@ -502,30 +512,50 @@
   </g>
 
 
-  <!-- ==================== CLAUDE CRAB (CENTER) ==================== -->
-  <g class="claude-crab-group">
-    <!-- Legs (Spacings match official logo) -->
-    <rect x="-32" y="16" width="8" height="16" fill="#d97757" />
-    <rect x="-16" y="16" width="8" height="16" fill="#d97757" />
-    <rect x="8" y="16" width="8" height="16" fill="#d97757" />
-    <rect x="24" y="16" width="8" height="16" fill="#d97757" />
+  <!-- ==================== CLAUDE (CENTER) ==================== -->
+  <!-- Front-facing build of the official claude.ai pixel mascot, traced from the
+       neutral reference: compact ~5:4 body, lightly chamfered top, side-arm
+       bumps, 2+2 stub legs, and solid-square eyes that become happy "∧∧" carets
+       only while celebrating. cell = 2.5u on a 30x24 grid, figure centered on 0. -->
+  <g class="claude-body-group">
+    <!-- Legs (2 + 2 with a wide center gap, exactly like the reference) -->
+    <rect x="-30"  y="15" width="7.5" height="15" fill="#d97757" />
+    <rect x="-15"  y="15" width="7.5" height="15" fill="#d97757" />
+    <rect x="7.5"  y="15" width="7.5" height="15" fill="#d97757" />
+    <rect x="22.5" y="15" width="7.5" height="15" fill="#d97757" />
 
-    <!-- Ears (top corners, like the reference) -->
-    <rect x="-40" y="-32" width="16" height="8" fill="#d97757" />
-    <rect x="24" y="-32" width="16" height="8" fill="#d97757" />
+    <!-- Body (compact block, lightly chamfered top corners) -->
+    <path d="M -30 15 L -30 -27.5 L -27.5 -30 L 27.5 -30 L 30 -27.5 L 30 15 Z" fill="#d97757" />
 
-    <!-- Main Body (Official 10x5 pixel block) -->
-    <rect x="-40" y="-24" width="80" height="40" fill="#d97757" />
-
-    <!-- Eyes (solid black squares, like the reference) -->
-    <g class="eye-group">
-      <rect x="-22" y="-14" width="9" height="12" fill="#07090e" />
-      <rect x="13" y="-14" width="9" height="12" fill="#07090e" />
+    <!-- Arms (side bumps that complete the silhouette at rest; wave on dispatch) -->
+    <g class="claude-left-arm">
+      <rect x="-37.5" y="-15" width="7.5" height="15" fill="#d97757" />
+    </g>
+    <g class="claude-right-arm">
+      <rect x="30" y="-15" width="7.5" height="15" fill="#d97757" />
     </g>
 
-    <!-- Happy Blush Pixels (visible during celebration success) -->
-    <rect x="-32" y="0" width="8" height="8" fill="#ff8da1" class="claude-blush" />
-    <rect x="24" y="0" width="8" height="8" fill="#ff8da1" class="claude-blush" />
+    <!-- Eyes: solid squares by default; swap to happy "∧∧" carets while celebrating -->
+    <g class="eye-cutout">
+      <g class="eye-group">
+        <!-- normal expression: solid squares -->
+        <g class="eye-normal">
+          <rect x="-22.5" y="-22.5" width="7.5" height="7.5" fill="#07090e" />
+          <rect x="15"    y="-22.5" width="7.5" height="7.5" fill="#07090e" />
+        </g>
+        <!-- happy expression: smooth "∧" chevrons (rounded joins, a touch bigger) -->
+        <g class="eye-happy">
+          <path d="M -23.25 -15.5 L -18.75 -22 L -14.25 -15.5" fill="none"
+                stroke="#07090e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M 14.25 -15.5 L 18.75 -22 L 23.25 -15.5" fill="none"
+                stroke="#07090e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+        </g>
+      </g>
+    </g>
+
+    <!-- Happy blush (celebration only) -->
+    <rect x="-27"  y="-9" width="7.5" height="6" fill="#ff8da1" class="claude-blush" />
+    <rect x="19.5" y="-9" width="7.5" height="6" fill="#ff8da1" class="claude-blush" />
   </g>
 
 
