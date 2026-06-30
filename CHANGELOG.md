@@ -10,6 +10,27 @@ summary.
 
 ## [Unreleased]
 
+## [0.15.3] - 2026-06-30
+
+### Changed
+
+- **Verified against agy 1.0.14.** Bumped `VERIFIED_AGY_VERSION` to `(1, 0, 14)`, silencing the
+  startup compat warning and the status tool's "newer than verified" row. Confirmed with a live
+  round-trip (`antigravity_status` green on every row; ask round-trip returns clean text): state-file
+  paths, `last_conversations.json` (still keyed by workspace path), and the transcript schema (JSONL
+  still primary, SQLite fallback intact) are unchanged across 1.0.13 **and** 1.0.14. Both releases are
+  interactive-TUI / plugin / skill / browser-task work plus permission-rule tweaks — clipboard image
+  paste in tmux, the lifted `/goal` max limit, subagent "always proceeds" artifact approval, the
+  plugin-import directory-copy fix, TUI layout/viewport/rewind fixes, skill slash-prefix rendering,
+  the prompt-editor undo/redo fix, the restored browser prompt sections, and the permission changes
+  (strict-by-default "Always Approve" matching, a `regex:` opt-in, relaxed redirection checks) — none
+  of which the headless `agy -p` path uses. Two items looked worth a closer check and both come up
+  clean: 1.0.14's "MCP configuration path mismatch" fix is about agy loading custom MCP servers *as a
+  client* (the opposite direction from this bridge, which drives agy via its CLI), and 1.0.13's
+  removed "Resume in the same project" exit-hint line never mattered because the bridge reads the
+  transcript, not agy's stdout (stdout is surfaced only on a non-zero exit). Permissions still do not
+  gate `-p`, so the security posture is unchanged.
+
 ## [0.15.2] - 2026-06-25
 
 ### Changed
