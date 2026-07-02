@@ -489,6 +489,9 @@ _BACKEND_ALIASES = {
     "gemini": "antigravity",
     "codex": "codex",
     "openai": "codex",
+    "copilot": "copilot",
+    "github": "copilot",
+    "gh": "copilot",
 }
 
 
@@ -496,8 +499,8 @@ def _normalize_tasks(tasks) -> list[dict]:
     """Validate + canonicalize agent_swarm tasks into a uniform list.
 
     Each task is {backend, prompt, workspace?, sandbox?, model?}. backend accepts a
-    few aliases; sandbox/model are Codex-only (dropped for Antigravity). Raises
-    ValueError naming the offending index on bad input.
+    few aliases; sandbox/model apply to Codex and Copilot (dropped for
+    Antigravity). Raises ValueError naming the offending index on bad input.
     """
     if not isinstance(tasks, list):
         raise ValueError("tasks must be a list of {backend, prompt, ...} objects")
@@ -508,7 +511,8 @@ def _normalize_tasks(tasks) -> list[dict]:
         backend = _BACKEND_ALIASES.get(str(t.get("backend", "")).strip().lower())
         if backend is None:
             raise ValueError(
-                f"task {i}: backend must be 'antigravity' or 'codex' (got {t.get('backend')!r})"
+                f"task {i}: backend must be 'antigravity', 'codex', or 'copilot' "
+                f"(got {t.get('backend')!r})"
             )
         prompt = t.get("prompt")
         if not prompt or not str(prompt).strip():
@@ -522,6 +526,12 @@ def _normalize_tasks(tasks) -> list[dict]:
 
             sandbox = t.get("sandbox") or codex_bridge.DEFAULT_SANDBOX
             codex_bridge.validate_sandbox(sandbox)  # fail fast on a bad policy
+            model = t.get("model") or None
+        elif backend == "copilot":
+            import copilot_bridge
+
+            sandbox = t.get("sandbox") or copilot_bridge.DEFAULT_SANDBOX
+            copilot_bridge.validate_sandbox(sandbox)  # fail fast on a bad policy
             model = t.get("model") or None
         out.append(
             {
@@ -601,6 +611,76 @@ def _run_codex_worker_watched(index, prompt, workspace, sandbox, model, timeout_
         )
 
 
+def _run_copilot_worker(index, prompt, workspace, sandbox, model, timeout_s) -> WorkerResult:
+    import copilot_bridge
+
+    start = time.time()
+    try:
+        os.makedirs(workspace, exist_ok=True)
+        ans = copilot_bridge.run_copilot(
+            prompt, workspace, sandbox, model, False, timeout_s, pin=False
+        )
+        return WorkerResult(
+            index,
+            True,
+            answer=ans,
+            elapsed=round(time.time() - start, 1),
+            workspace=workspace,
+            backend="copilot",
+        )
+    except Exception as e:  # noqa: BLE001 — error isolation: one worker must not sink the swarm
+        return WorkerResult(
+            index,
+            False,
+            error=str(e),
+            elapsed=round(time.time() - start, 1),
+            workspace=workspace,
+            backend="copilot",
+        )
+
+
+def _run_copilot_worker_watched(
+    index, prompt, workspace, sandbox, model, timeout_s
+) -> WorkerResult:
+    import copilot_bridge
+    import server
+    import swarm_watch
+
+    start = time.time()
+    swarm_watch.worker_update(index, status="working", started=start)
+
+    def on_event(ev: dict) -> None:
+        lines = server._copilot_event_to_watch_lines(ev)
+        if lines:
+            t = round(time.time() - start, 1)
+            swarm_watch.worker_append(index, [{"kind": k, "text": x, "t": t} for k, x in lines])
+
+    try:
+        os.makedirs(workspace, exist_ok=True)
+        ans = copilot_bridge.run_copilot_streaming(
+            prompt, workspace, sandbox, model, False, timeout_s, on_event, pin=False
+        )
+        swarm_watch.worker_finish(index, "done", ans, time.time() - start)
+        return WorkerResult(
+            index,
+            True,
+            answer=ans,
+            elapsed=round(time.time() - start, 1),
+            workspace=workspace,
+            backend="copilot",
+        )
+    except Exception as e:  # noqa: BLE001
+        swarm_watch.worker_finish(index, "error", str(e), time.time() - start)
+        return WorkerResult(
+            index,
+            False,
+            error=str(e),
+            elapsed=round(time.time() - start, 1),
+            workspace=workspace,
+            backend="copilot",
+        )
+
+
 def swarm_agents(
     tasks,
     max_concurrency: int = DEFAULT_MAX_CONCURRENCY,
@@ -629,6 +709,9 @@ def swarm_agents(
         t = norm[i]
         if t["backend"] == "codex":
             fn = _run_codex_worker_watched if watch else _run_codex_worker
+            return fn(i, t["prompt"], t["workspace"], t["sandbox"], t["model"], timeout_s)
+        if t["backend"] == "copilot":
+            fn = _run_copilot_worker_watched if watch else _run_copilot_worker
             return fn(i, t["prompt"], t["workspace"], t["sandbox"], t["model"], timeout_s)
         fn = _run_text_worker_watched if watch else _run_text_worker
         return fn(i, t["prompt"], t["workspace"], timeout_s)

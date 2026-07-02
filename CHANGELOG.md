@@ -10,6 +10,44 @@ summary.
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-07-02
+
+### Added
+
+- **Third backend: the GitHub Copilot CLI (`copilot`).** Three new MCP tools —
+  `copilot_ask`, `copilot_continue`, `copilot_status` — plus a `copilot` backend for `agent_swarm`
+  (aliases `gh`/`github`) and full watch-mode support. Like Codex it's stdout-native: `copilot -p
+  "…" -s` writes the clean answer straight to stdout (no scraping). Highlights, verified live against
+  **copilot 1.0.68**:
+  - **Deterministic, race-free continue.** `copilot`'s `--session-id <uuid>` both *sets* a new
+    session's id and *resumes* an existing one, so the bridge generates the id itself, pins it to the
+    workspace, and resumes that exact session — no rollout-scraping. Restart-proof fallback reads the
+    newest `~/.copilot/session-state/<id>/workspace.yaml` whose `cwd` matches the workspace.
+  - **Model selection** via `--model` (a first-class knob, like Codex's `-m`).
+  - **`sandbox` knob** mapped to copilot's tool/path permissions for a uniform cross-backend field:
+    `read-only` (default — best-effort: denies the local `write`/`shell` tools; **not** an OS
+    sandbox, so unlike Codex it isn't a hard boundary), `workspace-write` (writes confined to the
+    workspace), `danger-full-access` (`--allow-all`).
+  - **Fast, predictable latency.** Runs headless with `--allow-all-tools --no-ask-user
+    --no-auto-update`, and disables copilot's builtin GitHub-API MCP by default
+    (`--disable-builtin-mcps`) because its flaky HTTP connect could stall a call up to ~60 s. Set
+    `COPILOT_GITHUB_MCP=1` to keep it. `COPILOT_BIN` overrides the executable path (mirrors
+    `AGY_BIN`/`CODEX_BIN`), useful since the winget install may be off a stale `PATH`.
+
+### Changed
+
+- **Verified against agy 1.0.15 — and now prefers agy's stdout.** agy 1.0.15 fixes the long-standing
+  print-mode stdout bug on Windows: `agy -p` now writes its clean final answer straight to stdout in
+  a non-TTY subprocess (verified empirically — stdout carries only the answer, no tool-calling
+  narration). `_run_agy` now **prefers stdout when present** and falls back to the transcript/`.db`
+  scrape only when it's empty (older agy, non-Windows per the changelog, or `--sandbox` runs). This
+  removes the bridge's dependence on agy's *undocumented transcript schema* on the happy path — its
+  single biggest fragility — and drops the flush-poll latency. Fully backward-compatible: the
+  transcript path stays exercised everywhere stdout is empty. Bumped `VERIFIED_AGY_VERSION` to
+  `(1, 0, 15)`. The other 1.0.15 changes don't touch this bridge (the "MCP connection timeout → 60 s"
+  is agy acting as an MCP *client*, the opposite direction; the rest are interactive-TUI / paste /
+  permissions-panel fixes).
+
 ## [0.15.3] - 2026-06-30
 
 ### Changed

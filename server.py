@@ -1,16 +1,19 @@
 """Antigravity CLI (agy) bridge — fastmcp server.
 
 Exposes Antigravity CLI as MCP tools so Claude Code (or any MCP host) can
-use it as a sub-agent. Solves the headless print-mode "stdout bug" in agy
-1.0.x (verified broken through 1.0.9): `agy -p` writes its progress/answer to
-the controlling terminal (TTY/console) directly, NOT to its stdout file
-descriptor — so a captured-stdout read gets nothing. The bridge runs `agy -p`
-and reads the real response from agy's own transcript files instead. It also
-detaches agy from the host's controlling terminal when spawning it (see
-_spawn_kwargs), so that direct-to-terminal output can't leak into the host TUI
-— e.g. straight into Claude Code's prompt input (observed empirically on 1.0.9
-before the fix). State-file layout and transcript schema re-verified on agy
-1.0.10.
+use it as a sub-agent. Historically agy had a headless print-mode "stdout bug"
+(verified broken through 1.0.14): `agy -p` wrote its progress/answer to the
+controlling terminal (TTY/console) directly, NOT to its stdout file descriptor
+— so a captured-stdout read got nothing, and the bridge read the real response
+from agy's own transcript files instead. agy 1.0.15 FIXED this on Windows: `-p`
+now writes the clean final answer straight to stdout in a non-TTY subprocess
+(verified empirically — stdout carries only the answer, no tool-calling
+narration). So _run_agy now PREFERS stdout when present and falls back to
+transcript-scraping only when stdout is empty (older agy, non-Windows per the
+1.0.15 changelog, or a --sandbox run). The bridge still detaches agy from the
+host's controlling terminal when spawning it (see _spawn_kwargs), which prevents
+the pre-1.0.15 terminal leak into the host TUI and is harmless on 1.0.15+.
+State-file layout and transcript schema re-verified on agy 1.0.15.
 
 Auth: piggybacks on whatever credential store `agy` itself uses on the host
 OS (Windows Credential Manager, macOS Keychain, libsecret on Linux). User
@@ -27,10 +30,17 @@ to wait on an interactive/backend step it never gets headless). So the bridge
 does NOT expose a model parameter — it would hang on any real switch. Change
 the model via agy's settings.json instead.
 
-Compat (re-verified on agy 1.0.14): state-file paths, last_conversations.json
+Compat (re-verified on agy 1.0.15): state-file paths, last_conversations.json
 (still keyed by workspace path), and the transcript schema are unchanged, and a
 normally-completing -p run still writes the JSONL transcript this bridge reads —
-re-confirmed with a live round-trip. (Nothing in agy 1.0.13 or 1.0.14 touches
+re-confirmed with a live round-trip. NEW in 1.0.15: `agy -p` also writes the
+clean answer to stdout on Windows (the print-mode non-TTY-output fix), so the
+bridge now prefers stdout and uses the transcript only as a fallback; the
+transcript path stays fully exercised on older agy, non-Windows, and --sandbox
+runs. (The other 1.0.15 changes don't touch this bridge: the "MCP connection
+timeout → 60 s" is agy acting as an MCP *client* connecting to custom servers —
+the opposite direction from this bridge — and the rest are interactive-TUI /
+paste-shortcut / permissions-panel fixes.) (Nothing in agy 1.0.13 or 1.0.14 touches
 this bridge either: their changes are interactive-TUI / plugin / skill /
 browser-task fixes plus permission-rule tweaks — strict-by-default "Always
 Approve" matching, a regex: opt-in, relaxed redirection checks — and
@@ -112,6 +122,7 @@ from typing import Optional
 from fastmcp import Context, FastMCP
 
 import codex_bridge
+import copilot_bridge
 
 mcp = FastMCP("agent-intern")
 
@@ -119,7 +130,7 @@ mcp = FastMCP("agent-intern")
 # installed package metadata, which goes stale on editable installs). Keep in
 # sync with pyproject.toml's version. Compared at startup against the latest
 # tag on GitHub so a long-lived clone learns when to `git pull`.
-__version__ = "0.15.3"
+__version__ = "0.16.0"
 
 # Logs go to stderr (stdout is the MCP protocol channel). Quiet by default;
 # set AGY_BRIDGE_DEBUG=1 for per-call diagnostics. See _configure_logging.
@@ -151,7 +162,7 @@ _AGY_LOCK = threading.Lock()
 # Latest agy version the bridge's state-file assumptions were verified against.
 # Newer agy releases may change paths/schemas (the SQLite migration is the known
 # risk), so we warn at startup if the installed agy is newer than this.
-VERIFIED_AGY_VERSION = (1, 0, 14)
+VERIFIED_AGY_VERSION = (1, 0, 15)
 
 # Poll window for the transcript/conversation-id to appear after agy exits.
 # agy has already returned 0 by the time we read, so the common case resolves
@@ -256,15 +267,16 @@ def _update_warning(latest: Optional[tuple[int, int, int]]) -> Optional[str]:
 def _spawn_kwargs(name: str = "") -> dict:
     """Extra subprocess kwargs that detach agy from the host's controlling terminal.
 
-    agy -p writes its progress/answer to the controlling terminal (TTY/console)
-    directly, NOT to its stdout file descriptor — which is both why capturing
-    stdout yields nothing AND why, when run under an interactive terminal, agy's
-    text leaks into the host (e.g. straight into Claude Code's TUI prompt input).
-    Detaching gives agy no terminal to write to; the bridge still reads the real
-    answer from the transcript file. Verified on agy 1.0.9 / Windows that this
-    does not change what the bridge captures (the response is read from the
-    transcript regardless). Windows: CREATE_NO_WINDOW. POSIX: a new session
-    (no controlling tty).
+    Historically (agy ≤1.0.14) `agy -p` wrote its progress/answer to the
+    controlling terminal (TTY/console) directly, NOT to its stdout file
+    descriptor — which was both why capturing stdout yielded nothing AND why,
+    under an interactive terminal, agy's text leaked into the host (e.g. straight
+    into Claude Code's TUI prompt input). agy 1.0.15 fixed this on Windows: `-p`
+    now writes the clean answer to stdout in a non-TTY subprocess (so _run_agy
+    prefers stdout there). Detaching is kept anyway as belt-and-suspenders: it
+    still prevents the terminal leak on older agy and on platforms the 1.0.15 fix
+    may not cover, and never hurts the stdout path. Windows: CREATE_NO_WINDOW.
+    POSIX: a new session (no controlling tty).
 
     `name` overrides the platform (defaults to os.name) so both branches stay
     unit-testable without globally mutating os.name — which would break pathlib
@@ -840,6 +852,21 @@ def _run_agy(prompt: str, workspace: str, continue_conv: bool, timeout_s: int) -
                 f"stdout: {proc.stdout[-500:]}"
             )
 
+        # agy 1.0.15 fixed the print-mode stdout bug (Windows): `agy -p` now writes
+        # its clean final answer straight to stdout — verified empirically that it
+        # carries only the answer, not the tool-calling narration. Prefer stdout
+        # when present: it needs no transcript-schema parsing and no flush poll,
+        # sidestepping the bridge's biggest fragility (agy's undocumented JSONL/
+        # SQLite formats). Older agy — and, per the 1.0.15 changelog, non-Windows
+        # platforms — still leave stdout empty; those fall through to the
+        # transcript/.db scrape below, unchanged. A --sandbox run likewise writes
+        # nothing to stdout, so it too uses the fallback.
+        stdout_answer = (proc.stdout or "").strip()
+        if stdout_answer:
+            log.debug("using agy stdout answer (%d chars)", len(stdout_answer))
+            return stdout_answer
+
+        # stdout empty (older agy / non-Windows / --sandbox): read agy's transcript.
         # agy has already exited 0, so the transcript is usually ready at once;
         # poll briefly to absorb filesystem-flush lag instead of a fixed sleep.
         deadline = time.time() + _RESPONSE_POLL_DEADLINE_S
@@ -1732,7 +1759,7 @@ def _broadcast_workspaces(workspaces: Optional[list], n: int):
 
 @mcp.tool(
     annotations={
-        "title": "Agent swarm (mixed Antigravity + Codex, parallel)",
+        "title": "Agent swarm (mixed Antigravity + Codex + Copilot, parallel)",
         "readOnlyHint": False,
         "idempotentHint": False,
         "openWorldHint": True,
@@ -1744,12 +1771,13 @@ def agent_swarm(
     timeout_s: int = 180,
     watch: bool = False,
 ) -> str:
-    """Run SEVERAL tasks IN PARALLEL across BOTH backends in a single swarm.
+    """Run SEVERAL tasks IN PARALLEL across ALL backends in a single swarm.
 
     Each task is its own worker and names the backend to run on, so one swarm can
-    mix Antigravity (Gemini) and Codex workers — they run truly concurrently
-    (capped at `max_concurrency`) and every answer comes back in one labelled
-    block. A worker that fails is reported in place; the others still return.
+    mix Antigravity (Gemini), Codex, and Copilot workers — they run truly
+    concurrently (capped at `max_concurrency`) and every answer comes back in one
+    labelled block. A worker that fails is reported in place; the others still
+    return.
 
     SECURITY: this launches N unsandboxed agents at once — N times the
     prompt-injection surface of a single call (see the module SECURITY note). Only
@@ -1757,12 +1785,15 @@ def agent_swarm(
 
     Args:
         tasks: One object per parallel worker:
-               - backend: "antigravity" (alias "agy"/"gemini") or "codex" (required)
+               - backend: "antigravity" (alias "agy"/"gemini"), "codex", or
+                          "copilot" (alias "gh"/"github") (required)
                - prompt:  the question or instruction (required)
                - workspace: working dir for that worker (default: server cwd)
-               - sandbox: Codex only — "read-only" (default), "workspace-write",
-                          or "danger-full-access". Ignored for Antigravity.
-               - model:   Codex only — model override (`-m`). Ignored for Antigravity.
+               - sandbox: Codex/Copilot only — "read-only" (default),
+                          "workspace-write", or "danger-full-access". Ignored for
+                          Antigravity. (Codex's is an enforced OS sandbox; Copilot's
+                          is best-effort tool/path permissions — see copilot_ask.)
+               - model:   Codex/Copilot only — model override. Ignored for Antigravity.
         max_concurrency: Max workers running at once (default 4). Higher = faster
                          but more quota/rate-limit pressure and more agents at once.
         timeout_s: Per-worker timeout in seconds. Default 180.
@@ -2050,6 +2081,217 @@ def _run_codex_watched(
 
     try:
         answer = codex_bridge.run_codex_streaming(
+            prompt, workspace, sandbox, model, continue_conv, timeout_s, on_event
+        )
+    except Exception as e:  # noqa: BLE001 — show the failure in the window, then re-raise
+        _watch_finish("error", f"({e})"[:200], time.time() - start)
+        raise
+    _watch_finish("done", answer, time.time() - start)
+    return answer
+
+
+@mcp.tool(
+    annotations={
+        "title": "Ask GitHub Copilot (new session)",
+        "readOnlyHint": False,  # copilot may edit files / run commands per sandbox
+        "idempotentHint": False,
+        "openWorldHint": True,  # talks to the external GitHub Copilot service
+    }
+)
+async def copilot_ask(
+    prompt: str,
+    workspace: Optional[str] = None,
+    sandbox: str = copilot_bridge.DEFAULT_SANDBOX,
+    model: Optional[str] = None,
+    timeout_s: int = 180,
+    watch: bool = False,
+    ctx: Optional[Context] = None,
+) -> str:
+    """Ask the GitHub Copilot CLI (`copilot -p`) a question or task in a NEW session.
+
+    Uses your existing Copilot login (OS credential store, or a
+    COPILOT_GITHUB_TOKEN/GH_TOKEN/GITHUB_TOKEN env var — see `copilot_status`).
+    Returns the agent's final message, read straight from stdout (the CLI's `-s`
+    silent mode; no scraping). Copilot is a capable agentic coder — good for real
+    code/repo work; point `workspace` at a project dir for context-aware answers.
+
+    Args:
+        prompt: Question or instruction for Copilot.
+        workspace: Working root for the session (`-C`). Defaults to the server cwd.
+        sandbox: Permission policy (maps to copilot's tool/path flags):
+                 "read-only" (default — best-effort: denies the local write/shell
+                 tools; NOT an OS sandbox, so unlike codex it is not a hard
+                 boundary), "workspace-write" (may edit files, confined to the
+                 workspace), or "danger-full-access" (--allow-all — avoid).
+        model: Optional model override (`--model`, e.g. "gpt-5.3-codex"); omit to
+               use your account's default. An unavailable model errors immediately.
+        timeout_s: Max seconds to wait for copilot to complete. Default 180.
+                   (Copilot's reasoning models can be slow; raise this if needed.)
+        watch: If true, open a live "watch" view streaming copilot's steps from its
+               `--output-format json` event stream. Same final text is returned.
+               Best-effort. Default false.
+    """
+    ws = copilot_bridge.normalize_workspace(workspace)
+    copilot_bridge.validate_sandbox(sandbox)  # fail fast with a clear message
+    if watch:
+        return await asyncio.to_thread(
+            _run_copilot_watched, prompt, ws, sandbox, model, False, timeout_s
+        )
+    return await _run_with_progress(
+        copilot_bridge.run_copilot,
+        (prompt, ws, sandbox, model, False, timeout_s),
+        ctx,
+        timeout_s,
+        label="copilot",
+    )
+
+
+@mcp.tool(
+    annotations={
+        "title": "Continue GitHub Copilot session",
+        "readOnlyHint": False,
+        "idempotentHint": False,
+        "openWorldHint": True,
+    }
+)
+async def copilot_continue(
+    prompt: str,
+    workspace: Optional[str] = None,
+    sandbox: str = copilot_bridge.DEFAULT_SANDBOX,
+    timeout_s: int = 180,
+    watch: bool = False,
+    ctx: Optional[Context] = None,
+) -> str:
+    """Continue the Copilot session rooted at this workspace (resumes its `--session-id`).
+
+    Resumes the exact session id the bridge set on the last copilot_ask in this
+    workspace, falling back to the newest on-disk session whose recorded cwd
+    matches (so it still works after a server restart). Unlike codex_continue,
+    copilot re-applies permission flags on every call, so `sandbox` takes effect
+    here too — e.g. analyze read-only with copilot_ask, then continue with
+    "workspace-write" to apply the fix.
+
+    Args:
+        prompt: Follow-up message for the existing session.
+        workspace: Working root used by the prior session. Defaults to the server cwd.
+        sandbox: Permission policy for THIS turn (default "read-only"). Same values
+                 and caveats as copilot_ask.
+        timeout_s: Max seconds to wait for copilot to complete. Default 180.
+        watch: If true, open the live "watch" view streaming copilot's steps
+               (same viewer as copilot_ask). Default false.
+    """
+    ws = copilot_bridge.normalize_workspace(workspace)
+    copilot_bridge.validate_sandbox(sandbox)
+    if watch:
+        return await asyncio.to_thread(
+            _run_copilot_watched, prompt, ws, sandbox, None, True, timeout_s
+        )
+    return await _run_with_progress(
+        copilot_bridge.run_copilot,
+        (prompt, ws, sandbox, None, True, timeout_s),
+        ctx,
+        timeout_s,
+        label="copilot",
+    )
+
+
+@mcp.tool(
+    annotations={
+        "title": "Copilot bridge diagnostics",
+        "readOnlyHint": True,  # only runs `copilot --version` + reads local state
+        "idempotentHint": True,
+        "openWorldHint": False,
+    }
+)
+def copilot_status() -> str:
+    """Report diagnostics for the Copilot bridge setup (spends no quota).
+
+    Checks whether copilot is on PATH (and its version), an auth hint (copilot has
+    no `login status` command, so this is best-effort — an env token is reported
+    when set, otherwise login via the credential store is assumed and unverified),
+    where copilot stores session state, and how many workspace sessions are pinned
+    this run. Use this to debug "copilot not found" or auth errors before a call.
+    """
+    rows = copilot_bridge.status_rows()
+    width = max(len(label) for label, _, _ in rows)
+    lines = ["copilot bridge status"]
+    for label, ok, detail in rows:
+        mark = "ok" if ok else "!!"
+        lines.append(f"  {label.ljust(width)}  [{mark}] {detail}")
+    lines.append("Overall: " + ("OK" if all(ok for _, ok, _ in rows) else "PROBLEMS FOUND"))
+    return "\n".join(lines)
+
+
+def _copilot_tool_arg(arguments) -> str:
+    """A short, human-readable representative argument for a copilot tool call.
+
+    copilot's tool `arguments` is a dict (e.g. {"path": ...} for view,
+    {"command": ...} for shell). Return the first informative field's first line.
+    """
+    if not isinstance(arguments, dict):
+        return ""
+    for key in ("command", "path", "file", "filePath", "query", "pattern", "url"):
+        v = arguments.get(key)
+        if isinstance(v, str) and v.strip():
+            return v.strip().splitlines()[0]
+    return ""
+
+
+def _copilot_event_to_watch_lines(ev: dict) -> list[tuple[str, str]]:
+    """Map one copilot --output-format json event to (kind, text) watch lines
+    (kind is 'narration' | 'command' | 'result'), mirroring
+    _codex_event_to_watch_lines. Returns [] for events not worth showing.
+    """
+    etype = ev.get("type")
+    data = ev.get("data") or {}
+    if etype == "assistant.message":
+        txt = (data.get("content") or "").strip()
+        return [("narration", txt.splitlines()[0][:200])] if txt else []
+    if etype == "assistant.turn_start":
+        return [("narration", "thinking…")]
+    if etype == "tool.execution_start":
+        name = data.get("toolName") or data.get("name") or "tool"
+        arg = _copilot_tool_arg(data.get("arguments"))
+        return [("command", f"{name} {arg}".strip()[:200])]
+    if etype == "tool.execution_complete":
+        return [("result", "done" if data.get("success") else "tool failed")]
+    if etype == "error":
+        msg = data.get("message") or ev.get("message") or ""
+        return [("result", f"error: {msg}"[:200])]
+    return []
+
+
+def _run_copilot_watched(
+    prompt: str,
+    workspace: str,
+    sandbox: str,
+    model: Optional[str],
+    continue_conv: bool,
+    timeout_s: int,
+) -> str:
+    """Like copilot_bridge.run_copilot, but stream copilot's steps to the live watch
+    window. EXPERIMENTAL. Reuses the same localhost viewer as the agy/codex watch
+    tools; the return value is identical to copilot_ask.
+    """
+    start = time.time()
+    title = prompt.strip().splitlines()[0] if prompt.strip() else ""
+    if len(title) > 200:
+        title = title[:200].rsplit(" ", 1)[0] + "…"
+    _watch_reset(title, start, timeout_s, backend="copilot")
+    try:
+        port = _ensure_watch_server()
+        _open_watch_window(f"http://127.0.0.1:{port}/")
+    except Exception:  # noqa: BLE001 — the viewer is best-effort, never fatal
+        pass
+
+    def on_event(ev: dict) -> None:
+        watch_lines = _copilot_event_to_watch_lines(ev)
+        if watch_lines:
+            t = round(time.time() - start, 1)
+            _watch_append([{"kind": k, "text": x, "t": t} for k, x in watch_lines])
+
+    try:
+        answer = copilot_bridge.run_copilot_streaming(
             prompt, workspace, sandbox, model, continue_conv, timeout_s, on_event
         )
     except Exception as e:  # noqa: BLE001 — show the failure in the window, then re-raise

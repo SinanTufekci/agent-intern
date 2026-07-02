@@ -278,6 +278,7 @@ header{display:flex;align-items:center;gap:9px;padding:7px 11px;background:#0d0f
 .bk{border-radius:4px;padding:0 5px;font-size:9px;font-weight:700;flex:none;margin-top:1px;letter-spacing:.3px}
 .bk.codex{color:#0a0c10;background:#7c9cff}
 .bk.antigravity{color:#0a0c10;background:#f5b94a}
+.bk.copilot{color:#0a0c10;background:#c3a6ff}
 .prompt{color:#e9eef3;font-weight:600;flex:1;min-width:0;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;word-break:break-word}
 .st{color:var(--dim);font-size:10.5px;flex:none;font-variant-numeric:tabular-nums;margin-top:1px}
 .pop{color:var(--green);opacity:.55;flex:none;font-size:11px;margin-top:1px}
@@ -317,7 +318,7 @@ function build(ws){
   const p=document.createElement("div");p.className="pane "+w.status;p.id="p"+w.index;
   p.title="click to open this agent's full step log";p.onclick=()=>openWorker(w.index);
   p.innerHTML="<div class='r1'><span class='dot'></span>"+
-   (w.backend?"<span class='bk "+w.backend+"' title='"+esc(w.backend)+"'>"+(w.backend==='codex'?'codex':'agy')+"</span>":"")+
+   (w.backend?"<span class='bk "+w.backend+"' title='"+esc(w.backend)+"'>"+(w.backend==='codex'?'codex':w.backend==='copilot'?'copilot':'agy')+"</span>":"")+
    (w.repo?"<span class='repo' title='"+esc(w.repo)+"'>"+esc(w.repo)+"</span>":"")+
    "<span class='prompt' title='"+esc(w.label)+"'>"+esc(w.label||("Worker "+w.index))+"</span>"+
    "<span class='st' id='st"+w.index+"'></span><span class='pop'>↗</span></div>"+

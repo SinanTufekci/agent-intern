@@ -684,6 +684,34 @@ def test_run_antigravity_ask_has_no_continue_flags(fake_agy, brain_dir, last_con
     assert "--conversation" not in fake_agy["args"]
 
 
+def test_run_agy_prefers_stdout_when_present(fake_agy, last_conv_file):
+    # agy 1.0.15+ writes the clean answer to stdout. When present it must be used
+    # directly, WITHOUT resolving/reading a transcript — here there is no conv on
+    # record, so a transcript read would raise "No conversation found".
+    last_conv_file.write_text(json.dumps({}), encoding="utf-8")
+    fake_agy["stdout"] = "  stdout answer\n"
+    out = server._run_agy("hi", "C:\\ws", continue_conv=False, timeout_s=10)
+    assert out == "stdout answer"
+
+
+def test_run_agy_stdout_takes_precedence_over_transcript(fake_agy, brain_dir, last_conv_file):
+    # Both stdout and a transcript are available; stdout wins (no schema parsing).
+    last_conv_file.write_text(json.dumps({"C:\\ws": "c1"}), encoding="utf-8")
+    _write_transcript(brain_dir, "c1", [_entry("PLANNER_RESPONSE", "transcript answer")])
+    fake_agy["stdout"] = "stdout answer"
+    out = server._run_agy("hi", "C:\\ws", continue_conv=False, timeout_s=10)
+    assert out == "stdout answer"
+
+
+def test_run_agy_falls_back_to_transcript_when_stdout_empty(fake_agy, brain_dir, last_conv_file):
+    # Older agy / non-Windows / --sandbox leave stdout empty: use the transcript.
+    last_conv_file.write_text(json.dumps({"C:\\ws": "c1"}), encoding="utf-8")
+    _write_transcript(brain_dir, "c1", [_entry("PLANNER_RESPONSE", "transcript answer")])
+    fake_agy["stdout"] = "   \n"  # whitespace only -> treated as empty
+    out = server._run_agy("hi", "C:\\ws", continue_conv=False, timeout_s=10)
+    assert out == "transcript answer"
+
+
 def test_run_agy_nonzero_exit_raises(fake_agy):
     fake_agy["returncode"] = 1
     fake_agy["stderr"] = "boom"

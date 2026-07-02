@@ -364,3 +364,58 @@ def test_run_codex_worker_never_pins(monkeypatch):
     r = swarm._run_codex_worker(0, "hello", os.getcwd(), "read-only", None, 5)
     assert r.ok and r.answer == "ans:hello" and r.backend == "codex"
     assert seen["pin"] is False
+
+
+def test_normalize_tasks_copilot_default_sandbox_and_aliases():
+    import copilot_bridge
+
+    out = swarm._normalize_tasks(
+        [
+            {"backend": "copilot", "prompt": "a"},
+            {"backend": "gh", "prompt": "b", "sandbox": "workspace-write", "model": "gpt-5"},
+        ]
+    )
+    assert [t["backend"] for t in out] == ["copilot", "copilot"]
+    assert out[0]["sandbox"] == copilot_bridge.DEFAULT_SANDBOX
+    assert out[1]["sandbox"] == "workspace-write" and out[1]["model"] == "gpt-5"
+
+
+def test_normalize_tasks_copilot_invalid_sandbox_raises():
+    with pytest.raises(ValueError):
+        swarm._normalize_tasks([{"backend": "copilot", "prompt": "x", "sandbox": "yolo"}])
+
+
+def test_swarm_agents_dispatches_copilot(monkeypatch):
+    calls = []
+
+    def fake_copilot(index, prompt, workspace, sandbox, model, timeout_s):
+        calls.append(("copilot", index, prompt, sandbox, model))
+        return swarm.WorkerResult(index, True, answer="cop:" + prompt, workspace=workspace)
+
+    monkeypatch.setattr(swarm, "_run_copilot_worker", fake_copilot)
+
+    results = swarm.swarm_agents(
+        [{"backend": "copilot", "prompt": "p0", "sandbox": "workspace-write", "model": "m"}],
+        max_concurrency=2,
+        timeout_s=5,
+        watch=False,
+    )
+    assert results[0].backend == "copilot" and results[0].answer == "cop:p0"
+    cop = next(c for c in calls if c[0] == "copilot")
+    assert cop[3] == "workspace-write" and cop[4] == "m"
+
+
+def test_run_copilot_worker_never_pins(monkeypatch):
+    # Swarm copilot workers are one-shot — they must call run_copilot with pin=False.
+    import copilot_bridge
+
+    seen = {}
+
+    def fake_run(prompt, ws, sandbox, model, cont, t, pin=True):
+        seen["pin"] = pin
+        return "ans:" + prompt
+
+    monkeypatch.setattr(copilot_bridge, "run_copilot", fake_run)
+    r = swarm._run_copilot_worker(0, "hello", os.getcwd(), "read-only", None, 5)
+    assert r.ok and r.answer == "ans:hello" and r.backend == "copilot"
+    assert seen["pin"] is False

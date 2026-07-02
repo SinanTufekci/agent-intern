@@ -1,12 +1,12 @@
 [project]
 name = "agent-intern"
-version = "0.15.3"
-description = "MCP server bridging the Antigravity (agy) and OpenAI Codex CLIs so Claude Code can drive them as sub-agents"
+version = "0.16.0"
+description = "MCP server bridging the Antigravity (agy), OpenAI Codex, and GitHub Copilot CLIs so Claude Code can drive them as sub-agents"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Sinan Tüfekçi" }]
-keywords = ["mcp", "claude", "claude-code", "antigravity", "gemini", "agy", "llm", "ai"]
+keywords = ["mcp", "claude", "claude-code", "antigravity", "gemini", "agy", "codex", "copilot", "github-copilot", "llm", "ai"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -42,11 +42,11 @@ Sponsor = "https://github.com/sponsors/SinanTufekci"
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
-# Flat layout: the distributable is the server module plus its swarm + codex
-# helpers. Without this, setuptools auto-discovery aborts because the repo root
-# also holds test_*.py.
+# Flat layout: the distributable is the server module plus its swarm + codex +
+# copilot helpers. Without this, setuptools auto-discovery aborts because the repo
+# root also holds test_*.py.
 [tool.setuptools]
-py-modules = ["server", "swarm", "swarm_watch", "codex_bridge"]
+py-modules = ["server", "swarm", "swarm_watch", "codex_bridge", "copilot_bridge"]
 
 [tool.ruff]
 line-length = 100
