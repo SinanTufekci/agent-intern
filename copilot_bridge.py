@@ -87,7 +87,10 @@ _TOKEN_ENV_VARS = ("COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN")
 # edit, shell, …) stay. Set COPILOT_GITHUB_MCP=1 to keep the builtin MCP enabled
 # (e.g. when you want Copilot's issue/PR/repo tools) and accept the latency risk.
 _BUILTIN_GITHUB_MCP = os.environ.get("COPILOT_GITHUB_MCP", "").strip().lower() in (
-    "1", "true", "yes", "on",
+    "1",
+    "true",
+    "yes",
+    "on",
 )
 
 # A session id is a UUID; it names the session-state dir and appears as `id:` in
@@ -124,9 +127,7 @@ def normalize_workspace(ws: Optional[str]) -> str:
 def validate_sandbox(mode: str) -> str:
     """Return `mode` if valid, else raise ValueError listing the allowed values."""
     if mode not in SANDBOX_MODES:
-        raise ValueError(
-            f"invalid sandbox {mode!r}; expected one of: {', '.join(SANDBOX_MODES)}"
-        )
+        raise ValueError(f"invalid sandbox {mode!r}; expected one of: {', '.join(SANDBOX_MODES)}")
     return mode
 
 
@@ -254,8 +255,10 @@ def build_args(
     """
     args = [
         COPILOT_BIN,
-        "--session-id", session_id,
-        "-C", workspace,
+        "--session-id",
+        session_id,
+        "-C",
+        workspace,
         "--no-ask-user",
         "--no-color",
         "--no-auto-update",
@@ -312,8 +315,7 @@ def run_copilot(
     answer = (proc.stdout or "").strip()
     if not answer:
         raise RuntimeError(
-            "copilot produced no output on stdout. "
-            f"stderr: {(proc.stderr or '')[-300:]}"
+            f"copilot produced no output on stdout. stderr: {(proc.stderr or '')[-300:]}"
         )
 
     if not continue_conv and pin:
