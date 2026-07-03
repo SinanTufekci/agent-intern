@@ -21,14 +21,21 @@ must have logged in interactively at least once via the Antigravity IDE or
 `agy -i`. Uses the same AI Pro quota. The bridge itself only does cross-
 platform filesystem reads under `~/.gemini/antigravity-cli/`.
 
-Model: effectively the model set in agy's settings.json ("model" field,
-e.g. Gemini 3.5 Flash (High)). agy 1.0.5 added a --model flag (and a `models`
-subcommand) that IS plumbed into print mode, but switching to a DIFFERENT
-model in -p hangs the call: verified on 1.0.5 that passing the already-active
-label completes in seconds while any other label hangs >60s (print mode seems
-to wait on an interactive/backend step it never gets headless). So the bridge
-does NOT expose a model parameter — it would hang on any real switch. Change
-the model via agy's settings.json instead.
+Model: defaults to agy's settings.json "model" field (e.g. Gemini 3.5 Flash
+(High)). agy 1.0.5 added a --model flag (and a `models` subcommand); through
+~1.0.14 switching to a DIFFERENT model in -p HUNG the call (verified on 1.0.5:
+the active label returned in seconds, any other hung >60s), so the bridge kept
+its distance. Re-verified on 1.0.16 that the hang is FIXED: `agy -p --model
+"<label>"` switches the model and returns in seconds (a Claude label answered as
+Anthropic Claude, a Gemini label as Gemini). So antigravity_ask/continue and the
+antigravity swarm path now take an optional `model`. One caveat: agy SILENTLY
+IGNORES an unknown --model label — it falls back to the settings.json default
+with NO error — so the bridge validates a requested label against `agy models`
+(via validate_model) and raises on a typo, matching codex/copilot's fail-fast.
+When the label list can't be read (agy missing, models call failed) validation
+is skipped and the label passes through unchecked. `agy models` itself must be
+run with stdin closed (it blocks on an interactive terminal otherwise), same as
+-p is spawned with DEVNULL stdin.
 
 Compat (re-verified on agy 1.0.15): state-file paths, last_conversations.json
 (still keyed by workspace path), and the transcript schema are unchanged, and a
@@ -130,7 +137,7 @@ mcp = FastMCP("agent-intern")
 # installed package metadata, which goes stale on editable installs). Keep in
 # sync with pyproject.toml's version. Compared at startup against the latest
 # tag on GitHub so a long-lived clone learns when to `git pull`.
-__version__ = "0.16.0"
+__version__ = "0.17.0"
 
 # Logs go to stderr (stdout is the MCP protocol channel). Quiet by default;
 # set AGY_BRIDGE_DEBUG=1 for per-call diagnostics. See _configure_logging.
@@ -162,7 +169,7 @@ _AGY_LOCK = threading.Lock()
 # Latest agy version the bridge's state-file assumptions were verified against.
 # Newer agy releases may change paths/schemas (the SQLite migration is the known
 # risk), so we warn at startup if the installed agy is newer than this.
-VERIFIED_AGY_VERSION = (1, 0, 15)
+VERIFIED_AGY_VERSION = (1, 0, 16)
 
 # Poll window for the transcript/conversation-id to appear after agy exits.
 # agy has already returned 0 by the time we read, so the common case resolves
@@ -794,10 +801,73 @@ def _resolve_and_read(pinned_conv: Optional[str], workspace: str, start: float) 
     return _read_response(conv_id)
 
 
+# Cache of the `agy models` label list for this process. agy silently ignores an
+# unknown --model (falls back to the settings.json default with NO error), so we
+# validate a requested label against this list and fail loudly on a typo — the way
+# codex/copilot reject an unknown model. Populated (once) on first validation.
+_AGY_MODELS_CACHE: Optional[list[str]] = None
+_AGY_MODELS_LOCK = threading.Lock()
+
+
+def list_agy_models() -> list[str]:
+    """Model labels reported by `agy models`, cached for the process ([] if unreadable).
+
+    Runs `agy models` with stdin CLOSED — the subcommand otherwise blocks waiting
+    on an interactive terminal (the same reason `-p` is spawned with DEVNULL
+    stdin). Any failure (agy missing, non-zero exit, timeout) yields [], which
+    callers treat as "can't validate" and pass a requested label through unchecked
+    rather than wrongly rejecting it.
+    """
+    global _AGY_MODELS_CACHE
+    with _AGY_MODELS_LOCK:
+        if _AGY_MODELS_CACHE is not None:
+            return _AGY_MODELS_CACHE
+        names: list[str] = []
+        try:
+            proc = subprocess.run(
+                [AGY_BIN, "models"],
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                timeout=20,
+                **_spawn_kwargs(),
+            )
+            if proc.returncode == 0:
+                names = [ln.strip() for ln in (proc.stdout or "").splitlines() if ln.strip()]
+        except (OSError, subprocess.SubprocessError):
+            names = []
+        _AGY_MODELS_CACHE = names
+        return names
+
+
+def validate_model(model: Optional[str]) -> Optional[str]:
+    """Return `model` unchanged, or raise ValueError if it isn't a known agy label.
+
+    agy accepts --model but SILENTLY falls back to the settings.json default on an
+    unknown label, so a typo would quietly run the wrong model. We reject it up
+    front, listing the valid labels. If the label list can't be read (agy missing
+    or the models call failed), validation is skipped and the label passes through
+    — better than blocking a real model just because we couldn't enumerate them.
+    """
+    if not model:
+        return model
+    known = list_agy_models()
+    if known and model not in known:
+        raise ValueError(f"unknown agy model {model!r}; expected one of: {', '.join(known)}")
+    return model
+
+
 def _build_agy_args(
-    prompt: str, workspace: str, continue_conv: bool, timeout_s: int
+    prompt: str,
+    workspace: str,
+    continue_conv: bool,
+    timeout_s: int,
+    model: Optional[str] = None,
 ) -> tuple[list[str], Optional[str]]:
     """Build agy's argv and resolve the pinned conversation id for continue mode.
+
+    `model` (when given) becomes agy's `--model <label>` — verified working in
+    print mode on 1.0.16; validate it via validate_model before calling this.
 
     Note: agy's `-p` mode auto-executes all tools/commands with no approval gate,
     so we deliberately do NOT pass --dangerously-skip-permissions (a no-op for -p)
@@ -808,6 +878,8 @@ def _build_agy_args(
     note.
     """
     args = [AGY_BIN, "--print-timeout", f"{timeout_s}s"]
+    if model:
+        args.extend(["--model", model])
     pinned_conv: Optional[str] = None
     if continue_conv:
         # Pin to the exact conversation rooted at this workspace instead of `-c`
@@ -822,8 +894,14 @@ def _build_agy_args(
     return args, pinned_conv
 
 
-def _run_agy(prompt: str, workspace: str, continue_conv: bool, timeout_s: int) -> str:
-    args, pinned_conv = _build_agy_args(prompt, workspace, continue_conv, timeout_s)
+def _run_agy(
+    prompt: str,
+    workspace: str,
+    continue_conv: bool,
+    timeout_s: int,
+    model: Optional[str] = None,
+) -> str:
+    args, pinned_conv = _build_agy_args(prompt, workspace, continue_conv, timeout_s, model)
 
     with _AGY_LOCK:
         start = time.time()
@@ -1467,7 +1545,13 @@ def _open_watch_window(url: str) -> None:
         pass
 
 
-def _run_agy_watched(prompt: str, workspace: str, continue_conv: bool, timeout_s: int) -> str:
+def _run_agy_watched(
+    prompt: str,
+    workspace: str,
+    continue_conv: bool,
+    timeout_s: int,
+    model: Optional[str] = None,
+) -> str:
     """Like _run_agy, but open a live browser "watch" view. EXPERIMENTAL.
 
     agy runs headless (console-detached, no leak); alongside it, the bridge serves
@@ -1476,7 +1560,7 @@ def _run_agy_watched(prompt: str, workspace: str, continue_conv: bool, timeout_s
     value is identical to antigravity_ask. The viewer is best-effort and cross-platform
     (any browser); if it can't open, the run still completes normally.
     """
-    args, pinned_conv = _build_agy_args(prompt, workspace, continue_conv, timeout_s)
+    args, pinned_conv = _build_agy_args(prompt, workspace, continue_conv, timeout_s, model)
 
     with _AGY_LOCK:
         start = time.time()
@@ -1609,23 +1693,29 @@ def _run_agy_image_watched(
 async def antigravity_ask(
     prompt: str,
     workspace: Optional[str] = None,
+    model: Optional[str] = None,
     timeout_s: int = 180,
     watch: bool = False,
     ctx: Optional[Context] = None,
 ) -> str:
-    """Ask Antigravity (Gemini 3.5 Flash High via agy CLI) a question in a NEW conversation.
+    """Ask Antigravity (agy CLI, Gemini by default) a question in a NEW conversation.
 
     Uses your existing AI Pro authentication (silent-auth via Windows Credential
-    Manager). Returns the model's final response as text.
-
-    Model is fixed to Gemini 3.5 Flash (High) — agy print-mode hardcodes it.
-    Good for fast tool-calling and short tasks; for heavier reasoning prefer
-    the host model directly.
+    Manager). Returns the model's final response as text. Good for fast
+    tool-calling and short tasks; for heavier reasoning pick a bigger `model` or
+    use the host model directly.
 
     Args:
         prompt: Question or instruction for Antigravity.
         workspace: Working directory for the conversation. Defaults to cwd.
                    Choose an existing project dir for context-aware responses.
+        model: Optional model label to run this conversation on (agy's --model),
+               e.g. "Gemini 3.1 Pro (High)" or "Claude Sonnet 4.6 (Thinking)".
+               Omit to use the model set in agy's settings.json (Gemini 3.5 Flash
+               (High) by default). Must be one of `agy models` — an unknown label
+               is rejected up front (agy would otherwise silently ignore it and
+               fall back to the default). See antigravity_status / `agy models`
+               for the valid labels.
         timeout_s: Max seconds to wait for agy to complete. Default 180.
         watch: If true, open a live "watch" view in your browser that streams
                agy's steps (narration + the real commands it runs) as it works.
@@ -1634,9 +1724,10 @@ async def antigravity_ask(
                completes normally. Default false.
     """
     ws = _normalize_workspace(workspace)
+    validate_model(model)  # fail fast on a typo (agy would silently ignore it)
     if watch:
-        return await asyncio.to_thread(_run_agy_watched, prompt, ws, False, timeout_s)
-    return await _run_with_progress(_run_agy, (prompt, ws, False, timeout_s), ctx, timeout_s)
+        return await asyncio.to_thread(_run_agy_watched, prompt, ws, False, timeout_s, model)
+    return await _run_with_progress(_run_agy, (prompt, ws, False, timeout_s, model), ctx, timeout_s)
 
 
 @mcp.tool(
@@ -1650,6 +1741,7 @@ async def antigravity_ask(
 async def antigravity_continue(
     prompt: str,
     workspace: Optional[str] = None,
+    model: Optional[str] = None,
     timeout_s: int = 180,
     watch: bool = False,
     ctx: Optional[Context] = None,
@@ -1663,14 +1755,20 @@ async def antigravity_continue(
     Args:
         prompt: Follow-up message.
         workspace: Working directory used by the prior conversation. Defaults to cwd.
+        model: Optional model label for this turn (agy's --model). agy's model is
+               per-invocation, not baked into the conversation, so a follow-up can
+               run on a different model than the original ask — omit to use agy's
+               settings.json default. Validated against `agy models`; an unknown
+               label is rejected (agy would silently ignore it).
         timeout_s: Max seconds to wait for agy to complete. Default 180.
         watch: If true, open a live "watch" view in your browser that streams
                agy's steps as it works (same return value, best-effort). Default false.
     """
     ws = _normalize_workspace(workspace)
+    validate_model(model)  # fail fast on a typo (agy would silently ignore it)
     if watch:
-        return await asyncio.to_thread(_run_agy_watched, prompt, ws, True, timeout_s)
-    return await _run_with_progress(_run_agy, (prompt, ws, True, timeout_s), ctx, timeout_s)
+        return await asyncio.to_thread(_run_agy_watched, prompt, ws, True, timeout_s, model)
+    return await _run_with_progress(_run_agy, (prompt, ws, True, timeout_s, model), ctx, timeout_s)
 
 
 @mcp.tool(
@@ -1793,7 +1891,10 @@ def agent_swarm(
                           "workspace-write", or "danger-full-access". Ignored for
                           Antigravity. (Codex's is an enforced OS sandbox; Copilot's
                           is best-effort tool/path permissions — see copilot_ask.)
-               - model:   Codex/Copilot only — model override. Ignored for Antigravity.
+               - model:   optional model override for ANY backend — Codex's `-m`,
+                          Copilot's `--model`, or Antigravity's `--model` (an agy
+                          label like "Claude Sonnet 4.6 (Thinking)"; validated
+                          against `agy models`). Omit for each backend's default.
         max_concurrency: Max workers running at once (default 4). Higher = faster
                          but more quota/rate-limit pressure and more agents at once.
         timeout_s: Per-worker timeout in seconds. Default 180.

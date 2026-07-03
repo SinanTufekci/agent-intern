@@ -511,6 +511,75 @@ def test_build_agy_args_honors_custom_agy_bin(monkeypatch):
 
 
 # --------------------------------------------------------------------------
+# --model plumbing: _build_agy_args / list_agy_models / validate_model
+# --------------------------------------------------------------------------
+
+
+def test_build_agy_args_includes_model_when_given(monkeypatch):
+    monkeypatch.setattr(server, "AGY_BIN", "agy")
+    args, _ = server._build_agy_args(
+        "hi", "C:\\ws", continue_conv=False, timeout_s=10, model="Gemini 3.1 Pro (High)"
+    )
+    assert "--model" in args
+    assert args[args.index("--model") + 1] == "Gemini 3.1 Pro (High)"
+    # the prompt still trails the command line
+    assert args[-2:] == ["-p", "hi"]
+
+
+def test_build_agy_args_omits_model_when_none(monkeypatch):
+    monkeypatch.setattr(server, "AGY_BIN", "agy")
+    args, _ = server._build_agy_args("hi", "C:\\ws", continue_conv=False, timeout_s=10)
+    assert "--model" not in args
+
+
+def test_list_agy_models_parses_and_caches(monkeypatch):
+    monkeypatch.setattr(server, "_AGY_MODELS_CACHE", None)
+    calls = {"n": 0}
+
+    def fake_run(args, **kwargs):
+        calls["n"] += 1
+        return subprocess.CompletedProcess(args, 0, stdout="A\n B \n\nC\n", stderr="")
+
+    monkeypatch.setattr(server.subprocess, "run", fake_run)
+    assert server.list_agy_models() == ["A", "B", "C"]
+    # second call is served from the process cache (no second subprocess)
+    assert server.list_agy_models() == ["A", "B", "C"]
+    assert calls["n"] == 1
+
+
+def test_list_agy_models_empty_on_subprocess_error(monkeypatch):
+    monkeypatch.setattr(server, "_AGY_MODELS_CACHE", None)
+
+    def boom(args, **kwargs):
+        raise OSError("agy not found")
+
+    monkeypatch.setattr(server.subprocess, "run", boom)
+    assert server.list_agy_models() == []
+
+
+def test_validate_model_none_and_empty_pass():
+    assert server.validate_model(None) is None
+    assert server.validate_model("") == ""
+
+
+def test_validate_model_accepts_known(monkeypatch):
+    monkeypatch.setattr(server, "list_agy_models", lambda: ["Gemini 3.5 Flash (High)", "X"])
+    assert server.validate_model("X") == "X"
+
+
+def test_validate_model_rejects_unknown(monkeypatch):
+    monkeypatch.setattr(server, "list_agy_models", lambda: ["Gemini 3.5 Flash (High)"])
+    with pytest.raises(ValueError, match="unknown agy model"):
+        server.validate_model("Bogus 9000")
+
+
+def test_validate_model_skips_when_list_unavailable(monkeypatch):
+    # If we can't enumerate models, pass the label through rather than wrongly reject.
+    monkeypatch.setattr(server, "list_agy_models", lambda: [])
+    assert server.validate_model("Whatever") == "Whatever"
+
+
+# --------------------------------------------------------------------------
 # _startup_checks  (composition of the tested helpers; agy version injected)
 # --------------------------------------------------------------------------
 

@@ -10,6 +10,29 @@ summary.
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-07-03
+
+### Added
+
+- **Model selection for Antigravity.** `antigravity_ask`, `antigravity_continue`, and the
+  `antigravity` swarm backend now take an optional `model` — agy's `--model` (e.g.
+  `"Gemini 3.1 Pro (High)"`, `"Claude Sonnet 4.6 (Thinking)"`). Through ~1.0.14 switching model in
+  `-p` **hung** the call, so the bridge stayed single-model; **re-verified on agy 1.0.16 that the
+  hang is fixed** — a Claude label answers as Anthropic Claude, a Gemini label as Gemini, each
+  returning in seconds. Omit `model` to use agy's `settings.json` default (Gemini 3.5 Flash (High)).
+  All three backends now expose the same `model` knob.
+- **`agy models` validation.** agy **silently ignores** an unknown `--model` label (falls back to
+  the `settings.json` default with no error), so a typo would quietly run the wrong model. The bridge
+  now validates a requested label against `agy models` (`validate_model`) and rejects an unknown one
+  up front — matching codex/copilot's fail-fast. If the label list can't be read (agy missing, models
+  call failed), validation is skipped and the label passes through unchecked.
+
+### Changed
+
+- **Verified against agy 1.0.16** (`VERIFIED_AGY_VERSION`). State-file paths, transcript schema, and
+  the 1.0.15 stdout path re-confirmed with a live round-trip; the `--model` print-mode fix is the
+  notable change this release builds on.
+
 ## [0.16.0] - 2026-07-02
 
 ### Added

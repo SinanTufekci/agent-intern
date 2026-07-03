@@ -75,7 +75,7 @@ The bridge normalizes all three CLIs into the same shape, but they differ where 
 
 | | 🛰️ **Antigravity** (`agy`) | 🤖 **Codex** (`codex exec`) | 🐙 **Copilot** (`copilot -p`) |
 |---|---|---|---|
-| **Model** | Gemini 3.5 Flash (High) — fixed (see [Model & auth](#model--auth)) | Selectable via `model` (codex's `-m`) | Selectable via `model` (`--model`) |
+| **Model** | Selectable via `model` (agy's `--model`); Gemini 3.5 Flash (High) default (see [Model & auth](#model--auth)) | Selectable via `model` (codex's `-m`) | Selectable via `model` (`--model`) |
 | **Best at** | Fast, cheap tool-calling; quick answers | Heavier reasoning; real code/repo work | Agentic coding; real code/repo work |
 | **Image generation** | ✅ `antigravity_image` (+ `antigravity_image_swarm`) | ❌ no image model | ❌ no image model |
 | **Sandbox** | ❌ no real boundary (`--sandbox` blocks only shell) | ✅ real, enforced: `read-only` / `workspace-write` / `danger-full-access` | ⚠️ best-effort: tool/path permissions (`read-only` denies write/shell) — **not** an OS sandbox |
@@ -229,8 +229,8 @@ live browser view ([Watch mode](#watch-mode)).
 
 | Tool | Purpose |
 |---|---|
-| `antigravity_ask(prompt, workspace?, timeout_s?=180, watch?=false)` | Start a **new** Antigravity conversation. `watch=true` opens the live browser view ([Watch mode](#watch-mode)). |
-| `antigravity_continue(prompt, workspace?, timeout_s?=180, watch?=false)` | Continue the conversation **rooted at `workspace`** (pinned by id). `watch=true` opens the live view. |
+| `antigravity_ask(prompt, workspace?, model?, timeout_s?=180, watch?=false)` | Start a **new** Antigravity conversation. `model` selects the model (agy's `--model`, e.g. `"Claude Sonnet 4.6 (Thinking)"`); validated against `agy models`, defaults to your `settings.json` model. `watch=true` opens the live browser view ([Watch mode](#watch-mode)). |
+| `antigravity_continue(prompt, workspace?, model?, timeout_s?=180, watch?=false)` | Continue the conversation **rooted at `workspace`** (pinned by id). agy's model is per-invocation, so `model` can differ from the original ask. `watch=true` opens the live view. |
 | `antigravity_image(prompt, output_path?, workspace?, timeout_s?=240, watch?=false)` | Generate an image; saves the file (extension corrected to the real bytes) and returns its path + format/size. `watch=true` streams progress and **shows the image** inline. |
 | `antigravity_image_swarm(prompts, output_paths?, workspaces?, max_concurrency?=4, timeout_s?=240, watch?=false)` | Generate **several images in parallel** (one worker per prompt). |
 | `antigravity_status()` | Setup diagnostics: **the bridge's own version + whether a newer release is available**, plus agy version/compat, state dirs, and newest-transcript readability. Spends no quota. |
@@ -255,7 +255,7 @@ live browser view ([Watch mode](#watch-mode)).
 
 | Tool | Purpose |
 |---|---|
-| `agent_swarm(tasks, max_concurrency?=4, timeout_s?=180, watch?=false)` | Run **several tasks in parallel across all three backends** — each task names its `backend` (`antigravity`, `codex`, or `copilot`) plus a `prompt` (and, for Codex/Copilot, `sandbox`/`model`). Every answer comes back in one block; `watch=true` opens the live dashboard ([Swarm](#swarm)). |
+| `agent_swarm(tasks, max_concurrency?=4, timeout_s?=180, watch?=false)` | Run **several tasks in parallel across all three backends** — each task names its `backend` (`antigravity`, `codex`, or `copilot`) plus a `prompt` (an optional `model` for any backend, and `sandbox` for Codex/Copilot). Every answer comes back in one block; `watch=true` opens the live dashboard ([Swarm](#swarm)). |
 
 `workspace` defaults to the MCP server's current working directory. Point it at a real project dir
 for context-aware answers — every backend gives the model access to files under that root (Codex and
@@ -281,8 +281,8 @@ fixed its stdout). Three things make Codex worth reaching for over Antigravity:
   avoid). Unlike agy's no-op `--sandbox`, codex's `-s` actually enforces this. `codex exec` has no
   interactive approval gate, so this flag **is** your safety boundary — opt into write access
   deliberately.
-- **Model selection works.** `model` maps to codex's `-m`; agy hangs on a model switch in print
-  mode, codex does not.
+- **Model selection works.** `model` maps to codex's `-m`. (agy's `--model` works in print mode too
+  as of 1.0.16; all three backends now expose the same `model` knob.)
 - **Stronger reasoning.** Codex is a coding agent, not an image model — there's no `codex_image`. Its
   strength is reasoning and real code/repo work; hand it the jobs that need a heavier model.
 
@@ -445,7 +445,7 @@ quota/rate-limit pressure for wall-clock.
 
 | | 🛰️ **Antigravity** | 🤖 **Codex** | 🐙 **Copilot** |
 |---|---|---|---|
-| **Model** | Effectively **Gemini 3.5 Flash (High)** — whatever the `"model"` field in agy's `settings.json` is set to. Switching model in `-p` **hangs** the call (verified on 1.0.5: the active label returns in seconds, any other hangs >60 s), so the bridge stays single-model. Flash High is speed-optimized for tool-calling — best as a *fast sub-agent for cheap work*. | **Selectable** via the `model` argument (codex's `-m`). codex does not hang on a switch, so model choice is a first-class knob. | **Selectable** via the `model` argument (`--model`, e.g. `gpt-5.3-codex`, `claude-sonnet-4.6`, `auto`); omit for your account default. An unavailable model errors immediately. |
+| **Model** | **Selectable** via the `model` argument (agy's `--model`, e.g. `"Gemini 3.1 Pro (High)"`, `"Claude Sonnet 4.6 (Thinking)"`); omit to use the `"model"` field in agy's `settings.json` (**Gemini 3.5 Flash (High)** by default). Switching model in `-p` used to hang (through ~1.0.14) but is **fixed as of 1.0.16**. agy silently ignores an unknown label, so the bridge validates it against `agy models` and rejects a typo. Flash High is speed-optimized for cheap tool-calling; pick a bigger label for heavier work. | **Selectable** via the `model` argument (codex's `-m`). codex does not hang on a switch, so model choice is a first-class knob. | **Selectable** via the `model` argument (`--model`, e.g. `gpt-5.3-codex`, `claude-sonnet-4.6`, `auto`); omit for your account default. An unavailable model errors immediately. |
 | **Auth** | Piggybacks whatever credential store `agy` uses on your OS (Windows Credential Manager, macOS Keychain, libsecret on Linux — the bridge never touches it directly). Log in once; every call silent-auths on the **same AI Pro quota** you already pay for. | Uses your existing **Codex login** — ChatGPT account or API key. Run `codex login` once; verify with `codex_status`. | Uses your existing **Copilot login** — run `copilot` then `/login` once (OS credential store), or set `COPILOT_GITHUB_TOKEN`/`GH_TOKEN`/`GITHUB_TOKEN`. Verify with `copilot_status`. |
 
 <a id="security"></a>
@@ -549,11 +549,12 @@ report "not found" via their `*_status` tool (`antigravity_status` / `codex_stat
 <summary><b>When should I use Antigravity vs Codex vs Copilot?</b></summary>
 
 Use **Antigravity** for fast, cheap tool-calling, quick answers, and **image generation** (it's the
-only backend with an image model). Use **Codex** for heavier reasoning, real code/repo work, when you
-need to **pick the model**, or when you want a **real, enforced `workspace-write` sandbox**. Use
-**Copilot** for agentic coding on your GitHub Copilot plan, when you want to pick the model, or as a
-second coding opinion alongside Codex — noting its sandbox is **best-effort**, not enforced. In a
-swarm you can mix all three. See [The three backends at a glance](#the-three-backends-at-a-glance).
+only backend with an image model) — and it now lets you **pick the model** too (agy's `--model`). Use
+**Codex** for heavier reasoning, real code/repo work, or when you want a **real, enforced
+`workspace-write` sandbox**. Use **Copilot** for agentic coding on your GitHub Copilot plan, or as a
+second coding opinion alongside Codex — noting its sandbox is **best-effort**, not enforced. All three
+let you choose a `model`; in a swarm you can mix all three. See
+[The three backends at a glance](#the-three-backends-at-a-glance).
 </details>
 
 <details>
@@ -570,13 +571,19 @@ known-good `agy` version.
 </details>
 
 <details>
-<summary><b>Why only Gemini 3.5 Flash for Antigravity?</b></summary>
+<summary><b>Which model does Antigravity use — can I pick it?</b></summary>
 
-agy 1.0.5 added a `--model` flag, but switching to a different model in `-p` **hangs** (print mode
-waits on a step it never gets headless), so in practice you get whatever model agy's `settings.json`
-selects — Gemini 3.5 Flash (High) by default. The Antigravity tools don't expose a model knob because
-it would hang on any real switch. **Codex does not have this limitation** — its `model` argument
-works.
+Yes. Pass `model` to `antigravity_ask`/`antigravity_continue` (or per task in `agent_swarm`) — it maps
+to agy's `--model`, taking any label from `agy models` (e.g. `"Gemini 3.1 Pro (High)"`,
+`"Claude Sonnet 4.6 (Thinking)"`). Omit it to use the `"model"` field in agy's `settings.json`, which
+defaults to **Gemini 3.5 Flash (High)** — speed-optimized for cheap tool-calling.
+
+agy 1.0.5 added `--model`, but through ~1.0.14 switching to a different model in `-p` **hung** the
+call, so earlier bridge versions stayed single-model. **Re-verified on agy 1.0.16 that the hang is
+fixed** — a Claude label answers as Anthropic Claude, a Gemini label as Gemini, each in seconds. One
+caveat the bridge handles for you: agy **silently ignores an unknown label** (it falls back to the
+default with no error), so the bridge validates your label against `agy models` and rejects a typo up
+front.
 </details>
 
 <details>

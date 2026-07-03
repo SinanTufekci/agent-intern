@@ -253,7 +253,7 @@ def test_normalize_tasks_mixed_and_aliases(tmp_path):
     assert [t["backend"] for t in out] == ["antigravity", "codex", "antigravity"]
     assert out[0]["workspace"] == os.path.abspath(str(tmp_path))
     assert out[1]["sandbox"] == "workspace-write" and out[1]["model"] == "m"
-    # antigravity drops codex-only fields and defaults workspace to cwd
+    # antigravity has no sandbox; with no model given, model stays None; workspace -> cwd
     assert out[2]["sandbox"] is None and out[2]["model"] is None
     assert out[2]["workspace"] == os.getcwd()
 
@@ -265,11 +265,31 @@ def test_normalize_tasks_codex_default_sandbox():
     assert out[0]["sandbox"] == codex_bridge.DEFAULT_SANDBOX
 
 
-def test_normalize_tasks_antigravity_ignores_sandbox_model():
+def test_normalize_tasks_antigravity_honors_model_drops_sandbox(monkeypatch):
+    import server
+
+    # agy has no sandbox (dropped), but --model now works in print mode (1.0.16).
+    monkeypatch.setattr(server, "list_agy_models", lambda: ["Gemini 3.1 Pro (High)"])
     out = swarm._normalize_tasks(
-        [{"backend": "antigravity", "prompt": "x", "sandbox": "danger-full-access", "model": "z"}]
+        [
+            {
+                "backend": "antigravity",
+                "prompt": "x",
+                "sandbox": "danger-full-access",
+                "model": "Gemini 3.1 Pro (High)",
+            }
+        ]
     )
-    assert out[0]["sandbox"] is None and out[0]["model"] is None
+    assert out[0]["sandbox"] is None
+    assert out[0]["model"] == "Gemini 3.1 Pro (High)"
+
+
+def test_normalize_tasks_antigravity_rejects_unknown_model(monkeypatch):
+    import server
+
+    monkeypatch.setattr(server, "list_agy_models", lambda: ["Gemini 3.5 Flash (High)"])
+    with pytest.raises(ValueError, match="unknown agy model"):
+        swarm._normalize_tasks([{"backend": "antigravity", "prompt": "x", "model": "Bogus 9000"}])
 
 
 def test_normalize_tasks_bad_backend_raises():
@@ -295,10 +315,13 @@ def test_normalize_tasks_non_list_and_non_dict_raise():
 
 
 def test_swarm_agents_dispatches_by_backend(monkeypatch):
+    import server
+
+    monkeypatch.setattr(server, "list_agy_models", lambda: ["M1"])
     calls = []
 
-    def fake_text(index, prompt, workspace, timeout_s):
-        calls.append(("antigravity", index, prompt))
+    def fake_text(index, prompt, workspace, model, timeout_s):
+        calls.append(("antigravity", index, prompt, model))
         return swarm.WorkerResult(index, True, answer="agy:" + prompt, workspace=workspace)
 
     def fake_codex(index, prompt, workspace, sandbox, model, timeout_s):
@@ -310,7 +333,7 @@ def test_swarm_agents_dispatches_by_backend(monkeypatch):
 
     results = swarm.swarm_agents(
         [
-            {"backend": "antigravity", "prompt": "p0"},
+            {"backend": "antigravity", "prompt": "p0", "model": "M1"},
             {"backend": "codex", "prompt": "p1", "sandbox": "workspace-write", "model": "m"},
         ],
         max_concurrency=2,
@@ -320,6 +343,8 @@ def test_swarm_agents_dispatches_by_backend(monkeypatch):
     results.sort(key=lambda r: r.index)
     assert results[0].backend == "antigravity" and results[0].answer == "agy:p0"
     assert results[1].backend == "codex" and results[1].answer == "cdx:p1"
+    agy = next(c for c in calls if c[0] == "antigravity")
+    assert agy[3] == "M1"  # model threaded through to the text worker
     cdx = next(c for c in calls if c[0] == "codex")
     assert cdx[3] == "workspace-write" and cdx[4] == "m"
 

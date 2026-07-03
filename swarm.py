@@ -185,14 +185,17 @@ def _repos(workspaces: list[str]) -> list[str]:
 
 
 # ----------------------------------------------------------------------------- text swarm
-def _run_text_worker(index, prompt, workspace, timeout_s) -> WorkerResult:
+def _run_text_worker(index, prompt, workspace, model, timeout_s) -> WorkerResult:
     import server
 
     home = _make_isolated_home()
     t0 = time.time()
     try:
         os.makedirs(workspace, exist_ok=True)
-        args = [server.AGY_BIN, "--print-timeout", f"{timeout_s}s", "-p", prompt]
+        args = [server.AGY_BIN, "--print-timeout", f"{timeout_s}s"]
+        if model:
+            args += ["--model", model]
+        args += ["-p", prompt]
         proc = subprocess.run(
             args,
             cwd=workspace,
@@ -231,7 +234,7 @@ def _run_text_worker(index, prompt, workspace, timeout_s) -> WorkerResult:
         shutil.rmtree(home, ignore_errors=True)
 
 
-def _run_text_worker_watched(index, prompt, workspace, timeout_s) -> WorkerResult:
+def _run_text_worker_watched(index, prompt, workspace, model, timeout_s) -> WorkerResult:
     import server
     import swarm_watch
 
@@ -241,7 +244,10 @@ def _run_text_worker_watched(index, prompt, workspace, timeout_s) -> WorkerResul
     feed = _Feed(home, index, start)
     try:
         os.makedirs(workspace, exist_ok=True)
-        args = [server.AGY_BIN, "--print-timeout", f"{timeout_s}s", "-p", prompt]
+        args = [server.AGY_BIN, "--print-timeout", f"{timeout_s}s"]
+        if model:
+            args += ["--model", model]
+        args += ["-p", prompt]
         proc = subprocess.Popen(
             args,
             cwd=workspace,
@@ -499,8 +505,9 @@ def _normalize_tasks(tasks) -> list[dict]:
     """Validate + canonicalize agent_swarm tasks into a uniform list.
 
     Each task is {backend, prompt, workspace?, sandbox?, model?}. backend accepts a
-    few aliases; sandbox/model apply to Codex and Copilot (dropped for
-    Antigravity). Raises ValueError naming the offending index on bad input.
+    few aliases; `sandbox` applies to Codex and Copilot (agy has no sandbox), while
+    `model` applies to ALL three (agy's --model works in print mode as of 1.0.16).
+    Raises ValueError naming the offending index on bad input.
     """
     if not isinstance(tasks, list):
         raise ValueError("tasks must be a list of {backend, prompt, ...} objects")
@@ -533,6 +540,10 @@ def _normalize_tasks(tasks) -> list[dict]:
             sandbox = t.get("sandbox") or copilot_bridge.DEFAULT_SANDBOX
             copilot_bridge.validate_sandbox(sandbox)  # fail fast on a bad policy
             model = t.get("model") or None
+        else:  # antigravity: no sandbox, but --model works in print mode (agy 1.0.16)
+            import server
+
+            model = server.validate_model(t.get("model") or None)  # fail fast on a typo
         out.append(
             {
                 "backend": backend,
@@ -714,7 +725,7 @@ def swarm_agents(
             fn = _run_copilot_worker_watched if watch else _run_copilot_worker
             return fn(i, t["prompt"], t["workspace"], t["sandbox"], t["model"], timeout_s)
         fn = _run_text_worker_watched if watch else _run_text_worker
-        return fn(i, t["prompt"], t["workspace"], timeout_s)
+        return fn(i, t["prompt"], t["workspace"], t["model"], timeout_s)
 
     results: list[Optional[WorkerResult]] = [None] * n
     with ThreadPoolExecutor(max_workers=max(1, max_concurrency)) as ex:
