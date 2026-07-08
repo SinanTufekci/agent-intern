@@ -156,7 +156,7 @@ mcp = FastMCP("agent-intern")
 # installed package metadata, which goes stale on editable installs). Keep in
 # sync with pyproject.toml's version. Compared at startup against the latest
 # tag on GitHub so a long-lived clone learns when to `git pull`.
-__version__ = "0.17.1"
+__version__ = "0.17.2"
 
 # Logs go to stderr (stdout is the MCP protocol channel). Quiet by default;
 # set AGY_BRIDGE_DEBUG=1 for per-call diagnostics. See _configure_logging.
@@ -313,6 +313,38 @@ def _spawn_kwargs(name: str = "") -> dict:
         # branch be exercised on any OS (the value is only ever used on Windows).
         return {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)}
     return {"start_new_session": True}
+
+
+def _drain_pipe(stream) -> "tuple[threading.Thread, list]":
+    """Continuously read a child's PIPE into a buffer on a daemon thread.
+
+    The watch-mode runners loop on proc.poll() while pumping the transcript, but do
+    NOT read the child's stdout/stderr during that loop. On agy 1.0.15+ `agy -p`
+    writes its full final answer to stdout; a large answer (or verbose stderr) can
+    fill the fixed OS pipe buffer, block agy's write, and hang it forever — the loop
+    then runs to the hard deadline and reports a FALSE timeout with a truncated
+    transcript answer. Draining each pipe on its own thread keeps the buffer empty so
+    the child never blocks (the same thing subprocess.run/communicate does for the
+    non-watched paths). Join the thread after the process exits; "".join(chunks) is
+    the full captured output.
+    """
+    chunks: list = []
+
+    def _reader():
+        try:
+            for line in stream:
+                chunks.append(line)
+        except (ValueError, OSError):
+            pass  # pipe closed (e.g. by proc.kill()) — stop quietly
+        finally:
+            try:
+                stream.close()
+            except OSError:
+                pass
+
+    t = threading.Thread(target=_reader, daemon=True)
+    t.start()
+    return t, chunks
 
 
 def _get_agy_version() -> Optional[str]:
@@ -1603,6 +1635,12 @@ def _run_agy_watched(
             text=True,
             **_spawn_kwargs(),  # agy stays headless; the browser is the viewer
         )
+        # Drain stdout/stderr on background threads: the poll loop below never reads
+        # them, so without this a large stdout answer fills the OS pipe buffer, hangs
+        # agy, and causes a false timeout with a truncated answer (see _drain_pipe).
+        # The answer itself still comes from the transcript, as before.
+        out_t, _out = _drain_pipe(proc.stdout)
+        err_t, err_chunks = _drain_pipe(proc.stderr)
         hard_deadline = start + timeout_s + 30
         while proc.poll() is None:
             if time.time() > hard_deadline:
@@ -1611,12 +1649,13 @@ def _run_agy_watched(
                 raise RuntimeError(f"agy timed out after {timeout_s + 30}s (watched)")
             feed.pump()
             time.sleep(_PROGRESS_POLL_INTERVAL_S)
-        feed.pump()  # drain entries flushed right before exit
-
-        _, stderr = proc.communicate()
+        feed.pump()  # drain transcript entries flushed right before exit
+        out_t.join(timeout=5)
+        err_t.join(timeout=5)
         if proc.returncode != 0:
             _watch_finish("error", f"(agy exited {proc.returncode})", time.time() - start)
-            raise RuntimeError(f"agy exited {proc.returncode}\nstderr: {(stderr or '')[-1000:]}")
+            stderr_tail = "".join(err_chunks)[-1000:]
+            raise RuntimeError(f"agy exited {proc.returncode}\nstderr: {stderr_tail}")
 
         deadline = time.time() + _RESPONSE_POLL_DEADLINE_S
         while True:
@@ -1667,6 +1706,10 @@ def _run_agy_image_watched(
             text=True,
             **_spawn_kwargs(),
         )
+        # Drain both pipes so a chatty agy can't fill the pipe buffer and hang (see
+        # _drain_pipe); the image answer itself still comes from the transcript/scratch.
+        out_t, _out = _drain_pipe(proc.stdout)
+        err_t, _err = _drain_pipe(proc.stderr)
         hard_deadline = start + timeout_s + 30
         while proc.poll() is None:
             if time.time() > hard_deadline:
@@ -1676,7 +1719,8 @@ def _run_agy_image_watched(
             feed.pump()
             time.sleep(_PROGRESS_POLL_INTERVAL_S)
         feed.pump()
-        proc.communicate()
+        out_t.join(timeout=5)
+        err_t.join(timeout=5)
 
         # The transcript read may fail even though the image was written; don't lose
         # a produced image to a transcript hiccup (mirrors antigravity_image).

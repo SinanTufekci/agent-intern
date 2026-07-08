@@ -8,6 +8,7 @@ test_smoke.py instead.
 """
 
 import asyncio
+import io
 import json
 import os
 import sqlite3
@@ -878,6 +879,9 @@ class _FakePopen:
     def __init__(self, *a, polls=1, returncode=0, **k):
         self._polls = polls
         self.returncode = returncode
+        # watched runners drain these; empty pipes keep the transcript the answer source
+        self.stdout = io.StringIO("")
+        self.stderr = io.StringIO("")
 
     def poll(self):
         if self._polls > 0:
@@ -952,6 +956,8 @@ def test_run_agy_watched_returns_answer_and_populates_state(monkeypatch, brain_d
         def __init__(self, *a, **k):
             self.returncode = 0
             self._n = 2
+            self.stdout = io.StringIO("")
+            self.stderr = io.StringIO("")
 
         def poll(self):
             self._n -= 1
@@ -1051,6 +1057,8 @@ def test_run_agy_image_watched_shows_image_and_returns(monkeypatch, brain_dir, l
         def __init__(self, *a, **k):
             self.returncode = 0
             self._n = 2
+            self.stdout = io.StringIO("")
+            self.stderr = io.StringIO("")
 
         def poll(self):
             self._n -= 1

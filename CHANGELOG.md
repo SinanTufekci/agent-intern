@@ -10,6 +10,25 @@ summary.
 
 ## [Unreleased]
 
+## [0.17.2] - 2026-07-08
+
+### Fixed
+
+- **Watch mode no longer deadlocks on long answers (false timeouts + truncated output).** All four
+  *watched* runners (`_run_agy_watched`, `_run_agy_image_watched`, and the swarm's
+  `_run_text_worker_watched` / `_run_image_worker_watched`) opened agy with `stdout`/`stderr` as
+  pipes but never drained them while polling — the classic `Popen` deadlock. Since agy 1.0.15+ writes
+  its full final answer to stdout, a large answer filled the fixed OS pipe buffer, blocked agy's
+  write, and hung it until the hard deadline fired: a **spurious timeout with a half-written
+  transcript answer**. Each pipe is now drained on a background thread (a new `_drain_pipe` helper),
+  matching what `subprocess.run` already does for the non-watched paths. Verified with a real 3 MB
+  child: the old loop never exits (deadlock) while the drained loop finishes in 0.2 s with the full
+  output captured. (The non-watched and Codex/Copilot streaming paths were never affected.)
+- **Swarm detail window shows the whole prompt when expanded.** In the swarm watch dashboard's
+  per-worker log window, a long prompt expanded past the bottom of the window with no scrollbar, so
+  its tail was unreachable. The expanded prompt panel is now capped at `46vh` and scrolls internally,
+  mirroring the single-worker viewer in `server.py`.
+
 ## [0.17.1] - 2026-07-08
 
 ### Changed

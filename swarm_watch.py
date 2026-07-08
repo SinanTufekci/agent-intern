@@ -416,6 +416,7 @@ header{display:flex;align-items:center;gap:9px;padding:9px 14px;background:#0d0f
 .ptoggle:hover{color:var(--green)}
 .ptext{color:#e9eef3;white-space:pre-wrap;word-break:break-word;cursor:pointer}
 .ptext.clamp{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.ptext:not(.clamp){max-height:46vh;overflow:auto}
 main{padding:11px 15px;overflow:auto;flex:1}
 .row{display:flex;gap:9px;align-items:baseline;padding:2px 0;animation:sl .2s ease both}
 @keyframes sl{from{opacity:0;transform:translateX(-6px)}}

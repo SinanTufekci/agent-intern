@@ -258,6 +258,11 @@ def _run_text_worker_watched(index, prompt, workspace, model, timeout_s) -> Work
             env=_env_for_home(home),
             **server._spawn_kwargs(),
         )
+        # Drain stdout/stderr on threads so a large answer can't fill the pipe buffer
+        # and hang agy into a false timeout (see server._drain_pipe); the answer still
+        # comes from this worker's isolated transcript.
+        out_t, _out = server._drain_pipe(proc.stdout)
+        err_t, err_chunks = server._drain_pipe(proc.stderr)
         hard = start + timeout_s + 30
         while proc.poll() is None:
             if time.time() > hard:
@@ -267,9 +272,10 @@ def _run_text_worker_watched(index, prompt, workspace, model, timeout_s) -> Work
             swarm_watch.worker_update(index, elapsed=round(time.time() - start, 1))
             time.sleep(0.4)
         feed.pump()
-        _, stderr = proc.communicate()
+        out_t.join(timeout=5)
+        err_t.join(timeout=5)
         if proc.returncode != 0:
-            raise RuntimeError(f"agy exited {proc.returncode}: {(stderr or '')[-300:]}")
+            raise RuntimeError(f"agy exited {proc.returncode}: {''.join(err_chunks)[-300:]}")
         deadline = time.time() + 5.0
         while True:
             conv = _only_conv(home)
@@ -402,6 +408,10 @@ def _run_image_worker_watched(index, prompt, target, workspace, timeout_s) -> Wo
             env=_env_for_home(home),
             **server._spawn_kwargs(),
         )
+        # Drain both pipes so agy can't hang on a full pipe buffer (see
+        # server._drain_pipe); the image answer comes from the transcript/scratch.
+        out_t, _out = server._drain_pipe(proc.stdout)
+        err_t, _err = server._drain_pipe(proc.stderr)
         hard = start + timeout_s + 30
         while proc.poll() is None:
             if time.time() > hard:
@@ -411,7 +421,8 @@ def _run_image_worker_watched(index, prompt, target, workspace, timeout_s) -> Wo
             swarm_watch.worker_update(index, elapsed=round(time.time() - start, 1))
             time.sleep(0.4)
         feed.pump()
-        proc.communicate()
+        out_t.join(timeout=5)
+        err_t.join(timeout=5)
         agy_text = None
         conv = _only_conv(home)
         if conv:
