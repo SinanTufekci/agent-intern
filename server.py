@@ -77,6 +77,20 @@ case for --sandbox runs — so the bridge keeps working once JSONL goes away. Th
 1.0.5 -p metadata fix also stopped agy from writing metadata to the cwd, so
 last_conversations.json now updates reliably under cache/.
 
+Execution modes (agy 1.1.0): 1.1.0 added an agent execution-mode system — a
+`--mode` launch flag (accept-edits | plan) plus a new interactive default,
+request-review, that PAUSES before file writes to show a diff preview. This does
+NOT affect the bridge. `-p` is spawned with DEVNULL stdin, and the request-review
+approval gate only engages on an INTERACTIVE stdin: given EOF-on-stdin, print mode
+still auto-executes every tool call with no prompt (re-verified on 1.1.0 — a
+file-writing task completed and wrote its file in ~36 s, exit 0, identically with
+and without `--mode accept-edits`). So the bridge keeps NOT passing `--mode`; the
+`request-review` toolPermission agy has logged since 1.0.5 stays a no-op for -p.
+Full compat re-verified on 1.1.0 via the bridge itself: ask + conversation-pinned
+continue round-trips return clean over stdout, and base dir /
+last_conversations.json / JSONL-primary transcript are all intact (SQLite
+dual-write present — 260 .db — but JSONL still written).
+
 SECURITY — read this: `agy -p` runs the model as an autonomous agent that
 auto-executes its tools (read/write files, run shell commands, reach the
 network) with NO approval gate and NO opt-out. Re-verified empirically on
@@ -98,7 +112,12 @@ checks, .git added to its dangerous-paths list — but none of that closes the
 out-of-workspace write_to_file hole.) Worse for us, a --sandbox run that hits
 a blocked terminal command writes NO JSONL transcript (only the SQLite .db, as
 re-confirmed on 1.0.9), so the bridge would fail to read a response.
-For both reasons the bridge deliberately does NOT pass --sandbox; there is
+Re-verified on 1.1.0: nothing here changed. A sandboxed terminal command still
+gets blocked and stalls print mode (it returned "Error: timeout waiting for
+response", exit 1, having executed nothing), while write_to_file still runs under
+--sandbox and still lands OUTSIDE the declared workspace (exit 0). The new 1.1.0
+`--mode accept-edits` and `--sandbox` coexist without error, but neither makes -p
+safe. For both reasons the bridge deliberately does NOT pass --sandbox; there is
 still no agy flag that makes print mode safe.
 
 So `workspace` is only a starting context, NOT a security boundary:
@@ -137,7 +156,7 @@ mcp = FastMCP("agent-intern")
 # installed package metadata, which goes stale on editable installs). Keep in
 # sync with pyproject.toml's version. Compared at startup against the latest
 # tag on GitHub so a long-lived clone learns when to `git pull`.
-__version__ = "0.17.0"
+__version__ = "0.17.1"
 
 # Logs go to stderr (stdout is the MCP protocol channel). Quiet by default;
 # set AGY_BRIDGE_DEBUG=1 for per-call diagnostics. See _configure_logging.
@@ -169,7 +188,7 @@ _AGY_LOCK = threading.Lock()
 # Latest agy version the bridge's state-file assumptions were verified against.
 # Newer agy releases may change paths/schemas (the SQLite migration is the known
 # risk), so we warn at startup if the installed agy is newer than this.
-VERIFIED_AGY_VERSION = (1, 0, 16)
+VERIFIED_AGY_VERSION = (1, 1, 0)
 
 # Poll window for the transcript/conversation-id to appear after agy exits.
 # agy has already returned 0 by the time we read, so the common case resolves

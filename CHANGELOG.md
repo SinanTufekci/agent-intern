@@ -10,6 +10,26 @@ summary.
 
 ## [Unreleased]
 
+## [0.17.1] - 2026-07-08
+
+### Changed
+
+- **Verified against agy 1.1.0** (`VERIFIED_AGY_VERSION`), silencing the spurious "newer than
+  verified" startup warning that fired for every 1.1.0 user. Full bridge round-trip re-confirmed live:
+  `antigravity_ask` + conversation-pinned `antigravity_continue` return clean over stdout, and the
+  state-file layout (`last_conversations.json`, JSONL-primary transcript, SQLite dual-write) is intact.
+- **agy 1.1.0's new agent execution modes do not affect the bridge.** 1.1.0 added a `--mode` launch
+  flag (`accept-edits` | `plan`) and a new interactive **request-review** default that pauses before
+  file writes for a diff preview. Because the bridge spawns `-p` with **DEVNULL stdin**, the
+  request-review approval gate never engages (it needs an interactive stdin) — print mode still
+  auto-executes every tool call. Verified: a file-writing task completed in ~36 s (exit 0),
+  identically with and without `--mode accept-edits`, so the bridge keeps passing neither `--mode`
+  nor `--sandbox`.
+- **Sandbox behavior unchanged on 1.1.0.** Re-verified that `--sandbox` still blocks terminal
+  commands (a sandboxed terminal run timed out with no response, exit 1) but still does **not** gate
+  `write_to_file` (a sandboxed write succeeded outside the workspace, exit 0). `--mode` and
+  `--sandbox` coexist without error; neither makes `-p` safe. The SECURITY note stands.
+
 ## [0.17.0] - 2026-07-03
 
 ### Added

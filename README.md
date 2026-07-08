@@ -13,7 +13,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![MCP server](https://img.shields.io/badge/MCP-server-7c3aed)](https://modelcontextprotocol.io/)
 [![Glama](https://glama.ai/mcp/servers/SinanTufekci/agent-intern/badges/score.svg)](https://glama.ai/mcp/servers/SinanTufekci/agent-intern)
-[![agy 1.0.15 verified](https://img.shields.io/badge/agy-1.0.15%20verified-2ea44f)](https://antigravity.google/)
+[![agy 1.1.0 verified](https://img.shields.io/badge/agy-1.1.0%20verified-2ea44f)](https://antigravity.google/)
 [![codex 0.141.0 verified](https://img.shields.io/badge/codex--cli-0.141.0%20verified-2ea44f)](https://developers.openai.com/codex/)
 [![copilot 1.0.68 verified](https://img.shields.io/badge/copilot--cli-1.0.68%20verified-2ea44f)](https://docs.github.com/en/copilot/how-tos/copilot-cli)
 [![platform](https://img.shields.io/badge/platform-Windows%20·%20macOS%20·%20Linux-lightgrey)](#requirements)
@@ -628,13 +628,17 @@ workers). That's the supported way to run many calls at once, across any backend
 
 ## Status & caveats
 
-- ✅ **Verified on agy 1.0.15** — base dir, `last_conversations.json` (still keyed by workspace path),
+- ✅ **Verified on agy 1.1.0** — base dir, `last_conversations.json` (still keyed by workspace path),
   the `brain/.../transcript.jsonl` path, the transcript schema, and the `-p`/`-c`/`--print-timeout`
-  flags are all unchanged; a live ask round-trip + `antigravity_status` diagnostics pass. **1.0.15
-  fixed the print-mode stdout bug on Windows** — `-p` now writes the clean answer to stdout, so the
-  bridge prefers it (transcript stays the fallback). The other 1.0.15 changes don't touch this bridge:
-  the "MCP connection timeout → 60 s" is agy acting as an MCP *client* (opposite direction), and the
-  rest are interactive-TUI / paste / permissions-panel fixes.
+  flags are all unchanged; a live `antigravity_ask` + conversation-pinned `antigravity_continue`
+  round-trip returns clean over stdout and `antigravity_status` diagnostics pass. **1.1.0 added an
+  agent execution-mode system** — a `--mode` flag (`accept-edits` | `plan`) and a new interactive
+  **request-review** default that pauses before file writes — but it does **not** touch the bridge:
+  `-p` is spawned with DEVNULL stdin, so the approval gate never engages and print mode still
+  auto-executes (a file-writing task completed in ~36 s, exit 0, with and without `--mode
+  accept-edits`). `--sandbox` behavior is likewise unchanged (blocks the terminal, not file writes).
+  The print-mode stdout path (fixed on **1.0.15**, Windows) still applies; the transcript stays the
+  fallback.
 - ✅ **Verified on codex-cli 0.141.0** — `codex exec`, `-o/--output-last-message`,
   `codex exec resume`, the `--json` event stream, and the `~/.codex/sessions/.../rollout-*.jsonl`
   layout the continue path reads are all in place; a live `codex_ask` round-trip + `codex_status`
