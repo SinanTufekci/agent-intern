@@ -156,7 +156,7 @@ mcp = FastMCP("agent-intern")
 # installed package metadata, which goes stale on editable installs). Keep in
 # sync with pyproject.toml's version. Compared at startup against the latest
 # tag on GitHub so a long-lived clone learns when to `git pull`.
-__version__ = "0.18.0"
+__version__ = "0.18.1"
 
 # Logs go to stderr (stdout is the MCP protocol channel). Quiet by default;
 # set AGY_BRIDGE_DEBUG=1 for per-call diagnostics. See _configure_logging.
@@ -1000,6 +1000,7 @@ def _run_agy(
     timeout_s: int,
     model: Optional[str] = None,
 ) -> str:
+    os.makedirs(workspace, exist_ok=True)  # agy's cwd must exist (mirrors the swarm)
     args, pinned_conv = _build_agy_args(prompt, workspace, continue_conv, timeout_s, model)
 
     with _AGY_LOCK:
@@ -1705,6 +1706,7 @@ def _run_agy_watched(
     value is identical to antigravity_ask. The viewer is best-effort and cross-platform
     (any browser); if it can't open, the run still completes normally.
     """
+    os.makedirs(workspace, exist_ok=True)  # agy's cwd must exist (mirrors the swarm)
     args, pinned_conv = _build_agy_args(prompt, workspace, continue_conv, timeout_s, model)
 
     with _AGY_LOCK:
@@ -1779,6 +1781,7 @@ def _run_agy_image_watched(
     is the user's original prompt, shown as the window title (not the wrapped
     save-path instructions that actually go to agy).
     """
+    os.makedirs(workspace, exist_ok=True)  # agy's cwd must exist (mirrors the swarm)
     args, _ = _build_agy_args(wrapped_prompt, workspace, False, timeout_s)
 
     with _AGY_LOCK:

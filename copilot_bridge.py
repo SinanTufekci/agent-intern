@@ -338,6 +338,7 @@ def run_copilot(
     can be handed to server.py's _run_with_progress unchanged.
     """
     validate_sandbox(sandbox)
+    os.makedirs(workspace, exist_ok=True)  # copilot's cwd (-C) must exist
     session_id = _resolve_session(workspace, continue_conv)
     args = build_args(prompt, workspace, sandbox, model, session_id)
 
@@ -403,14 +404,12 @@ def run_copilot_streaming(
     Like run_copilot, but launches copilot with --output-format json so it emits
     one JSON event per line on stdout, calling `on_event(event_dict)` for each as
     it arrives (this is how watch mode renders steps live). The final answer is
-    reconstructed from the stream's assistant messages. A watchdog timer kills
-    copilot past the deadline, since the blocking stdout read can't otherwise be
-    cut off.
+    reconstructed from the stream's assistant messages. Completion is driven by the
+    process exiting (with a deadline) rather than stdout closing, because the CLI can
+    leave a child holding the stdout pipe open after the turn finishes.
     """
-    import json as _json
-    import threading as _threading
-
     validate_sandbox(sandbox)
+    os.makedirs(workspace, exist_ok=True)  # copilot's cwd (-C) must exist
     session_id = _resolve_session(workspace, continue_conv)
     args = build_args(prompt, workspace, sandbox, model, session_id, json_stream=True)
 
@@ -424,35 +423,54 @@ def run_copilot_streaming(
         text=True,
         **_spawn_kwargs(),
     )
-    timed_out = {"v": False}
+    # Drive completion off PROCESS EXIT, not stdout EOF: like codex, the CLI can
+    # leave a child holding the stdout pipe open after the turn finishes, so a plain
+    # `for line in proc.stdout` could block past completion. Read stdout + stderr on
+    # daemon threads and wait on the process itself (with a deadline).
+    err_chunks: list[str] = []
 
-    def _kill() -> None:
-        timed_out["v"] = True
-        proc.kill()
-
-    killer = _threading.Timer(timeout_s + 30, _kill)
-    killer.start()
-    try:
-        for line in proc.stdout:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                ev = _json.loads(line)
-            except ValueError:
-                continue
-            _answer_from_event(ev, state)
-            if on_event is not None:
+    def _pump_stdout() -> None:
+        try:
+            for line in proc.stdout:
+                line = line.strip()
+                if not line:
+                    continue
                 try:
-                    on_event(ev)
-                except Exception:  # noqa: BLE001 — a viewer hiccup must not kill the run
-                    pass
-        proc.wait()
-    finally:
-        killer.cancel()
+                    ev = json.loads(line)
+                except ValueError:
+                    continue
+                _answer_from_event(ev, state)
+                if on_event is not None:
+                    try:
+                        on_event(ev)
+                    except Exception:  # noqa: BLE001 — a viewer hiccup must not kill the run
+                        pass
+        except (ValueError, OSError):
+            pass  # pipe closed (e.g. on kill)
 
-    stderr = proc.stderr.read() if proc.stderr else ""
-    if timed_out["v"]:
+    def _pump_stderr() -> None:
+        try:
+            for line in proc.stderr:
+                err_chunks.append(line)
+        except (ValueError, OSError):
+            pass
+
+    ot = threading.Thread(target=_pump_stdout, daemon=True)
+    et = threading.Thread(target=_pump_stderr, daemon=True)
+    ot.start()
+    et.start()
+    timed_out = False
+    try:
+        proc.wait(timeout=timeout_s + 30)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        proc.kill()
+        proc.wait()
+    ot.join(timeout=2)
+    et.join(timeout=2)
+
+    stderr = "".join(err_chunks)
+    if timed_out:
         raise RuntimeError(f"copilot timed out after {timeout_s + 30}s (watched)")
     if proc.returncode not in (0, None):
         raise RuntimeError(f"copilot exited {proc.returncode}\nstderr: {(stderr or '')[-1000:]}")

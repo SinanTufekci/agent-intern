@@ -331,6 +331,7 @@ def run_codex(
     _run_with_progress(run_fn, args, ...) unchanged.
     """
     validate_sandbox(sandbox)
+    os.makedirs(workspace, exist_ok=True)  # codex's cwd (-C) must exist
     resume_session = _resolve_resume_session(workspace, continue_conv)
 
     # NamedTemporaryFile(delete=False): we only want a unique path; codex opens and
@@ -395,10 +396,12 @@ def run_codex_streaming(
     Like run_codex, but launches codex with --json so it emits one JSON event per
     line on stdout, and calls `on_event(event_dict)` for each parsed event as it
     arrives (this is how watch mode renders steps live). The answer is still read
-    from the -o file, not scraped from the stream. A watchdog timer kills codex
-    past the deadline, since the blocking stdout read can't otherwise be cut off.
+    from the -o file, not scraped from the stream. Completion is driven by the
+    process exiting (with a deadline) rather than stdout closing, because codex can
+    leave a child holding the stdout pipe open after the turn finishes.
     """
     validate_sandbox(sandbox)
+    os.makedirs(workspace, exist_ok=True)  # codex's cwd (-C) must exist
     resume_session = _resolve_resume_session(workspace, continue_conv)
 
     fd = tempfile.NamedTemporaryFile(suffix=".txt", prefix="codex_out_", delete=False)
@@ -417,36 +420,55 @@ def run_codex_streaming(
             text=True,
             **_spawn_kwargs(),
         )
-        # The stdout read below blocks, so a hung run can't be caught by an inline
-        # clock; a watchdog timer kills the process, which closes the pipe and ends
-        # the loop. timed_out distinguishes that kill from a clean exit.
-        timed_out = {"v": False}
+        # Drive completion off PROCESS EXIT, not stdout EOF: codex (node) can leave a
+        # child process holding the stdout pipe open after the turn is done, so a plain
+        # `for line in proc.stdout` would block forever even though codex has finished
+        # and the answer is already in the -o file. So read stdout + stderr on daemon
+        # threads (a lingering pipe can't stall us) and wait on the process itself.
+        err_chunks: list[str] = []
 
-        def _kill() -> None:
-            timed_out["v"] = True
-            proc.kill()
+        def _pump_stdout() -> None:
+            try:
+                for line in proc.stdout:
+                    line = line.strip()
+                    if not line or on_event is None:
+                        continue
+                    try:
+                        ev = json.loads(line)
+                    except ValueError:
+                        continue
+                    try:
+                        on_event(ev)
+                    except Exception:  # noqa: BLE001 — a viewer hiccup must not kill the run
+                        pass
+            except (ValueError, OSError):
+                pass  # pipe closed (e.g. on kill)
 
-        killer = threading.Timer(timeout_s + 30, _kill)
-        killer.start()
+        def _pump_stderr() -> None:
+            try:
+                for line in proc.stderr:
+                    err_chunks.append(line)
+            except (ValueError, OSError):
+                pass
+
+        ot = threading.Thread(target=_pump_stdout, daemon=True)
+        et = threading.Thread(target=_pump_stderr, daemon=True)
+        ot.start()
+        et.start()
+        timed_out = False
         try:
-            for line in proc.stdout:
-                line = line.strip()
-                if not line or on_event is None:
-                    continue
-                try:
-                    ev = json.loads(line)
-                except ValueError:
-                    continue
-                try:
-                    on_event(ev)
-                except Exception:  # noqa: BLE001 — a viewer hiccup must not kill the run
-                    pass
+            proc.wait(timeout=timeout_s + 30)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            proc.kill()
             proc.wait()
-        finally:
-            killer.cancel()
+        # Let the readers flush buffered lines, but don't block on a child still
+        # holding the pipe open — the answer comes from the -o file regardless.
+        ot.join(timeout=2)
+        et.join(timeout=2)
 
-        stderr = proc.stderr.read() if proc.stderr else ""
-        if timed_out["v"]:
+        stderr = "".join(err_chunks)
+        if timed_out:
             raise RuntimeError(f"codex timed out after {timeout_s + 30}s (watched)")
         if proc.returncode not in (0, None):
             raise RuntimeError(f"codex exited {proc.returncode}\nstderr: {(stderr or '')[-1000:]}")

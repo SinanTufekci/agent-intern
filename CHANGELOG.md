@@ -10,6 +10,25 @@ summary.
 
 ## [Unreleased]
 
+## [0.18.1] - 2026-07-08
+
+### Fixed
+
+- **Codex/Copilot watch mode no longer hangs until timeout after the answer is ready.** The streaming
+  runners (`run_codex_streaming` / `run_copilot_streaming`) ended their live loop on **stdout EOF**
+  (`for line in proc.stdout`), but codex (and copilot — both node CLIs) can leave a child process
+  holding the stdout pipe open after the turn completes, so the loop blocked past completion and the
+  watched run only returned when the watchdog killed it at `timeout+30s` — the window showed the
+  answer but kept spinning. Completion is now driven by **process exit** (`proc.wait(timeout=…)`) with
+  stdout/stderr read on daemon threads, so the run finishes as soon as the CLI exits regardless of a
+  lingering child (verified live: a codex watched ask returned in ~4.6s instead of timing out). This
+  also drains stderr concurrently, closing the same pipe-buffer deadlock class fixed for agy in 0.17.2.
+- **Fresh `workspace` dirs no longer crash the single-worker tools with `WinError 267`.** `antigravity_ask`
+  / `antigravity_continue` / the image tool and `codex_*` / `copilot_*` set the child's cwd to
+  `workspace` but didn't create it, so a not-yet-existing workspace failed with a cryptic "directory
+  name is invalid". Each runner now `os.makedirs(workspace, exist_ok=True)` before spawning, matching
+  what the swarm workers already did.
+
 ## [0.18.0] - 2026-07-08
 
 ### Added
