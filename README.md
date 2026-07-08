@@ -340,13 +340,15 @@ set **`COPILOT_BIN`** to its full path — e.g.
 
 Pass **`watch=true`** to **any single-prompt tool** — `antigravity_ask`, `antigravity_continue`,
 `antigravity_image`, `codex_ask`, `codex_continue`, `copilot_ask`, or `copilot_continue` — to **watch
-the agent work live in a little terminal-style browser window** called **Agent Intern**. The agent
-still runs headless; alongside it
-the bridge serves a tiny page on `127.0.0.1` and opens it in a small, chromeless app window that
-streams the agent's steps — its planner narration (▸), the **real commands** it runs (`$`), and
-completions (✓) — read live (from agy's transcript, or codex's / copilot's JSON event stream), with
-the final answer rendered as Markdown (and, for `antigravity_image` with `watch=true`, the generated
-image shown inline).
+the agent work live in a little chat-style browser window** called **Agent Intern**. The agent
+still runs headless; alongside it the bridge serves a tiny page on `127.0.0.1` and opens it in a
+small, chromeless app window that renders the exchange as a **conversation**: your prompt shows as a
+chat bubble, the agent's live steps stream in a collapsible "thinking" trace — its planner narration
+(▸), the **real commands** it runs (`$`), and completions (✓), read live (from agy's transcript, or
+codex's / copilot's JSON event stream) — and the final answer arrives as a Markdown card (and, for
+`antigravity_image` with `watch=true`, the generated image shown inline). A **`*_continue`** run
+opens with the **prior turns of the conversation shown as history**, so it reads as one ongoing
+thread rather than a blank new window.
 
 <div align="center">
 <table>
@@ -373,6 +375,12 @@ image shown inline).
   run (the swarm dashboard rebuilds for the new fan-out). If you closed the window, the
   next run opens a fresh one. Set **`AGY_WATCH_ALWAYS_NEW=1`** to force a new window
   every time.
+- **Chat layout & history.** Prompts render as chat bubbles — long ones clamp to a few
+  lines with a **daha fazla / daha az** (expand / collapse) toggle — and answers as
+  Markdown cards tagged with the backend. A **`*_continue`** run seeds the window with
+  the conversation's **prior turns**, read from each backend's own session store (agy's
+  transcript, codex's rollout, copilot's `events.jsonl`). The swarm's per-worker detail
+  window uses the same chat design for its one task.
 - **Progress, keyboard & copy.** Each panel shows a time progress bar (elapsed /
   timeout). The swarm dashboard adds an overall done/total bar and per-row time bars;
   use **↑/↓** to select a worker and **↵** to open its detail window. Answers render

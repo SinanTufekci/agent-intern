@@ -179,6 +179,57 @@ def test_resume_target_picks_newest_for_cwd(tmp_path, monkeypatch):
     assert codex_bridge._resume_target_for("C:\\proj") == new
 
 
+def _append_events(path, events):
+    with open(path, "a", encoding="utf-8") as f:
+        for e in events:
+            f.write(json.dumps(e) + "\n")
+
+
+def test_read_history_pairs_user_and_agent_messages(tmp_path, monkeypatch):
+    sessions = tmp_path / "sessions"
+    monkeypatch.setattr(codex_bridge, "SESSIONS_DIR", sessions)
+    monkeypatch.setattr(codex_bridge, "_PINNED", {})
+    path = _write_rollout(sessions, SAMPLE_SID, "C:\\proj")
+    _append_events(
+        path,
+        [
+            {"type": "event_msg", "payload": {"type": "user_message", "message": "first Q"}},
+            {"type": "event_msg", "payload": {"type": "agent_message", "message": "first A"}},
+            # a system-injected user-role response_item must NOT be treated as a turn
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": "<environment_context>ignore</environment_context>",
+                        }
+                    ],
+                },
+            },
+            {"type": "event_msg", "payload": {"type": "user_message", "message": "second Q"}},
+            {"type": "event_msg", "payload": {"type": "agent_message", "message": "second A"}},
+        ],
+    )
+    assert codex_bridge.read_history("C:\\proj", True) == [
+        {"role": "user", "content": "first Q"},
+        {"role": "assistant", "content": "first A"},
+        {"role": "user", "content": "second Q"},
+        {"role": "assistant", "content": "second A"},
+    ]
+
+
+def test_read_history_empty_for_fresh_or_unresolved(tmp_path, monkeypatch):
+    sessions = tmp_path / "sessions"
+    monkeypatch.setattr(codex_bridge, "SESSIONS_DIR", sessions)
+    monkeypatch.setattr(codex_bridge, "_PINNED", {})
+    _write_rollout(sessions, SAMPLE_SID, "C:\\proj")
+    assert codex_bridge.read_history("C:\\proj", False) == []  # fresh ask
+    assert codex_bridge.read_history("C:\\nowhere", True) == []  # no session for cwd
+
+
 def test_capture_new_session_finds_added_rollout(tmp_path, monkeypatch):
     sessions = tmp_path / "sessions"
     monkeypatch.setattr(codex_bridge, "SESSIONS_DIR", sessions)

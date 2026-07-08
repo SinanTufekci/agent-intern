@@ -45,6 +45,7 @@ bridge never touches the token; it only reads session-state under ~/.copilot/.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -234,6 +235,50 @@ def _resolve_session(workspace: str, continue_conv: bool) -> str:
             "Run copilot_ask first (or check ~/.copilot/session-state)."
         )
     return sid
+
+
+# ----------------------------------------------------------------- conversation history
+def read_history(workspace: str, continue_conv: bool) -> list[dict]:
+    """Prior turns of the copilot session rooted at `workspace`: [{role, content}, …].
+
+    Oldest first, for the watch view's conversation history. Resolves the session
+    the same way a resume would (in-memory pin, then newest matching on-disk
+    session), then reads its events.jsonl pulling the clean user prompts
+    (user.message.data.content) and assistant answers (assistant.message.data.content).
+    Returns [] for a fresh ask, an unresolved session, a session without an
+    events.jsonl (some copilot builds don't write one), or any read error.
+    """
+    if not continue_conv:
+        return []
+    sid = get_pinned(workspace) or _resume_target_for(workspace)
+    if not sid:
+        return []
+    events = SESSION_STATE_DIR / sid / "events.jsonl"
+    if not events.exists():
+        return []
+    turns: list[dict] = []
+    try:
+        text = events.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        etype = e.get("type")
+        data = e.get("data") or {}
+        content = (data.get("content") or "").strip()
+        if not content:
+            continue
+        if etype == "user.message":
+            turns.append({"role": "user", "content": content})
+        elif etype == "assistant.message":
+            turns.append({"role": "assistant", "content": content})
+    return turns
 
 
 # ----------------------------------------------------------------- running copilot

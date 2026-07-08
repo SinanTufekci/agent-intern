@@ -200,6 +200,58 @@ def _resume_target_for(workspace: str) -> Optional[str]:
     return None
 
 
+# ----------------------------------------------------------------- conversation history
+def _rollout_for_session(sid: str) -> Optional[Path]:
+    """The rollout file whose session id equals `sid` (newest wins), or None."""
+    matches = [p for p in _iter_rollouts() if _session_id_of(p) == sid]
+    if not matches:
+        return None
+    return max(matches, key=lambda p: p.stat().st_mtime if p.exists() else 0.0)
+
+
+def read_history(workspace: str, continue_conv: bool) -> list[dict]:
+    """Prior turns of the codex session rooted at `workspace`: [{role, content}, …].
+
+    Oldest first, for the watch view's conversation history. Resolves the session
+    the same way a resume would (in-memory pin, then newest matching on-disk
+    rollout), then walks its rollout JSONL pulling the clean user prompts
+    (event_msg/user_message) and final agent answers (event_msg/agent_message).
+    Returns [] for a fresh ask, an unresolved/absent session, or any read error.
+    """
+    if not continue_conv:
+        return []
+    sid = get_pinned(workspace) or _resume_target_for(workspace)
+    if not sid:
+        return []
+    path = _rollout_for_session(sid)
+    if path is None:
+        return []
+    turns: list[dict] = []
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        if e.get("type") != "event_msg":
+            continue
+        p = e.get("payload") or {}
+        ptype, msg = p.get("type"), (p.get("message") or "").strip()
+        if not msg:
+            continue
+        if ptype == "user_message":
+            turns.append({"role": "user", "content": msg})
+        elif ptype == "agent_message":
+            turns.append({"role": "assistant", "content": msg})
+    return turns
+
+
 # ----------------------------------------------------------------- running codex
 def _resolve_resume_session(workspace: str, continue_conv: bool) -> Optional[str]:
     """The session id to resume for `workspace`, or None for a fresh run.

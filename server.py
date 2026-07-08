@@ -156,7 +156,7 @@ mcp = FastMCP("agent-intern")
 # installed package metadata, which goes stale on editable installs). Keep in
 # sync with pyproject.toml's version. Compared at startup against the latest
 # tag on GitHub so a long-lived clone learns when to `git pull`.
-__version__ = "0.17.2"
+__version__ = "0.18.0"
 
 # Logs go to stderr (stdout is the MCP protocol channel). Quiet by default;
 # set AGY_BRIDGE_DEBUG=1 for per-call diagnostics. See _configure_logging.
@@ -586,6 +586,54 @@ def _transcript_entries(conv_id: str) -> list[dict]:
         except json.JSONDecodeError:
             continue
     return out
+
+
+def _strip_user_request(text: str) -> str:
+    """Unwrap agy's <USER_REQUEST>…</USER_REQUEST> envelope around a stored prompt.
+
+    agy records each user turn's content wrapped in a <USER_REQUEST> tag (sometimes
+    with only the opening tag). The watch history should show the clean prompt, so
+    peel the wrapper; falls back to the raw text if no wrapper is present.
+    """
+    t = (text or "").strip()
+    m = re.search(r"<USER_REQUEST>\s*(.*?)\s*</USER_REQUEST>", t, re.DOTALL)
+    if m:
+        return m.group(1).strip()
+    if t.startswith("<USER_REQUEST>"):
+        return t[len("<USER_REQUEST>") :].strip()
+    return t
+
+
+def _read_agy_history(conv_id: str) -> list[dict]:
+    """Prior turns of an agy conversation for the watch view: [{role, content}, …].
+
+    Oldest first. Walks the JSONL transcript in order: each USER_INPUT (unwrapped
+    from its <USER_REQUEST> envelope) is a user turn, and the LAST completed
+    PLANNER_RESPONSE before the next user input is that turn's assistant answer
+    (earlier planner steps within a turn are tool-call narration, not the answer).
+    Best-effort — returns [] if the transcript is missing/unreadable. Note: agy may
+    store a truncated `content` for very long older turns (its own transcript cap),
+    so those answers can come back clipped.
+    """
+    turns: list[dict] = []
+    pending: Optional[str] = None
+    for e in _transcript_entries(conv_id):
+        src, typ = e.get("source"), e.get("type")
+        if src == "USER_EXPLICIT" and typ == "USER_INPUT" and e.get("content"):
+            if pending is not None:
+                turns.append({"role": "assistant", "content": pending})
+                pending = None
+            turns.append({"role": "user", "content": _strip_user_request(e["content"])})
+        elif (
+            src == "MODEL"
+            and typ == "PLANNER_RESPONSE"
+            and e.get("status") == "DONE"
+            and e.get("content")
+        ):
+            pending = e["content"].strip()  # keep the latest; it's the turn's final answer
+    if pending is not None:
+        turns.append({"role": "assistant", "content": pending})
+    return turns
 
 
 def _clean_tool_arg(value) -> str:
@@ -1080,7 +1128,9 @@ def _newest_new_conv(start: float, exclude: set[str]) -> Optional[str]:
 # page. One server + one shared state per bridge process (agy runs are serialized
 # by _AGY_LOCK, so only one run writes at a time). The browser polls /events.
 _WATCH_STATE: dict = {
-    "title": "",
+    "title": "",  # short single-line caption (first prompt line, ≤200 chars)
+    "prompt": "",  # the FULL untruncated prompt, shown in the current-turn bubble
+    "history": [],  # prior turns for continue mode: [{role:'user'|'assistant', content}]
     "status": "idle",  # idle | working | done | error
     "started": 0.0,
     "elapsed": 0.0,
@@ -1100,10 +1150,19 @@ _WATCH_LAST_POLL = 0.0
 _VIEWER_ALIVE_S = 4.0  # a poll within this window means a viewer is still open
 
 
-def _watch_reset(title: str, start: float, timeout: float = 0.0, backend: str = "agy") -> None:
+def _watch_reset(
+    title: str,
+    start: float,
+    timeout: float = 0.0,
+    backend: str = "agy",
+    prompt: str = "",
+    history: Optional[list] = None,
+) -> None:
     with _WATCH_STATE_LOCK:
         _WATCH_STATE.update(
             title=title,
+            prompt=prompt or title,  # full prompt for the bubble; fall back to the caption
+            history=list(history or []),  # prior turns (continue mode); [] for a fresh ask
             status="working",
             started=start,
             elapsed=0.0,
@@ -1184,16 +1243,17 @@ _WATCH_HTML = """<!doctype html><html lang="en" translate="no"><head><meta chars
 <title>Agent Intern — watching agy</title>
 <style>
 :root{
- --bg:#0a0c10;--fg:#d6d6d6;--dim:#677;--green:#3fdf7f;--cyan:#5cd6e6;
- --bd:#191c22;--code:#06080b;
+ --bg:#0a0c10;--fg:#d6d6d6;--dim:#6a7480;--green:#3fdf7f;--cyan:#5cd6e6;
+ --red:#ff6b6b;--bd:#191c22;--code:#06080b;
+ --ubg:#13251c;--ubd:#2a5a41;--uc:#e9f6ee;
 }
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;background:var(--bg)}
 body{
- color:var(--fg);padding-bottom:30px;
+ color:var(--fg);
  font:13px/1.6 ui-monospace,"Cascadia Mono",Consolas,"DejaVu Sans Mono",monospace;
 }
-::-webkit-scrollbar{width:9px}::-webkit-scrollbar-thumb{background:#23262d}
+::-webkit-scrollbar{width:9px}::-webkit-scrollbar-thumb{background:#23262d;border-radius:6px}
 .top{position:sticky;top:0;z-index:3;background:var(--bg)}
 header{
  display:flex;align-items:center;gap:8px;
@@ -1202,109 +1262,115 @@ header{
 }
 .name{color:var(--green);font-weight:700;text-shadow:0 0 10px rgba(63,223,127,.4)}
 .wlabel{color:var(--dim)}
-.pill{margin-left:auto;display:flex;align-items:center;gap:8px}
+.pill{margin-left:auto;display:flex;align-items:center;gap:7px;font-variant-numeric:tabular-nums}
 .dot{
- width:7px;height:7px;border-radius:50%;background:var(--green);
- box-shadow:0 0 9px var(--green);
+ width:7px;height:7px;border-radius:50%;background:var(--cyan);
+ box-shadow:0 0 9px var(--cyan);animation:pop .45s ease;
 }
+.dot.err{background:var(--red);box-shadow:0 0 8px var(--red)}
+@keyframes pop{0%{transform:scale(.2)}55%{transform:scale(1.5)}100%{transform:scale(1)}}
 .spin{
  color:var(--green);display:inline-block;width:9px;text-align:center;
  text-shadow:0 0 8px rgba(63,223,127,.6);
 }
 #elapsed{color:#556}
-main{padding:11px 14px}
-.sub{
- position:relative;color:var(--dim);font-size:12px;padding:8px 14px 9px;
- cursor:pointer;border-bottom:1px solid var(--bd);
- max-height:3.6em;overflow:hidden;transition:max-height .2s ease;
-}
-.sub:hover{background:#0f1116}
-.sub .tag{
- color:var(--green);font-weight:700;font-size:9.5px;letter-spacing:1.6px;
- margin-right:8px;
-}
-.sub .chev{float:right;color:var(--green);opacity:.8;margin-left:8px}
-.subtext{white-space:pre-wrap;word-break:break-word}
-.sub::after{
- content:"";position:absolute;left:0;right:0;bottom:0;height:15px;
- background:linear-gradient(transparent,var(--bg));pointer-events:none;
-}
-.sub.expanded{max-height:46vh;overflow:auto}
-.sub.expanded::after{display:none}
-.row{
- display:flex;gap:9px;align-items:baseline;padding:2px 0;
- animation:slide .22s ease both;
-}
-@keyframes slide{from{opacity:0;transform:translateX(-6px)}}
-.t{color:#4a4f57;min-width:50px;text-align:right;font-size:11px}
-.sym{width:10px;flex:none}
-.txt{white-space:pre-wrap;word-break:break-word}
-.command .sym{color:var(--green)}
-.command .txt{color:#f2f2f2}
-.narration .sym,.narration .txt{color:var(--cyan)}
-.result .sym,.result .txt{color:var(--green);opacity:.5}
-.cur{
- display:inline-block;width:7px;height:14px;background:var(--green);
- vertical-align:-2px;box-shadow:0 0 8px var(--green);
- animation:blink 1.05s steps(1) infinite;
-}
-@keyframes blink{50%{opacity:0}}
-.sep{
- display:flex;align-items:center;gap:10px;margin:22px 0 12px;
- animation:slide .3s ease both;
-}
-.sep::before,.sep::after{content:"";height:1px;background:var(--bd);flex:1}
-.seplabel{
- font-size:10px;letter-spacing:2.5px;color:var(--green);font-weight:700;opacity:.9;
-}
-.answer{
- animation:fade .4s ease both;background:#0c0e13;
- border:1px solid var(--bd);border-radius:8px;padding:13px 15px;
-}
-@keyframes fade{from{opacity:0}}
-.answer .h{font-weight:700;margin:13px 0 5px;color:#cdd9e5}
-.answer .h1{font-size:16px;color:#fff}
-.answer .h2{font-size:14px}
-.answer .h3{font-size:12.5px;color:var(--green)}
-.answer .p{margin:3px 0;white-space:pre-wrap;word-break:break-word}
-.answer .li{display:flex;gap:8px;margin:2px 0}
-.answer .bul{color:var(--green);flex:none;min-width:14px;text-align:right}
-.answer .lit{white-space:pre-wrap;word-break:break-word}
-.answer pre.code{
- background:var(--code);border-left:2px solid var(--green);border-radius:4px;
- padding:9px 11px;margin:7px 0;overflow:auto;white-space:pre;color:#e9efe9;
-}
-.answer code{background:#16191f;padding:1px 5px;border-radius:4px;color:#9fe6ad}
-.answer .lnk{color:var(--cyan);border-bottom:1px dotted #2a6b73}
-.answer strong{color:#fff}
-.shot{
- max-width:100%;border:1px solid var(--bd);border-radius:8px;
- margin:10px 0 4px;display:block;animation:fade .4s ease both;
-}
-.hint{
- position:fixed;bottom:7px;right:12px;color:#3b414a;font-size:10.5px;
- pointer-events:none;user-select:none;
-}
 .gbar{height:2px;background:#11141a}
 .gfill{
  height:100%;width:0;background:linear-gradient(90deg,var(--green),var(--cyan));
  box-shadow:0 0 8px rgba(92,214,230,.5);transition:width .5s linear;
 }
-.dot{animation:pop .45s ease}
-.dot.err{background:var(--red);box-shadow:0 0 8px var(--red)}
-@keyframes pop{0%{transform:scale(.2)}55%{transform:scale(1.5)}100%{transform:scale(1)}}
-.answer{position:relative}
-.copy{
- position:absolute;top:8px;right:9px;background:#11151c;border:1px solid var(--bd);
- color:var(--dim);font:inherit;font-size:10.5px;padding:2px 9px;border-radius:5px;
- cursor:pointer;opacity:.55;transition:opacity .15s,color .15s,border-color .15s;
+/* --- chat conversation --- */
+#chat{
+ max-width:960px;margin:0 auto;padding:16px 14px 46px;
+ display:flex;flex-direction:column;gap:11px;
 }
-.copy:hover{opacity:1;color:var(--green);border-color:#2a3340}
+.msg{display:flex;max-width:100%;animation:rise .28s ease both}
+@keyframes rise{from{opacity:0;transform:translateY(7px)}}
+.msg.user{justify-content:flex-end}
+.msg.bot{justify-content:flex-start}
+.role{font-size:9px;letter-spacing:1.4px;font-weight:700;opacity:.7;margin:0 3px 3px}
+.wrap{display:flex;flex-direction:column;max-width:84%}
+.msg.user .wrap{align-items:flex-end}
+.bubble{
+ position:relative;padding:9px 13px;border-radius:15px;word-break:break-word;
+ box-shadow:0 1px 2px rgba(0,0,0,.25);
+}
+.bubble.user{
+ background:var(--ubg);border:1px solid var(--ubd);color:var(--uc);
+ border-bottom-right-radius:5px;
+}
+.bubble.bot{
+ background:#0c0e13;border:1px solid var(--bd);border-bottom-left-radius:5px;
+}
+.btext{white-space:pre-wrap;word-break:break-word}
+.bubble.user.clampable .btext{
+ max-height:7.4em;overflow:hidden;
+ -webkit-mask-image:linear-gradient(180deg,#000 72%,transparent);
+}
+.bubble.user.expanded .btext{max-height:60vh;overflow:auto;-webkit-mask-image:none}
+.exp{
+ margin-top:6px;font-size:10.5px;color:var(--cyan);cursor:pointer;
+ user-select:none;opacity:.85;
+}
+.exp:hover{opacity:1}
+/* --- live step trace (assistant "thinking") --- */
+.trace{
+ background:#0b0d12;border:1px solid var(--bd);border-radius:13px;
+ border-bottom-left-radius:5px;overflow:hidden;max-width:84%;
+}
+.trace-head{
+ display:flex;align-items:center;gap:8px;padding:7px 12px;cursor:pointer;
+ color:var(--dim);font-size:11px;
+}
+.trace-head:hover{background:#0f1218}
+.trace-body{padding:1px 12px 9px;display:flex;flex-direction:column;gap:3px}
+.trace.collapsed .trace-body{display:none}
+.chev{margin-left:auto;color:var(--green);opacity:.7;transition:transform .2s}
+.trace.collapsed .chev{transform:rotate(-90deg)}
+.ty{display:inline-flex;gap:3px;align-items:center}
+.ty i{width:4px;height:4px;border-radius:50%;background:var(--green);opacity:.4;
+ animation:ty 1s infinite}
+.ty i:nth-child(2){animation-delay:.16s}.ty i:nth-child(3){animation-delay:.32s}
+@keyframes ty{0%,60%,100%{opacity:.35}30%{opacity:1}}
+.step{display:flex;gap:8px;align-items:baseline;font-size:11.5px;animation:rise .2s ease both}
+.step .sym{width:11px;flex:none}
+.step .txt{white-space:pre-wrap;word-break:break-word;color:#c7ccd2}
+.step.command .sym{color:var(--green)}.step.command .txt{color:#eaeef2}
+.step.narration .sym,.step.narration .txt{color:var(--cyan)}
+.step.result .sym,.step.result .txt{color:var(--green);opacity:.55}
+/* --- markdown answer card --- */
+.md .h{font-weight:700;margin:12px 0 5px;color:#cdd9e5}
+.md .h1{font-size:16px;color:#fff}.md .h2{font-size:14px}
+.md .h3{font-size:12.5px;color:var(--green)}
+.md .p{margin:3px 0;white-space:pre-wrap;word-break:break-word}
+.md .li{display:flex;gap:8px;margin:2px 0}
+.md .bul{color:var(--green);flex:none;min-width:14px;text-align:right}
+.md .lit{white-space:pre-wrap;word-break:break-word}
+.md pre.code{
+ background:var(--code);border-left:2px solid var(--green);border-radius:4px;
+ padding:9px 11px;margin:7px 0;overflow:auto;white-space:pre;color:#e9efe9;
+}
+.md code{background:#16191f;padding:1px 5px;border-radius:4px;color:#9fe6ad}
+.md .lnk{color:var(--cyan);border-bottom:1px dotted #2a6b73}
+.md strong{color:#fff}
+.md .copy{
+ position:absolute;top:7px;right:8px;background:#0e1218;border:1px solid var(--bd);
+ color:var(--dim);font:inherit;font-size:10px;padding:2px 8px;border-radius:5px;
+ cursor:pointer;opacity:0;transition:opacity .15s,color .15s,border-color .15s;
+}
+.bubble.bot:hover .copy{opacity:.92}
+.md .copy:hover{color:var(--green);border-color:#2a3340}
+.shot{max-width:100%;border:1px solid var(--bd);border-radius:12px;display:block;
+ animation:rise .3s ease both}
+.hint{
+ position:fixed;bottom:7px;right:12px;color:#3b414a;font-size:10.5px;
+ pointer-events:none;user-select:none;
+}
 .jump{
- position:fixed;bottom:30px;left:50%;transform:translateX(-50%);background:#12161d;
+ position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#12161d;
  border:1px solid #2a3340;color:var(--cyan);font-size:11.5px;padding:5px 13px;
  border-radius:20px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.5);
- animation:fade .3s;z-index:4;
+ animation:rise .3s;z-index:4;
 }
 </style></head><body>
 <div class="top">
@@ -1317,29 +1383,19 @@ main{padding:11px 14px}
   </span>
  </header>
  <div class="gbar"><div class="gfill" id="gfill"></div></div>
- <div class="sub" id="sub" title="click to expand / collapse">
-  <span class="chev" id="chev">▾</span><span class="tag">PROMPT</span><span
-   class="subtext" id="subtext"></span>
- </div>
 </div>
-<main>
- <div id="steps"></div>
- <div id="live"><span class="cur"></span></div>
- <div id="answerWrap"></div>
-</main>
-<div class="jump" id="jump" style="display:none">↓ jump to latest</div>
-<div class="hint">⏎ / esc · close</div>
+<div id="chat"></div>
+<div class="jump" id="jump" style="display:none">↓ en alta in</div>
+<div class="hint">⏎ / esc · kapat</div>
 <script>
 try{window.resizeTo(__WIN_W__,__WIN_H__);}catch(e){}
 document.addEventListener("keydown",e=>{
  if(e.key==="Enter"||e.key==="Escape"){try{window.close();}catch(_){}}
 });
 const SYM={narration:"▸",command:"$",result:"✓"};
-let seen=0,started=null,finished=false,tq=[],typing=false,follow=true;
+let started=null,seen=0,finished=false,follow=true,traceEl=null,traceBody=null;
 const $=id=>document.getElementById(id);
-$("sub").addEventListener("click",()=>{
- const ex=$("sub").classList.toggle("expanded");$("chev").textContent=ex?"▴":"▾";
-});
+const chat=()=>$("chat");
 function toBottom(){window.scrollTo(0,document.body.scrollHeight);}
 function maybeBottom(){if(follow)toBottom();}
 window.addEventListener("scroll",()=>{
@@ -1358,30 +1414,6 @@ function startSpin(){
  spinT=setInterval(()=>{$("spin").textContent=FR[fi=(fi+1)%FR.length];},80);
 }
 function stopSpin(){if(spinT){clearInterval(spinT);spinT=null;}$("spin").textContent="";}
-function reset(){
- $("steps").innerHTML="";$("answerWrap").innerHTML="";
- $("live").style.display="";$("dot").style.display="none";$("dot").className="dot";
- $("gfill").style.width="0";$("jump").style.display="none";follow=true;
- $("status").textContent="working";seen=0;finished=false;tq=[];typing=false;startSpin();
-}
-function drain(){
- if(!tq.length){typing=false;return;}
- typing=true;const[el,text]=tq.shift();let i=0;
- (function step(){
-  el.textContent=text.slice(0,i++);maybeBottom();
-  if(i<=text.length)setTimeout(step,text.length>90?3:9);else drain();
- })();
-}
-function type(el,text){tq.push([el,text]);if(!typing)drain();}
-function addStep(e){
- const row=document.createElement("div");row.className="row "+e.kind;
- const t=document.createElement("span");t.className="t";
- t.textContent="["+e.t.toFixed(1)+"s]";
- const sy=document.createElement("span");sy.className="sym";
- sy.textContent=SYM[e.kind]||"·";
- const tx=document.createElement("span");tx.className="txt";
- row.append(t,sy,tx);$("steps").appendChild(row);type(tx,e.text);
-}
 function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
 function inl(s){
  return s.replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g,"<span class='lnk'>$1</span>")
@@ -1409,49 +1441,111 @@ function md(src){
  if(inC)out.push("<pre class='code'>"+code+"</pre>");
  return out.join("");
 }
+// A user prompt as a right-aligned chat bubble; long ones clamp with an expander.
+function userBubble(text,role){
+ const m=document.createElement("div");m.className="msg user";
+ const wrap=document.createElement("div");wrap.className="wrap";
+ if(role){const r=document.createElement("div");r.className="role";
+  r.textContent=role;wrap.appendChild(r);}
+ const b=document.createElement("div");b.className="bubble user clampable";
+ const t=document.createElement("div");t.className="btext";t.textContent=text||"";
+ b.appendChild(t);wrap.appendChild(b);m.appendChild(wrap);chat().appendChild(m);
+ requestAnimationFrame(()=>{
+  if(t.scrollHeight>t.clientHeight+2){
+   const x=document.createElement("div");x.className="exp";x.textContent="daha fazla ▾";
+   x.onclick=()=>{const e=b.classList.toggle("expanded");
+    x.textContent=e?"daha az ▴":"daha fazla ▾";maybeBottom();};
+   b.appendChild(x);
+  }else{b.classList.remove("clampable");}
+  maybeBottom();
+ });
+ return b;
+}
+// An assistant answer as a left-aligned markdown card (with optional copy button).
+function botCard(text,copy,role){
+ const m=document.createElement("div");m.className="msg bot";
+ const wrap=document.createElement("div");wrap.className="wrap";
+ if(role){const r=document.createElement("div");r.className="role";
+  r.textContent=role;wrap.appendChild(r);}
+ const b=document.createElement("div");b.className="bubble bot md";
+ b.innerHTML=md(text||"");
+ if(copy){const cp=document.createElement("button");cp.className="copy";cp.textContent="copy";
+  cp.onclick=()=>copyText(text,cp);b.appendChild(cp);}
+ wrap.appendChild(b);m.appendChild(wrap);chat().appendChild(m);
+ return b;
+}
+// The live "thinking" trace under the current prompt (streams steps; collapsible).
+function newTrace(){
+ const m=document.createElement("div");m.className="msg bot";
+ const tr=document.createElement("div");tr.className="trace";
+ tr.innerHTML="<div class='trace-head'><span class='ty'><i></i><i></i><i></i></span>"+
+  "<span class='tlabel'>çalışıyor…</span><span class='chev'>▾</span></div>"+
+  "<div class='trace-body'></div>";
+ m.appendChild(tr);chat().appendChild(m);
+ tr.querySelector(".trace-head").onclick=()=>tr.classList.toggle("collapsed");
+ traceEl=tr;traceBody=tr.querySelector(".trace-body");
+}
+function addStep(e){
+ if(!traceBody)return;
+ const r=document.createElement("div");r.className="step "+e.kind;
+ r.innerHTML="<span class='sym'></span><span class='txt'></span>";
+ r.querySelector(".sym").textContent=SYM[e.kind]||"·";
+ r.querySelector(".txt").textContent=e.text;
+ traceBody.appendChild(r);maybeBottom();
+}
+function rebuild(s){
+ chat().innerHTML="";seen=0;finished=false;follow=true;traceEl=null;traceBody=null;
+ $("dot").style.display="none";$("dot").classList.remove("err");
+ $("gfill").style.width="0";$("gfill").style.background="";
+ $("jump").style.display="none";startSpin();
+ (s.history||[]).forEach(t=>{
+  if(t.role==="user")userBubble(t.content,"CLAUDE");
+  else botCard(t.content,false,(s.backend||"agy").toUpperCase());
+ });
+ userBubble(s.prompt||s.title||"","CLAUDE");
+ newTrace();
+}
 function finish(s){
- finished=true;stopSpin();$("live").style.display="none";$("dot").style.display="";
- if(s.status==="error"){$("dot").classList.add("err");
-  $("gfill").style.background="var(--red)";}
+ finished=true;stopSpin();$("dot").style.display="";
  $("gfill").style.width="100%";
- const verb=s.status==="error"?"failed":"done";
- $("status").textContent=verb+" in "+(s.elapsed||0).toFixed(1)+"s";
- const w=$("answerWrap");
- if(s.answer||s.image){
-  const sep=document.createElement("div");sep.className="sep";
-  sep.innerHTML="<span class='seplabel'>OUTPUT</span>";w.appendChild(sep);
+ if(s.status==="error"){$("dot").classList.add("err");$("gfill").style.background="var(--red)";}
+ $("status").textContent=(s.status==="error"?"failed":"done")+" in "+(s.elapsed||0).toFixed(1)+"s";
+ $("elapsed").textContent="";
+ if(traceEl){
+  traceEl.classList.add("collapsed");
+  const lbl=traceEl.querySelector(".tlabel");if(lbl)lbl.textContent=seen+" adım ✓";
+  const ty=traceEl.querySelector(".ty");if(ty)ty.remove();
  }
  if(s.image){
+  const m=document.createElement("div");m.className="msg bot";
+  const wrap=document.createElement("div");wrap.className="wrap";
   const im=document.createElement("img");im.className="shot";
-  im.onload=maybeBottom;im.src="/image?"+encodeURIComponent(s.image);w.appendChild(im);
+  im.onload=maybeBottom;im.src="/image?"+encodeURIComponent(s.image);
+  wrap.appendChild(im);m.appendChild(wrap);chat().appendChild(m);
  }
- if(s.answer){
-  const a=document.createElement("div");a.className="answer";
-  a.innerHTML=md(s.answer);
-  const cp=document.createElement("button");cp.className="copy";cp.textContent="copy";
-  cp.onclick=()=>copyText(s.answer,cp);a.appendChild(cp);
-  w.appendChild(a);
- }
+ if(s.answer)botCard(s.answer,true,(s.backend||"agy").toUpperCase());
  maybeBottom();
 }
 async function tick(){
  try{
   const s=await (await fetch("/events",{cache:"no-store"})).json();
-  if(s.started!==started){started=s.started;reset();}
-  $("subtext").textContent=s.title||"";
- $("wlabel").textContent="— watching "+(s.backend||"agy");
- document.title="Agent Intern — watching "+(s.backend||"agy");
-  $("elapsed").textContent=s.elapsed?s.elapsed.toFixed(1)+"s":"";
-  if(!finished){const to=s.timeout||0;
-   const fr=to>0?Math.min((s.elapsed||0)/to,.98):0.05;
-   $("gfill").style.width=Math.round(fr*100)+"%";}
+  if(s.started!==started){started=s.started;rebuild(s);}
+  const back=s.backend||"agy";
+  $("wlabel").textContent="— watching "+back;
+  document.title="Agent Intern — "+back;
+  if(!finished){
+   $("status").textContent="working";
+   $("elapsed").textContent=s.elapsed?" · "+s.elapsed.toFixed(1)+"s":"";
+   const to=s.timeout||0;const fr=to>0?Math.min((s.elapsed||0)/to,.98):0.05;
+   $("gfill").style.width=Math.round(fr*100)+"%";
+  }
   for(let i=seen;i<s.events.length;i++)addStep(s.events[i]);
   seen=s.events.length;
   if((s.status==="done"||s.status==="error")&&!finished)finish(s);
  }catch(e){}
  setTimeout(tick,finished?1500:400);
 }
-startSpin();tick();
+tick();
 </script></body></html>"""
 
 
@@ -1619,7 +1713,10 @@ def _run_agy_watched(
         title = prompt.strip().splitlines()[0] if prompt.strip() else ""
         if len(title) > 200:
             title = title[:200].rsplit(" ", 1)[0] + "…"
-        _watch_reset(title, start, timeout_s)
+        # In continue mode, seed the viewer with the prior turns so it reads as one
+        # ongoing conversation instead of a blank new window.
+        history = _read_agy_history(pinned_conv) if (continue_conv and pinned_conv) else []
+        _watch_reset(title, start, timeout_s, prompt=prompt, history=history)
         try:
             port = _ensure_watch_server()
             _open_watch_window(f"http://127.0.0.1:{port}/")
@@ -1690,7 +1787,7 @@ def _run_agy_image_watched(
         title = display_prompt.strip().splitlines()[0] if display_prompt.strip() else "image"
         if len(title) > 200:
             title = title[:200].rsplit(" ", 1)[0] + "…"
-        _watch_reset(title, start, timeout_s)
+        _watch_reset(title, start, timeout_s, prompt=display_prompt)
         try:
             port = _ensure_watch_server()
             _open_watch_window(f"http://127.0.0.1:{port}/")
@@ -2230,7 +2327,8 @@ def _run_codex_watched(
     title = prompt.strip().splitlines()[0] if prompt.strip() else ""
     if len(title) > 200:
         title = title[:200].rsplit(" ", 1)[0] + "…"
-    _watch_reset(title, start, timeout_s, backend="codex")
+    history = codex_bridge.read_history(workspace, continue_conv)
+    _watch_reset(title, start, timeout_s, backend="codex", prompt=prompt, history=history)
     try:
         port = _ensure_watch_server()
         _open_watch_window(f"http://127.0.0.1:{port}/")
@@ -2441,7 +2539,8 @@ def _run_copilot_watched(
     title = prompt.strip().splitlines()[0] if prompt.strip() else ""
     if len(title) > 200:
         title = title[:200].rsplit(" ", 1)[0] + "…"
-    _watch_reset(title, start, timeout_s, backend="copilot")
+    history = copilot_bridge.read_history(workspace, continue_conv)
+    _watch_reset(title, start, timeout_s, backend="copilot", prompt=prompt, history=history)
     try:
         port = _ensure_watch_server()
         _open_watch_window(f"http://127.0.0.1:{port}/")

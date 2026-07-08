@@ -7,6 +7,7 @@ test.
     pytest test_copilot.py
 """
 
+import json
 import os
 from pathlib import Path
 
@@ -177,6 +178,38 @@ def test_resume_target_picks_newest_for_cwd(tmp_path, monkeypatch):
     _write_session(tmp_path, old, "C:\\proj", mtime=100)
     _write_session(tmp_path, new, "C:\\proj", mtime=300)
     assert copilot_bridge._resume_target_for("C:\\proj") == new
+
+
+def test_read_history_pairs_user_and_assistant(tmp_path, monkeypatch):
+    monkeypatch.setattr(copilot_bridge, "SESSION_STATE_DIR", tmp_path)
+    monkeypatch.setattr(copilot_bridge, "_PINNED", {})
+    d = _write_session(tmp_path, SAMPLE_SID, "C:\\proj")
+    events = [
+        {"type": "session.start", "data": {}},
+        {"type": "system.message", "data": {"role": "system", "content": "you are copilot"}},
+        {
+            "type": "user.message",
+            "data": {"content": "hi there", "transformedContent": "<x>hi there"},
+        },
+        {"type": "assistant.message", "data": {"content": "hello back"}},
+        {"type": "user.message", "data": {"content": "again please"}},
+        {"type": "assistant.message", "data": {"content": "sure thing"}},
+    ]
+    (d / "events.jsonl").write_text("\n".join(json.dumps(e) for e in events), encoding="utf-8")
+    assert copilot_bridge.read_history("C:\\proj", True) == [
+        {"role": "user", "content": "hi there"},  # clean content, not transformedContent
+        {"role": "assistant", "content": "hello back"},
+        {"role": "user", "content": "again please"},
+        {"role": "assistant", "content": "sure thing"},
+    ]
+
+
+def test_read_history_empty_without_events_or_fresh(tmp_path, monkeypatch):
+    monkeypatch.setattr(copilot_bridge, "SESSION_STATE_DIR", tmp_path)
+    monkeypatch.setattr(copilot_bridge, "_PINNED", {})
+    _write_session(tmp_path, SAMPLE_SID, "C:\\proj")  # dir + workspace.yaml, no events.jsonl
+    assert copilot_bridge.read_history("C:\\proj", True) == []
+    assert copilot_bridge.read_history("C:\\proj", False) == []
 
 
 # --------------------------------------------------------------------------

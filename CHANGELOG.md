@@ -10,6 +10,26 @@ summary.
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-07-08
+
+### Added
+
+- **Watch mode is now a chat conversation.** Both the single-worker viewer (`antigravity_ask` /
+  `antigravity_continue` / the image tool / `codex_*` / `copilot_*` with `watch=true`) and the swarm's
+  per-worker detail window were redesigned as a chat UI: the prompt shows as a **chat bubble** (long
+  ones clamp with a **daha fazla / daha az** expand-collapse toggle), the agent's live steps stream in
+  a collapsible "thinking" trace, and the answer arrives as a Markdown card tagged with the backend.
+  Prompt bubbles are labelled **CLAUDE** (the MCP client authors the prompt), answers by backend
+  (**AGY** / **CODEX** / **COPILOT**).
+- **`*_continue` watch shows the conversation history.** A continued run now opens seeded with the
+  **prior turns** of the conversation instead of a blank new window, so it reads as one ongoing
+  thread. History is reconstructed from each backend's own session store — agy's JSONL transcript
+  (user turns unwrapped from their `<USER_REQUEST>` envelope; the final planner response per turn),
+  codex's rollout (`event_msg` `user_message` / `agent_message`), and copilot's `events.jsonl`
+  (`user.message` / `assistant.message`). Best-effort: a fresh ask, an unresolved session, or an
+  unreadable store yields no history and the run proceeds normally. (agy caps very long older turns in
+  its transcript, so their tails can be clipped; the live/last turn is complete.)
+
 ## [0.17.2] - 2026-07-08
 
 ### Fixed

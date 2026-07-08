@@ -149,6 +149,37 @@ def test_read_response_returns_last_planner_response_with_content(brain_dir):
     assert server._read_response("c1") == "final"
 
 
+def _user_input(text):
+    return json.dumps(
+        {"source": "USER_EXPLICIT", "type": "USER_INPUT", "status": "DONE", "content": text}
+    )
+
+
+def test_read_agy_history_pairs_turns_and_unwraps_user_request(brain_dir):
+    _write_transcript(
+        brain_dir,
+        "hc",
+        [
+            _user_input("<USER_REQUEST>\nhello there\n</USER_REQUEST>"),
+            _entry("PLANNER_RESPONSE", "hi, how can I help?"),
+            _user_input("<USER_REQUEST>\nsecond question</USER_REQUEST>"),
+            _entry("PLANNER_RESPONSE", "let me think"),  # mid-turn narration
+            _entry("PLANNER_RESPONSE", "the final answer"),  # last wins as the turn's answer
+        ],
+    )
+    assert server._read_agy_history("hc") == [
+        {"role": "user", "content": "hello there"},
+        {"role": "assistant", "content": "hi, how can I help?"},
+        {"role": "user", "content": "second question"},
+        {"role": "assistant", "content": "the final answer"},
+    ]
+
+
+def test_read_agy_history_empty_when_no_transcript(tmp_path, monkeypatch):
+    monkeypatch.setattr(server, "BRAIN_DIR", tmp_path / "does-not-exist")
+    assert server._read_agy_history("nope") == []
+
+
 def test_read_response_ignores_contentless_and_malformed_lines(brain_dir):
     _write_transcript(
         brain_dir,
@@ -984,6 +1015,94 @@ def test_run_agy_watched_returns_answer_and_populates_state(monkeypatch, brain_d
     snap = server._watch_snapshot()
     assert snap["status"] == "done"
     assert snap["answer"] == "final watch answer"
+
+
+def test_run_agy_watched_stores_full_prompt_not_just_title(monkeypatch, brain_dir, last_conv_file):
+    # The watch panel must receive the FULL prompt; `title` stays the short caption.
+    last_conv_file.write_text(json.dumps({"C:\\ws": "wc"}), encoding="utf-8")
+    long_prompt = "first line of the task\n" + "\n".join(f"detail line {i}" for i in range(30))
+
+    def create_transcript():
+        _write_transcript(brain_dir, "wc", [_entry("PLANNER_RESPONSE", "ok")])
+        os.utime(brain_dir / "wc", (time.time() + 5, time.time() + 5))
+
+    class _CreatingPopen:
+        def __init__(self, *a, **k):
+            self.returncode = 0
+            self._n = 2
+            self.stdout = io.StringIO("")
+            self.stderr = io.StringIO("")
+
+        def poll(self):
+            self._n -= 1
+            if self._n == 1:
+                create_transcript()
+            return None if self._n > 0 else self.returncode
+
+        def communicate(self, timeout=None):
+            return ("", "")
+
+        def kill(self):
+            pass
+
+    monkeypatch.setattr(server.subprocess, "Popen", lambda *a, **k: _CreatingPopen())
+    monkeypatch.setattr(server, "_ensure_watch_server", lambda: 12345)
+    monkeypatch.setattr(server, "_open_watch_window", lambda url: None)
+    monkeypatch.setattr(server.time, "sleep", lambda *a, **k: None)
+    monkeypatch.setattr(server, "_RESPONSE_POLL_DEADLINE_S", 0.0)
+
+    server._run_agy_watched(long_prompt, "C:\\ws", continue_conv=False, timeout_s=10)
+    snap = server._watch_snapshot()
+    assert snap["prompt"] == long_prompt  # full prompt reaches the expandable panel
+    assert snap["title"] == "first line of the task"  # caption is just the first line
+    assert "detail line 29" not in snap["title"]  # the tail is NOT in the caption
+
+
+def test_run_agy_watched_continue_seeds_prior_turns_as_history(
+    monkeypatch, brain_dir, last_conv_file
+):
+    # In continue mode the viewer must show the prior conversation, not a blank window.
+    last_conv_file.write_text(json.dumps({"C:\\ws": "wc"}), encoding="utf-8")
+    _write_transcript(
+        brain_dir,
+        "wc",
+        [
+            _user_input("<USER_REQUEST>\nönceki soru</USER_REQUEST>"),
+            _entry("PLANNER_RESPONSE", "önceki cevap"),
+        ],
+    )
+    os.utime(brain_dir / "wc", (time.time() + 5, time.time() + 5))
+
+    class _Popen:  # exits at once; the prior transcript is already on disk
+        def __init__(self, *a, **k):
+            self.returncode = 0
+            self._n = 1
+            self.stdout = io.StringIO("")
+            self.stderr = io.StringIO("")
+
+        def poll(self):
+            self._n -= 1
+            return None if self._n > 0 else self.returncode
+
+        def communicate(self, timeout=None):
+            return ("", "")
+
+        def kill(self):
+            pass
+
+    monkeypatch.setattr(server.subprocess, "Popen", lambda *a, **k: _Popen())
+    monkeypatch.setattr(server, "_ensure_watch_server", lambda: 12345)
+    monkeypatch.setattr(server, "_open_watch_window", lambda url: None)
+    monkeypatch.setattr(server.time, "sleep", lambda *a, **k: None)
+    monkeypatch.setattr(server, "_RESPONSE_POLL_DEADLINE_S", 0.0)
+
+    server._run_agy_watched("yeni soru", "C:\\ws", continue_conv=True, timeout_s=10)
+    snap = server._watch_snapshot()
+    assert snap["history"] == [
+        {"role": "user", "content": "önceki soru"},
+        {"role": "assistant", "content": "önceki cevap"},
+    ]
+    assert snap["prompt"] == "yeni soru"  # the new turn is the live prompt, not history
 
 
 def test_run_agy_watched_browser_failure_is_nonfatal(monkeypatch, brain_dir, last_conv_file):
