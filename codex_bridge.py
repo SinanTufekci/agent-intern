@@ -463,9 +463,10 @@ def run_codex_streaming(
             proc.kill()
             proc.wait()
         # Let the readers flush buffered lines, but don't block on a child still
-        # holding the pipe open — the answer comes from the -o file regardless.
-        ot.join(timeout=2)
-        et.join(timeout=2)
+        # holding the pipe open — the answer comes from the -o file regardless. A short
+        # grace keeps the "done" transition snappy once codex has exited.
+        ot.join(timeout=1)
+        et.join(timeout=1)
 
         stderr = "".join(err_chunks)
         if timed_out:

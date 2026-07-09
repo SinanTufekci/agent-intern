@@ -466,8 +466,10 @@ def run_copilot_streaming(
         timed_out = True
         proc.kill()
         proc.wait()
-    ot.join(timeout=2)
-    et.join(timeout=2)
+    # Short grace to flush buffered lines; don't block on a lingering child (the
+    # answer was reconstructed from the stream's assistant message during the run).
+    ot.join(timeout=1)
+    et.join(timeout=1)
 
     stderr = "".join(err_chunks)
     if timed_out:

@@ -9,6 +9,9 @@ test.
 
 import json
 import os
+import subprocess
+import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -326,6 +329,55 @@ def test_watch_lines_assistant_message_first_line():
 def test_watch_lines_turn_start_is_thinking():
     ev = {"type": "assistant.turn_start", "data": {}}
     assert server._copilot_event_to_watch_lines(ev) == [("narration", "thinking…")]
+
+
+# --------------------------------------------------------------------------
+# run_copilot_streaming completes on PROCESS EXIT, not stdout EOF (0.18.1 fix):
+# like codex, the CLI can leave a child holding the stdout pipe open after the turn.
+# The fake CLI reproduces that; the run must still return promptly with the answer
+# reconstructed from the stream's assistant message.
+# --------------------------------------------------------------------------
+
+_FAKE_COPILOT = """
+import sys, subprocess, json
+for ev in [
+    {"type": "session.start", "data": {}},
+    {"type": "assistant.message", "data": {"content": "FAKE ANSWER"}},
+    {"type": "session.shutdown", "data": {}},
+]:
+    sys.stdout.write(json.dumps(ev) + "\\n")
+sys.stdout.flush()
+# a lingering child keeps the inherited stdout pipe open after main exits
+subprocess.Popen([sys.executable, "-c", "import time; time.sleep(8)"])
+sys.exit(0)
+"""
+
+
+def test_run_copilot_streaming_completes_on_process_exit_not_stdout_eof(tmp_path, monkeypatch):
+    fake = tmp_path / "fake_copilot.py"
+    fake.write_text(_FAKE_COPILOT, encoding="utf-8")
+    monkeypatch.setattr(copilot_bridge, "_PINNED", {})
+    real_popen = subprocess.Popen
+
+    def fake_popen(args, **kwargs):  # launch the fake CLI (answer comes from the stream)
+        return real_popen(
+            [sys.executable, str(fake)],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
+    monkeypatch.setattr(copilot_bridge.subprocess, "Popen", fake_popen)
+    events = []
+    t = time.time()
+    ans = copilot_bridge.run_copilot_streaming(
+        "p", str(tmp_path), "read-only", None, False, 30, on_event=events.append, pin=False
+    )
+    dt = time.time() - t
+    assert ans == "FAKE ANSWER"
+    assert dt < 5.0, f"must return on process exit (~2s), not wait for the 8s child; took {dt:.1f}s"
+    assert any(e.get("type") == "assistant.message" for e in events)
 
 
 def test_watch_lines_tool_execution_start():

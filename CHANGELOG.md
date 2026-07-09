@@ -10,6 +10,24 @@ summary.
 
 ## [Unreleased]
 
+## [0.19.1] - 2026-07-09
+
+### Changed
+
+- **Codex/Copilot watch finishes ~2s sooner after the answer.** The streaming runners join their
+  stdout/stderr reader threads after the process exits; when a lingering child holds the pipe open
+  those joins hit their timeout, and two 2s joins made the window sit on "working" ~4s past the
+  answer. Trimmed each grace to 1s (~2s total), keeping the "done" transition snappy. The answer is
+  unaffected — it comes from codex's `-o` file / copilot's stream, not the trailing pipe.
+
+### Tests
+
+- **Regression guard for the 0.18.1 streaming-exit fix.** New unit tests in `test_codex.py` /
+  `test_copilot.py` launch a fake CLI that emits its JSON events, spawns a child that keeps the
+  stdout pipe open, then exits — asserting `run_codex_streaming` / `run_copilot_streaming` return
+  promptly (on process exit) with the right answer instead of blocking on the lingering child. No
+  codex/copilot quota (the fake is a local Python script).
+
 ## [0.19.0] - 2026-07-09
 
 ### Added

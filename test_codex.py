@@ -9,6 +9,9 @@ smoke test.
 
 import json
 import os
+import subprocess
+import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -325,6 +328,60 @@ def test_resolve_resume_session_raises_without_prior(tmp_path, monkeypatch):
     monkeypatch.setattr(codex_bridge, "SESSIONS_DIR", tmp_path / "none")
     with pytest.raises(RuntimeError):
         codex_bridge._resolve_resume_session("C:\\ws", True)
+
+
+# --------------------------------------------------------------------------
+# run_codex_streaming completes on PROCESS EXIT, not stdout EOF (0.18.1 fix):
+# codex (node) can leave a child holding the stdout pipe open after the turn, so a
+# stdout-EOF loop would hang until the watchdog. Fake CLI reproduces that lingering
+# child; the run must still return promptly.
+# --------------------------------------------------------------------------
+
+_FAKE_CODEX = """
+import sys, subprocess, json
+out_path = sys.argv[1]
+for ev in [
+    {"type": "thread.started"},
+    {"type": "turn.started"},
+    {"type": "item.completed", "item": {"type": "agent_message", "text": "FAKE ANSWER"}},
+    {"type": "turn.completed"},
+]:
+    sys.stdout.write(json.dumps(ev) + "\\n")
+sys.stdout.flush()
+with open(out_path, "w", encoding="utf-8") as f:
+    f.write("FAKE ANSWER")
+# a lingering child keeps the inherited stdout pipe open after main exits
+subprocess.Popen([sys.executable, "-c", "import time; time.sleep(8)"])
+sys.exit(0)
+"""
+
+
+def test_run_codex_streaming_completes_on_process_exit_not_stdout_eof(tmp_path, monkeypatch):
+    fake = tmp_path / "fake_codex.py"
+    fake.write_text(_FAKE_CODEX, encoding="utf-8")
+    monkeypatch.setattr(codex_bridge, "SESSIONS_DIR", tmp_path / "sessions")
+    real_popen = subprocess.Popen
+
+    def fake_popen(args, **kwargs):  # launch the fake CLI, honoring codex's -o path
+        out_path = args[args.index("-o") + 1]
+        return real_popen(
+            [sys.executable, str(fake), out_path],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
+    monkeypatch.setattr(codex_bridge.subprocess, "Popen", fake_popen)
+    events = []
+    t = time.time()
+    ans = codex_bridge.run_codex_streaming(
+        "p", str(tmp_path), "read-only", None, False, 30, on_event=events.append, pin=False
+    )
+    dt = time.time() - t
+    assert ans == "FAKE ANSWER"
+    assert dt < 5.0, f"must return on process exit (~2s), not wait for the 8s child; took {dt:.1f}s"
+    assert any(e.get("type") == "item.completed" for e in events)  # steps streamed to on_event
 
 
 def test_watch_lines_agent_message_first_line():
