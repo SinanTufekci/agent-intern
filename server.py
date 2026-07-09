@@ -157,7 +157,7 @@ mcp = FastMCP("agent-intern")
 # installed package metadata, which goes stale on editable installs). Keep in
 # sync with pyproject.toml's version. Compared at startup against the latest
 # tag on GitHub so a long-lived clone learns when to `git pull`.
-__version__ = "0.19.2"
+__version__ = "0.19.3"
 
 # Logs go to stderr (stdout is the MCP protocol channel). Quiet by default;
 # set AGY_BRIDGE_DEBUG=1 for per-call diagnostics. See _configure_logging.
@@ -1440,8 +1440,8 @@ header{
  <div class="gbar"><div class="gfill" id="gfill"></div></div>
 </div>
 <div id="chat"></div>
-<div class="jump" id="jump" style="display:none">↓ en alta in</div>
-<div class="hint">⏎ / esc · kapat</div>
+<div class="jump" id="jump" style="display:none">↓ jump to latest</div>
+<div class="hint">⏎ / esc · close</div>
 <script>
 try{window.resizeTo(__WIN_W__,__WIN_H__);}catch(e){}
 document.addEventListener("keydown",e=>{
@@ -1508,9 +1508,9 @@ function userBubble(text,role){
  b.appendChild(t);wrap.appendChild(b);m.appendChild(wrap);chat().appendChild(m);
  requestAnimationFrame(()=>{
   if(t.scrollHeight>t.clientHeight+2){
-   const x=document.createElement("div");x.className="exp";x.textContent="daha fazla ▾";
+   const x=document.createElement("div");x.className="exp";x.textContent="show more ▾";
    x.onclick=()=>{const e=b.classList.toggle("expanded");
-    x.textContent=e?"daha az ▴":"daha fazla ▾";maybeBottom();};
+    x.textContent=e?"show less ▴":"show more ▾";maybeBottom();};
    b.appendChild(x);
   }else{b.classList.remove("clampable");}
   maybeBottom();
@@ -1535,7 +1535,7 @@ function newTrace(){
  const m=document.createElement("div");m.className="msg bot";
  const tr=document.createElement("div");tr.className="trace";
  tr.innerHTML="<div class='trace-head'><span class='ty'><i></i><i></i><i></i></span>"+
-  "<span class='tlabel'>çalışıyor…</span><span class='chev'>▾</span></div>"+
+  "<span class='tlabel'>working…</span><span class='chev'>▾</span></div>"+
   "<div class='trace-body'></div>";
  m.appendChild(tr);chat().appendChild(m);
  tr.querySelector(".trace-head").onclick=()=>tr.classList.toggle("collapsed");
@@ -1569,7 +1569,7 @@ function finish(s){
  $("elapsed").textContent="";
  if(traceEl){
   traceEl.classList.add("collapsed");
-  const lbl=traceEl.querySelector(".tlabel");if(lbl)lbl.textContent=seen+" adım ✓";
+  const lbl=traceEl.querySelector(".tlabel");if(lbl)lbl.textContent=seen+" steps ✓";
   const ty=traceEl.querySelector(".ty");if(ty)ty.remove();
  }
  if(s.image){

@@ -10,6 +10,15 @@ summary.
 
 ## [Unreleased]
 
+## [0.19.3] - 2026-07-09
+
+### Changed
+
+- **Watch window UI text is now all English.** A handful of labels in the chat viewers (single-worker
+  and swarm per-worker) had slipped into Turkish during the redesign — they now read "working…",
+  "show more" / "show less", "N steps", "jump to latest", "close", and "queued" (from "çalışıyor…",
+  "daha fazla" / "daha az", "N adım", "en alta in", "kapat", "sırada").
+
 ## [0.19.2] - 2026-07-09
 
 ### Changed

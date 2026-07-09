@@ -468,7 +468,7 @@ header{display:flex;align-items:center;gap:8px;padding:9px 14px;background:#0d0f
 <div class="gbar"><div class="gfill" id="gfill"></div></div>
 </div>
 <div id="chat"></div>
-<div class="jump" id="jump" style="display:none">↓ en alta in</div>
+<div class="jump" id="jump" style="display:none">↓ jump to latest</div>
 <script>
 const SYM={narration:"▸",command:"$",result:"✓"};
 const IDX=parseInt(new URLSearchParams(location.search).get("i")||"0",10);
@@ -526,8 +526,8 @@ function userBubble(text){
  b.appendChild(t);wrap.appendChild(b);m.appendChild(wrap);chat().appendChild(m);
  requestAnimationFrame(()=>{
   if(t.scrollHeight>t.clientHeight+2){
-   const x=document.createElement("div");x.className="exp";x.textContent="daha fazla ▾";
-   x.onclick=()=>{const e=b.classList.toggle("expanded");x.textContent=e?"daha az ▴":"daha fazla ▾";maybeBottom();};
+   const x=document.createElement("div");x.className="exp";x.textContent="show more ▾";
+   x.onclick=()=>{const e=b.classList.toggle("expanded");x.textContent=e?"show less ▴":"show more ▾";maybeBottom();};
    b.appendChild(x);
   }else{b.classList.remove("clampable");}
   maybeBottom();
@@ -537,7 +537,7 @@ function newTrace(){
  const m=document.createElement("div");m.className="msg bot";
  const tr=document.createElement("div");tr.className="trace";
  tr.innerHTML="<div class='trace-head'><span class='ty'><i></i><i></i><i></i></span>"+
-  "<span class='tlabel'>çalışıyor…</span><span class='chev'>▾</span></div>"+
+  "<span class='tlabel'>working…</span><span class='chev'>▾</span></div>"+
   "<div class='trace-body'></div>";
  m.appendChild(tr);chat().appendChild(m);
  tr.querySelector(".trace-head").onclick=()=>tr.classList.toggle("collapsed");
@@ -566,7 +566,7 @@ function finish(w,back){
  if(w.status==="error")$("gfill").style.background="var(--red)";
  if(traceEl){
   traceEl.classList.add("collapsed");
-  const lbl=traceEl.querySelector(".tlabel");if(lbl)lbl.textContent=seen+" adım ✓";
+  const lbl=traceEl.querySelector(".tlabel");if(lbl)lbl.textContent=seen+" steps ✓";
   const ty=traceEl.querySelector(".ty");if(ty)ty.remove();
  }
  if(w.image){
@@ -599,7 +599,7 @@ async function tick(){
    if(w.repo){$("repo").style.display="";$("repo").textContent=w.repo;}
    if(w.backend){$("bk").style.display="";$("bk").className="bk "+w.backend;$("bk").textContent=bname;}
    if(!fin){
-    $("st").textContent=w.status==="queued"?"sırada":(w.status||"working")+" · "+(w.elapsed||0).toFixed(1)+"s";
+    $("st").textContent=w.status==="queued"?"queued":(w.status||"working")+" · "+(w.elapsed||0).toFixed(1)+"s";
     let frac=w.status==="working"?(timeout>0?Math.min(w.elapsed/timeout,.98):0.06):0.03;
     $("gfill").style.width=Math.round(frac*100)+"%";
    }
