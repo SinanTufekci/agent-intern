@@ -370,11 +370,14 @@ thread rather than a blank new window.
 - **Window size.** Set **`AGY_WATCH_WINDOW_SIZE`** (e.g. `AGY_WATCH_WINDOW_SIZE=480,700`)
   to resize the window; default is `560,760`. Press **Enter / Esc** in the window to
   close it.
-- **One window, reused.** Repeated watch calls **reuse the already-open window**
-  instead of stacking a new one each time — the open page resets itself for the new
-  run (the swarm dashboard rebuilds for the new fan-out). If you closed the window, the
-  next run opens a fresh one. Set **`AGY_WATCH_ALWAYS_NEW=1`** to force a new window
-  every time.
+- **One window, reused — but concurrent runs stay separate.** Repeated *sequential*
+  watch calls **reuse the already-open window** instead of stacking a new one (the open
+  page resets itself for the new run; the swarm dashboard rebuilds for the new fan-out).
+  A run that starts while another watched run is **still working** gets its **own
+  window** instead — so two concurrent single-worker runs (e.g. a `codex_ask` and a
+  `copilot_ask` at once) each stream into their own view and never clobber each other.
+  If you closed the window, the next run opens a fresh one. Set **`AGY_WATCH_ALWAYS_NEW=1`**
+  to force a new window every time.
 - **Chat layout & history.** Prompts render as chat bubbles — long ones clamp to a few
   lines with a **daha fazla / daha az** (expand / collapse) toggle — and answers as
   Markdown cards tagged with the backend. A **`*_continue`** run seeds the window with

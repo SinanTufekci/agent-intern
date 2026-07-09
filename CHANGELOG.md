@@ -10,6 +10,22 @@ summary.
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-07-09
+
+### Added
+
+- **Concurrent single-worker watch runs no longer clobber each other's window.** The single-worker
+  viewer's state was a process-wide singleton, so two watched runs that overlapped (e.g. a
+  `codex_ask` and a `copilot_ask` at the same time — they don't share the agy lock) wrote into one
+  shared window and garbled it. The viewer state is now keyed by a per-run id (`_WATCH_RUNS`): the
+  common **sequential** case still reuses the `"main"` slot and its already-open window, but a run
+  that begins while another is **still working** is given its own id and its **own window**. The
+  browser page reads its id from the URL (`/?id=…`) and polls `/events?id=…`; `/image` validates the
+  requested path against all live runs. Finished, unwatched runs are evicted so the map can't grow
+  without bound. Verified: two concurrent runs render into two isolated windows (each shows only its
+  own prompt/answer/backend); a unit test asserts the second run gets a distinct id and independent
+  state.
+
 ## [0.18.1] - 2026-07-08
 
 ### Fixed

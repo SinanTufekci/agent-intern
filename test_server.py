@@ -86,6 +86,15 @@ def brain_dir(tmp_path, monkeypatch):
     return d
 
 
+@pytest.fixture(autouse=True)
+def _clean_watch_runs():
+    # The watch state is a persistent id->state map; reset it before each test so a
+    # run left "working" by one test can't change which slot the next test's run claims.
+    server._WATCH_RUNS.clear()
+    yield
+    server._WATCH_RUNS.clear()
+
+
 def test_find_newest_conv_after_missing_brain_returns_none(tmp_path, monkeypatch):
     monkeypatch.setattr(server, "BRAIN_DIR", tmp_path / "does-not-exist")
     assert server._find_newest_conv_after(time.time()) is None
@@ -933,28 +942,44 @@ class _FakePopen:
 
 
 def test_watch_state_lifecycle():
-    server._watch_reset("my title", 100.0)
-    snap = server._watch_snapshot()
+    rid = server._watch_begin("my title", 100.0)
+    snap = server._watch_snapshot(rid)
     assert snap["status"] == "working"
     assert snap["title"] == "my title"
     assert snap["events"] == []
-    server._watch_append([{"kind": "command", "text": "ls", "t": 1.0}])
-    assert len(server._watch_snapshot()["events"]) == 1
-    server._watch_finish("done", "the answer", 5.0)
-    snap = server._watch_snapshot()
+    server._watch_append(rid, [{"kind": "command", "text": "ls", "t": 1.0}])
+    assert len(server._watch_snapshot(rid)["events"]) == 1
+    server._watch_finish(rid, "done", "the answer", 5.0)
+    snap = server._watch_snapshot(rid)
     assert snap["status"] == "done"
     assert snap["answer"] == "the answer"
     assert snap["elapsed"] == 5.0
     # snapshot is a copy — mutating it must not affect the shared state
     snap["events"].append("x")
-    assert len(server._watch_snapshot()["events"]) == 1
+    assert len(server._watch_snapshot(rid)["events"]) == 1
+
+
+def test_watch_concurrent_runs_get_separate_ids_and_states():
+    # A run that starts while another is still working must NOT clobber it.
+    a = server._watch_begin("A", 100.0, backend="codex", prompt="prompt A")
+    b = server._watch_begin("B", 101.0, backend="copilot", prompt="prompt B")
+    assert a == "main"  # first claims the shared slot
+    assert b != a  # second is still working → its own id + window
+    server._watch_append(a, [{"kind": "narration", "text": "a-step", "t": 0.1}])
+    server._watch_append(b, [{"kind": "narration", "text": "b-step", "t": 0.1}])
+    server._watch_finish(a, "done", "answer A", 1.0)
+    sa, sb = server._watch_snapshot(a), server._watch_snapshot(b)
+    assert sa["prompt"] == "prompt A" and sa["answer"] == "answer A" and sa["status"] == "done"
+    assert sb["prompt"] == "prompt B" and sb["status"] == "working"  # untouched by A
+    assert [e["text"] for e in sa["events"]] == ["a-step"]
+    assert [e["text"] for e in sb["events"]] == ["b-step"]
 
 
 def test_watch_feed_locks_on_new_conv_and_emits_rich_events(brain_dir):
     _write_transcript(brain_dir, "old", [_entry("PLANNER_RESPONSE", "OLD")])
     start = time.time()
-    server._watch_reset("t", start)
-    feed = server._WatchFeed(None, start)  # snapshots {"old"}
+    rid = server._watch_begin("t", start)
+    feed = server._WatchFeed(None, start, rid)  # snapshots {"old"}
     cmd_arg = '"python -c \\"print(1)\\""'  # double-encoded as agy stores it
     logs = brain_dir / "new" / ".system_generated" / "logs"
     logs.mkdir(parents=True)
@@ -971,7 +996,7 @@ def test_watch_feed_locks_on_new_conv_and_emits_rich_events(brain_dir):
 
     feed.pump()
     assert feed.conv == "new"  # locked onto this run's conversation, not 'old'
-    pairs = [(e["kind"], e["text"]) for e in server._watch_snapshot()["events"]]
+    pairs = [(e["kind"], e["text"]) for e in server._watch_snapshot(rid)["events"]]
     assert ("narration", "I will run it.") in pairs
     assert ("command", 'python -c "print(1)"') in pairs
 
@@ -1005,7 +1030,7 @@ def test_run_agy_watched_returns_answer_and_populates_state(monkeypatch, brain_d
     opened = {}
     monkeypatch.setattr(server.subprocess, "Popen", lambda *a, **k: _CreatingPopen())
     monkeypatch.setattr(server, "_ensure_watch_server", lambda: 12345)  # no real server
-    monkeypatch.setattr(server, "_open_watch_window", lambda url: opened.update(url=url))
+    monkeypatch.setattr(server, "_open_watch_window", lambda *a, **k: opened.update(url=a[0]))
     monkeypatch.setattr(server.time, "sleep", lambda *a, **k: None)
     monkeypatch.setattr(server, "_RESPONSE_POLL_DEADLINE_S", 0.0)
 
@@ -1047,7 +1072,7 @@ def test_run_agy_watched_stores_full_prompt_not_just_title(monkeypatch, brain_di
 
     monkeypatch.setattr(server.subprocess, "Popen", lambda *a, **k: _CreatingPopen())
     monkeypatch.setattr(server, "_ensure_watch_server", lambda: 12345)
-    monkeypatch.setattr(server, "_open_watch_window", lambda url: None)
+    monkeypatch.setattr(server, "_open_watch_window", lambda *a, **k: None)
     monkeypatch.setattr(server.time, "sleep", lambda *a, **k: None)
     monkeypatch.setattr(server, "_RESPONSE_POLL_DEADLINE_S", 0.0)
 
@@ -1092,7 +1117,7 @@ def test_run_agy_watched_continue_seeds_prior_turns_as_history(
 
     monkeypatch.setattr(server.subprocess, "Popen", lambda *a, **k: _Popen())
     monkeypatch.setattr(server, "_ensure_watch_server", lambda: 12345)
-    monkeypatch.setattr(server, "_open_watch_window", lambda url: None)
+    monkeypatch.setattr(server, "_open_watch_window", lambda *a, **k: None)
     monkeypatch.setattr(server.time, "sleep", lambda *a, **k: None)
     monkeypatch.setattr(server, "_RESPONSE_POLL_DEADLINE_S", 0.0)
 
@@ -1158,11 +1183,15 @@ def test_watch_html_bad_size_falls_back_to_default(monkeypatch):
     assert "window.resizeTo(600,820)" in html
 
 
-def test_watch_reset_clears_image():
-    server._watch_set_image("C:/x/pic.png")
-    assert server._watch_snapshot()["image"] == "C:/x/pic.png"
-    server._watch_reset("t", 1.0)
-    assert server._watch_snapshot()["image"] == ""
+def test_watch_begin_gives_each_run_a_clean_image():
+    rid = server._watch_begin("t", 1.0)
+    assert server._watch_snapshot(rid)["image"] == ""  # fresh run: no image
+    server._watch_set_image(rid, "C:/x/pic.png")
+    assert server._watch_snapshot(rid)["image"] == "C:/x/pic.png"
+    server._watch_finish(rid, "done", "", 1.0)  # free the slot
+    rid2 = server._watch_begin("t2", 2.0)  # reuses the freed "main" slot...
+    assert rid2 == "main" and rid == "main"
+    assert server._watch_snapshot(rid2)["image"] == ""  # ...with a clean, image-less state
 
 
 def test_run_agy_image_watched_shows_image_and_returns(monkeypatch, brain_dir, last_conv_file):
@@ -1193,7 +1222,7 @@ def test_run_agy_image_watched_shows_image_and_returns(monkeypatch, brain_dir, l
 
     monkeypatch.setattr(server.subprocess, "Popen", lambda *a, **k: _CreatingPopen())
     monkeypatch.setattr(server, "_ensure_watch_server", lambda: 12345)
-    monkeypatch.setattr(server, "_open_watch_window", lambda url: None)
+    monkeypatch.setattr(server, "_open_watch_window", lambda *a, **k: None)
     monkeypatch.setattr(
         server, "_finalize_image", lambda target, txt, start: ("C:/out/art.jpg", "JPEG", 2048)
     )
@@ -1527,13 +1556,15 @@ def test_antigravity_image_error_mentions_agy_failure(tmp_path, scratch_dir, mon
         asyncio.run(server.antigravity_image("a cat", output_path=target, workspace=str(tmp_path)))
 
 
-def test_viewer_is_live_reflects_recent_poll(monkeypatch):
-    # No recent /events poll -> not live, so a new watch run opens a window.
-    monkeypatch.setattr(server, "_WATCH_LAST_POLL", 0.0)
-    assert server._viewer_is_live() is False
-    # A poll within the alive window -> live, so a new run reuses the open window.
-    monkeypatch.setattr(server, "_WATCH_LAST_POLL", time.time())
-    assert server._viewer_is_live() is True
+def test_watch_viewer_live_reflects_recent_poll():
+    rid = server._watch_begin("t", time.time())
+    # A brand-new run has never been polled (last_poll=0) -> not live -> opens a window.
+    assert server._watch_viewer_live(rid) is False
+    # A /events poll marks it live, so a new run on this slot reuses the open window.
+    server._watch_mark_poll(rid)
+    assert server._watch_viewer_live(rid) is True
+    # An unknown id is never live.
+    assert server._watch_viewer_live("nope") is False
 
 
 # --------------------------------------------------------------------------

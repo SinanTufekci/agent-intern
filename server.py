@@ -140,6 +140,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+import uuid
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -156,7 +157,7 @@ mcp = FastMCP("agent-intern")
 # installed package metadata, which goes stale on editable installs). Keep in
 # sync with pyproject.toml's version. Compared at startup against the latest
 # tag on GitHub so a long-lived clone learns when to `git pull`.
-__version__ = "0.18.1"
+__version__ = "0.19.0"
 
 # Logs go to stderr (stdout is the MCP protocol channel). Quiet by default;
 # set AGY_BRIDGE_DEBUG=1 for per-call diagnostics. See _configure_logging.
@@ -1125,79 +1126,131 @@ def _newest_new_conv(start: float, exclude: set[str]) -> Optional[str]:
     return best
 
 
-# Live "watch" viewer state, served over a localhost HTTP server to a browser
-# page. One server + one shared state per bridge process (agy runs are serialized
-# by _AGY_LOCK, so only one run writes at a time). The browser polls /events.
-_WATCH_STATE: dict = {
-    "title": "",  # short single-line caption (first prompt line, ≤200 chars)
-    "prompt": "",  # the FULL untruncated prompt, shown in the current-turn bubble
-    "history": [],  # prior turns for continue mode: [{role:'user'|'assistant', content}]
-    "status": "idle",  # idle | working | done | error
+# Live "watch" viewer state, served over a localhost HTTP server to a browser page.
+# Keyed by a run id so CONCURRENT watched runs (e.g. a codex_ask and a copilot_ask
+# at once — they don't share _AGY_LOCK) each get their own window + state instead of
+# clobbering one shared one. Sequential runs reuse the "main" slot and its open
+# window; a run that starts while "main" is still working gets a fresh id + window.
+_MAIN = "main"
+_WATCH_RUNS: dict[str, dict] = {}
+_WATCH_LOCK = threading.Lock()
+_WATCH_SERVER: Optional[tuple] = None  # (httpd, port, thread) singleton
+_VIEWER_ALIVE_S = 4.0  # a /events poll within this window means a viewer is still open
+
+
+def _watch_state(rid, title, start, timeout, backend, prompt, history, last_poll) -> dict:
+    return {
+        "id": rid,
+        "title": title,  # short single-line caption (first prompt line, ≤200 chars)
+        "prompt": prompt or title,  # the FULL untruncated prompt, shown in the bubble
+        "history": list(history or []),  # prior turns (continue mode); [] for a fresh ask
+        "status": "working",  # working | done | error
+        "started": start,
+        "elapsed": 0.0,
+        "timeout": timeout,  # this run's timeout_s, for the time progress bar
+        "answer": "",
+        "image": "",  # absolute path to a generated image to show, or ""
+        "events": [],  # list of {kind, text, t}
+        "backend": backend,  # "agy" | "codex" | "copilot" (shown in the header)
+        "last_poll": last_poll,  # last /events poll time (0 = never); drives window reuse
+    }
+
+
+_WATCH_IDLE = {
+    "status": "idle",
     "started": 0.0,
     "elapsed": 0.0,
-    "timeout": 0.0,  # this run's timeout_s, so the page can draw a time progress bar
+    "timeout": 0.0,
+    "title": "",
+    "prompt": "",
+    "history": [],
     "answer": "",
-    "image": "",  # absolute path to a generated image to show, or ""
-    "events": [],  # list of {kind, text, t}
-    "backend": "agy",  # which CLI this run drives: "agy" | "codex" (shown in the header)
+    "image": "",
+    "events": [],
+    "backend": "agy",
 }
-_WATCH_STATE_LOCK = threading.Lock()
-_WATCH_SERVER: Optional[tuple] = None  # (httpd, port, thread) singleton
-
-# An open viewer polls /events a few times a second; we record the last poll so a
-# new run can REUSE an already-open window instead of stacking a fresh one each
-# time watch mode is used (the page resets itself when `started` changes).
-_WATCH_LAST_POLL = 0.0
-_VIEWER_ALIVE_S = 4.0  # a poll within this window means a viewer is still open
 
 
-def _watch_reset(
+def _watch_evict_locked(now: float) -> None:
+    """Drop finished, unwatched non-main runs so the map can't grow without bound."""
+    stale = [
+        r
+        for r, s in _WATCH_RUNS.items()
+        if r != _MAIN and s["status"] in ("done", "error") and now - s["last_poll"] > 60
+    ]
+    for rid in stale:
+        _WATCH_RUNS.pop(rid, None)
+
+
+def _watch_begin(
     title: str,
     start: float,
     timeout: float = 0.0,
     backend: str = "agy",
     prompt: str = "",
     history: Optional[list] = None,
-) -> None:
-    with _WATCH_STATE_LOCK:
-        _WATCH_STATE.update(
-            title=title,
-            prompt=prompt or title,  # full prompt for the bubble; fall back to the caption
-            history=list(history or []),  # prior turns (continue mode); [] for a fresh ask
-            status="working",
-            started=start,
-            elapsed=0.0,
-            timeout=timeout,
-            answer="",
-            image="",
-            events=[],
-            backend=backend,
+) -> str:
+    """Start a watched run and return its id. Reuses the "main" slot for the common
+    sequential case; a run that begins while "main" is still working gets a fresh id
+    (and its own window) so concurrent runs never clobber each other's window."""
+    with _WATCH_LOCK:
+        _watch_evict_locked(start)
+        main = _WATCH_RUNS.get(_MAIN)
+        if main is not None and main["status"] == "working":
+            rid, last_poll = uuid.uuid4().hex, 0.0
+        else:
+            # keep the open window's poll time so _open_watch_window can reuse it
+            rid, last_poll = _MAIN, (main["last_poll"] if main else 0.0)
+        _WATCH_RUNS[rid] = _watch_state(
+            rid, title, start, timeout, backend, prompt, history, last_poll
         )
+        return rid
 
 
-def _watch_set_image(path: str) -> None:
-    with _WATCH_STATE_LOCK:
-        _WATCH_STATE["image"] = path
+def _watch_set_image(rid: str, path: str) -> None:
+    with _WATCH_LOCK:
+        st = _WATCH_RUNS.get(rid)
+        if st is not None:
+            st["image"] = path
 
 
-def _watch_append(events: list[dict]) -> None:
-    with _WATCH_STATE_LOCK:
-        _WATCH_STATE["events"].extend(events)
-        _WATCH_STATE["elapsed"] = round(time.time() - _WATCH_STATE["started"], 1)
+def _watch_append(rid: str, events: list[dict]) -> None:
+    with _WATCH_LOCK:
+        st = _WATCH_RUNS.get(rid)
+        if st is not None:
+            st["events"].extend(events)
+            st["elapsed"] = round(time.time() - st["started"], 1)
 
 
-def _watch_finish(status: str, answer: str, elapsed: float) -> None:
-    with _WATCH_STATE_LOCK:
-        _WATCH_STATE["status"] = status
-        _WATCH_STATE["answer"] = answer
-        _WATCH_STATE["elapsed"] = round(elapsed, 1)
+def _watch_finish(rid: str, status: str, answer: str, elapsed: float) -> None:
+    with _WATCH_LOCK:
+        st = _WATCH_RUNS.get(rid)
+        if st is not None:
+            st["status"] = status
+            st["answer"] = answer
+            st["elapsed"] = round(elapsed, 1)
 
 
-def _watch_snapshot() -> dict:
-    with _WATCH_STATE_LOCK:
-        snap = dict(_WATCH_STATE)
-        snap["events"] = list(_WATCH_STATE["events"])
+def _watch_snapshot(rid: str = _MAIN) -> dict:
+    with _WATCH_LOCK:
+        st = _WATCH_RUNS.get(rid)
+        if st is None:
+            return dict(_WATCH_IDLE)
+        snap = dict(st)
+        snap["events"] = list(st["events"])
         return snap
+
+
+def _watch_mark_poll(rid: str) -> None:
+    with _WATCH_LOCK:
+        st = _WATCH_RUNS.get(rid)
+        if st is not None:
+            st["last_poll"] = time.time()
+
+
+def _watch_image_allowed(path: str) -> bool:
+    with _WATCH_LOCK:
+        return bool(path) and any(s["image"] == path for s in _WATCH_RUNS.values())
 
 
 class _WatchFeed:
@@ -1206,8 +1259,9 @@ class _WatchFeed:
     state. For a new conversation it locks onto the first brain dir that appears
     after launch and didn't pre-exist, and never switches away from it."""
 
-    def __init__(self, pinned_conv: Optional[str], start: float) -> None:
+    def __init__(self, pinned_conv: Optional[str], start: float, rid: str = _MAIN) -> None:
         self._start = start
+        self._rid = rid
         self._pre = set() if pinned_conv else _existing_conv_names()
         self._conv = pinned_conv
         self._cursor = len(_transcript_entries(pinned_conv)) if pinned_conv else 0
@@ -1230,7 +1284,7 @@ class _WatchFeed:
                 new_events.append({"kind": kind, "text": text, "t": t})
         self._cursor = max(self._cursor, len(entries))
         if new_events:
-            _watch_append(new_events)
+            _watch_append(self._rid, new_events)
 
 
 # Self-contained dark-theme page: polls /events and renders steps live, with a
@@ -1395,6 +1449,7 @@ document.addEventListener("keydown",e=>{
 });
 const SYM={narration:"▸",command:"$",result:"✓"};
 let started=null,seen=0,finished=false,follow=true,traceEl=null,traceBody=null;
+const RID=new URLSearchParams(location.search).get("id")||"main";
 const $=id=>document.getElementById(id);
 const chat=()=>$("chat");
 function toBottom(){window.scrollTo(0,document.body.scrollHeight);}
@@ -1529,7 +1584,7 @@ function finish(s){
 }
 async function tick(){
  try{
-  const s=await (await fetch("/events",{cache:"no-store"})).json();
+  const s=await (await fetch("/events?id="+RID,{cache:"no-store"})).json();
   if(s.started!==started){started=s.started;rebuild(s);}
   const back=s.backend||"agy";
   $("wlabel").textContent="— watching "+back;
@@ -1584,12 +1639,20 @@ def _ensure_watch_server() -> int:
 
         def do_GET(self):  # noqa: N802 (http.server API)
             if self.path.startswith("/events"):
-                global _WATCH_LAST_POLL
-                _WATCH_LAST_POLL = time.time()
-                self._send(json.dumps(_watch_snapshot()).encode("utf-8"), "application/json")
+                from urllib.parse import parse_qs, urlparse
+
+                rid = parse_qs(urlparse(self.path).query).get("id", [_MAIN])[0]
+                _watch_mark_poll(rid)
+                self._send(json.dumps(_watch_snapshot(rid)).encode("utf-8"), "application/json")
             elif self.path.startswith("/image"):
-                path = _watch_snapshot().get("image") or ""
-                fmt = _detect_image_format(path) if path and os.path.isfile(path) else None
+                from urllib.parse import unquote
+
+                path = unquote(self.path.split("?", 1)[1]) if "?" in self.path else ""
+                fmt = (
+                    _detect_image_format(path)
+                    if _watch_image_allowed(path) and os.path.isfile(path)
+                    else None
+                )
                 if fmt:
                     mime = {
                         "JPEG": "image/jpeg",
@@ -1656,22 +1719,25 @@ def _chromium_app_browsers() -> list[str]:
     return found
 
 
-def _viewer_is_live() -> bool:
-    """True if a watch window polled /events within _VIEWER_ALIVE_S — i.e. a viewer
-    is already open, so a new run should reuse it instead of stacking another window."""
-    return (time.time() - _WATCH_LAST_POLL) < _VIEWER_ALIVE_S
+def _watch_viewer_live(rid: str) -> bool:
+    """True if a window is currently polling /events for this run's slot (so a new
+    run on the SAME slot should reuse it instead of stacking another window)."""
+    with _WATCH_LOCK:
+        st = _WATCH_RUNS.get(rid)
+        return st is not None and (time.time() - st["last_poll"]) < _VIEWER_ALIVE_S
 
 
-def _open_watch_window(url: str) -> None:
+def _open_watch_window(url: str, rid: str = _MAIN) -> None:
     """Open the watch page in a small, dedicated window. Prefers a Chromium browser
     in `--app` mode (a sized, chromeless window — not a tab); falls back to a normal
     new browser window/tab. Best-effort — never raises.
 
-    Reuses an already-open viewer (detected via recent /events polls) so repeated
-    watch calls don't pile up browser windows; the open page picks up the new run
-    on its own. Set AGY_WATCH_ALWAYS_NEW=1 to force a fresh window every time."""
-    if _viewer_is_live() and not _env_truthy("AGY_WATCH_ALWAYS_NEW"):
-        log.debug("watch viewer already open; reusing it instead of opening a new window")
+    Reuses an already-open viewer for this run's slot (detected via recent /events
+    polls) so repeated SEQUENTIAL watch calls don't pile up windows; a concurrent run
+    got its own id upstream, so it opens its own window here. Set AGY_WATCH_ALWAYS_NEW=1
+    to force a fresh window every time."""
+    if _watch_viewer_live(rid) and not _env_truthy("AGY_WATCH_ALWAYS_NEW"):
+        log.debug("watch viewer already open for %s; reusing instead of a new window", rid)
         return
     for exe in _chromium_app_browsers():
         try:
@@ -1711,17 +1777,17 @@ def _run_agy_watched(
 
     with _AGY_LOCK:
         start = time.time()
-        feed = _WatchFeed(pinned_conv, start)
         title = prompt.strip().splitlines()[0] if prompt.strip() else ""
         if len(title) > 200:
             title = title[:200].rsplit(" ", 1)[0] + "…"
         # In continue mode, seed the viewer with the prior turns so it reads as one
         # ongoing conversation instead of a blank new window.
         history = _read_agy_history(pinned_conv) if (continue_conv and pinned_conv) else []
-        _watch_reset(title, start, timeout_s, prompt=prompt, history=history)
+        rid = _watch_begin(title, start, timeout_s, prompt=prompt, history=history)
+        feed = _WatchFeed(pinned_conv, start, rid)
         try:
             port = _ensure_watch_server()
-            _open_watch_window(f"http://127.0.0.1:{port}/")
+            _open_watch_window(f"http://127.0.0.1:{port}/?id={rid}", rid)
         except Exception:  # noqa: BLE001 - the viewer is best-effort, never fatal
             pass
 
@@ -1744,7 +1810,7 @@ def _run_agy_watched(
         while proc.poll() is None:
             if time.time() > hard_deadline:
                 proc.kill()
-                _watch_finish("error", "(timed out)", time.time() - start)
+                _watch_finish(rid, "error", "(timed out)", time.time() - start)
                 raise RuntimeError(f"agy timed out after {timeout_s + 30}s (watched)")
             feed.pump()
             time.sleep(_PROGRESS_POLL_INTERVAL_S)
@@ -1752,7 +1818,7 @@ def _run_agy_watched(
         out_t.join(timeout=5)
         err_t.join(timeout=5)
         if proc.returncode != 0:
-            _watch_finish("error", f"(agy exited {proc.returncode})", time.time() - start)
+            _watch_finish(rid, "error", f"(agy exited {proc.returncode})", time.time() - start)
             stderr_tail = "".join(err_chunks)[-1000:]
             raise RuntimeError(f"agy exited {proc.returncode}\nstderr: {stderr_tail}")
 
@@ -1763,10 +1829,10 @@ def _run_agy_watched(
                 break
             except RuntimeError:
                 if time.time() >= deadline:
-                    _watch_finish("error", "(no answer found)", time.time() - start)
+                    _watch_finish(rid, "error", "(no answer found)", time.time() - start)
                     raise
                 time.sleep(_RESPONSE_POLL_INTERVAL_S)
-        _watch_finish("done", answer, time.time() - start)
+        _watch_finish(rid, "done", answer, time.time() - start)
         return answer
 
 
@@ -1786,14 +1852,14 @@ def _run_agy_image_watched(
 
     with _AGY_LOCK:
         start = time.time()
-        feed = _WatchFeed(None, start)
         title = display_prompt.strip().splitlines()[0] if display_prompt.strip() else "image"
         if len(title) > 200:
             title = title[:200].rsplit(" ", 1)[0] + "…"
-        _watch_reset(title, start, timeout_s, prompt=display_prompt)
+        rid = _watch_begin(title, start, timeout_s, prompt=display_prompt)
+        feed = _WatchFeed(None, start, rid)
         try:
             port = _ensure_watch_server()
-            _open_watch_window(f"http://127.0.0.1:{port}/")
+            _open_watch_window(f"http://127.0.0.1:{port}/?id={rid}", rid)
         except Exception:  # noqa: BLE001 - viewer is best-effort
             pass
 
@@ -1814,7 +1880,7 @@ def _run_agy_image_watched(
         while proc.poll() is None:
             if time.time() > hard_deadline:
                 proc.kill()
-                _watch_finish("error", "(timed out)", time.time() - start)
+                _watch_finish(rid, "error", "(timed out)", time.time() - start)
                 raise RuntimeError(f"agy timed out after {timeout_s + 30}s (image/watch)")
             feed.pump()
             time.sleep(_PROGRESS_POLL_INTERVAL_S)
@@ -1834,14 +1900,14 @@ def _run_agy_image_watched(
         try:
             final_path, fmt, size = _finalize_image(target, agy_text, start)
         except RuntimeError as fin_err:
-            _watch_finish("error", f"no image produced: {fin_err}", time.time() - start)
+            _watch_finish(rid, "error", f"no image produced: {fin_err}", time.time() - start)
             if agy_error is not None:
                 raise RuntimeError(f"{fin_err} (agy also failed: {agy_error})") from agy_error
             raise
 
-        _watch_set_image(final_path)
+        _watch_set_image(rid, final_path)
         caption = f"Saved to {final_path}\nformat={fmt} · {size} bytes"
-        _watch_finish("done", caption, time.time() - start)
+        _watch_finish(rid, "done", caption, time.time() - start)
         return f"{final_path}\nformat={fmt}  size={size} bytes"
 
 
@@ -2331,10 +2397,10 @@ def _run_codex_watched(
     if len(title) > 200:
         title = title[:200].rsplit(" ", 1)[0] + "…"
     history = codex_bridge.read_history(workspace, continue_conv)
-    _watch_reset(title, start, timeout_s, backend="codex", prompt=prompt, history=history)
+    rid = _watch_begin(title, start, timeout_s, backend="codex", prompt=prompt, history=history)
     try:
         port = _ensure_watch_server()
-        _open_watch_window(f"http://127.0.0.1:{port}/")
+        _open_watch_window(f"http://127.0.0.1:{port}/?id={rid}", rid)
     except Exception:  # noqa: BLE001 — the viewer is best-effort, never fatal
         pass
 
@@ -2342,16 +2408,16 @@ def _run_codex_watched(
         watch_lines = _codex_event_to_watch_lines(ev)
         if watch_lines:
             t = round(time.time() - start, 1)
-            _watch_append([{"kind": k, "text": x, "t": t} for k, x in watch_lines])
+            _watch_append(rid, [{"kind": k, "text": x, "t": t} for k, x in watch_lines])
 
     try:
         answer = codex_bridge.run_codex_streaming(
             prompt, workspace, sandbox, model, continue_conv, timeout_s, on_event
         )
     except Exception as e:  # noqa: BLE001 — show the failure in the window, then re-raise
-        _watch_finish("error", f"({e})"[:200], time.time() - start)
+        _watch_finish(rid, "error", f"({e})"[:200], time.time() - start)
         raise
-    _watch_finish("done", answer, time.time() - start)
+    _watch_finish(rid, "done", answer, time.time() - start)
     return answer
 
 
@@ -2543,10 +2609,10 @@ def _run_copilot_watched(
     if len(title) > 200:
         title = title[:200].rsplit(" ", 1)[0] + "…"
     history = copilot_bridge.read_history(workspace, continue_conv)
-    _watch_reset(title, start, timeout_s, backend="copilot", prompt=prompt, history=history)
+    rid = _watch_begin(title, start, timeout_s, backend="copilot", prompt=prompt, history=history)
     try:
         port = _ensure_watch_server()
-        _open_watch_window(f"http://127.0.0.1:{port}/")
+        _open_watch_window(f"http://127.0.0.1:{port}/?id={rid}", rid)
     except Exception:  # noqa: BLE001 — the viewer is best-effort, never fatal
         pass
 
@@ -2554,16 +2620,16 @@ def _run_copilot_watched(
         watch_lines = _copilot_event_to_watch_lines(ev)
         if watch_lines:
             t = round(time.time() - start, 1)
-            _watch_append([{"kind": k, "text": x, "t": t} for k, x in watch_lines])
+            _watch_append(rid, [{"kind": k, "text": x, "t": t} for k, x in watch_lines])
 
     try:
         answer = copilot_bridge.run_copilot_streaming(
             prompt, workspace, sandbox, model, continue_conv, timeout_s, on_event
         )
     except Exception as e:  # noqa: BLE001 — show the failure in the window, then re-raise
-        _watch_finish("error", f"({e})"[:200], time.time() - start)
+        _watch_finish(rid, "error", f"({e})"[:200], time.time() - start)
         raise
-    _watch_finish("done", answer, time.time() - start)
+    _watch_finish(rid, "done", answer, time.time() - start)
     return answer
 
 
