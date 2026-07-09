@@ -10,6 +10,19 @@ summary.
 
 ## [Unreleased]
 
+## [0.19.5] - 2026-07-09
+
+### Changed
+
+- **Docs brought in line with the chat redesign.** The watch-mode README section still named the
+  expand/collapse toggle by its old Turkish label ("daha fazla / daha az" → "show more / show less"),
+  the GIF table header omitted Copilot ("agy or codex" → "agy, codex, or copilot"), and the GIF
+  alt-text/caption described the old streaming view — reworded to the chat-conversation framing
+  (a **CLAUDE** prompt bubble → collapsible step trace → Markdown answer card tagged by backend).
+  Also refreshed `swarm_watch.py`'s module docstring, which still called the single-worker viewer a
+  "singleton (`_WATCH_STATE`)" and mentioned a "typewriter" — neither true after the id-keyed
+  multi-window state (`_WATCH_RUNS`) and the chat redesign.
+
 ## [0.19.4] - 2026-07-09
 
 ### Changed

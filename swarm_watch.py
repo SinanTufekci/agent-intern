@@ -1,12 +1,12 @@
 """Multi-channel live "watch" dashboard for antigravity_swarm.
 
-The single-worker watch mode in server.py is a singleton (one _WATCH_STATE, one
-server, one window). A swarm runs N workers at once, so this serves ONE thin
-dashboard window listing the workers vertically — each row shows the repo, the
-prompt, a short snippet of the *latest* operation, and a per-worker time bar.
+The single-worker watch mode in server.py keys its state by run id (_WATCH_RUNS),
+one shared server, per-run windows. A swarm runs N workers at once, so this serves
+ONE thin dashboard window listing the workers vertically — each row shows the repo,
+the prompt, a short snippet of the *latest* operation, and a per-worker time bar.
 Clicking a row (or selecting with the keyboard and pressing Enter) opens a
-dedicated detail window for that agent — the full step-by-step stream, rendered
-with the same typewriter + Markdown treatment as the single-worker viewer.
+dedicated detail window for that agent — a chat conversation (prompt bubble → live
+step trace → Markdown answer), matching the single-worker viewer.
 Bound to 127.0.0.1 only. Imported lazily by swarm.py only when watch=True, so
 this top-level `from server import` runs after server is fully loaded — no
 circular import.

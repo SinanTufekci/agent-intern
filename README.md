@@ -353,15 +353,15 @@ thread rather than a blank new window.
 <div align="center">
 <table>
 <tr>
-<td width="50%" align="center"><b>text ask / continue (agy <i>or</i> codex)</b></td>
+<td width="50%" align="center"><b>text ask / continue (agy, codex, <i>or</i> copilot)</b></td>
 <td width="50%" align="center"><b><code>antigravity_image</code> — image inline</b></td>
 </tr>
 <tr>
-<td><img src="assets/watch-ask.gif" width="100%" alt="Agent Intern watch window streaming an agent's steps for a text ask — narration, the real commands it runs, completions — then rendering the final Markdown answer"></td>
-<td><img src="assets/watch-image.gif" width="100%" alt="Agent Intern watch window streaming an image generation and rendering the finished image inline"></td>
+<td><img src="assets/watch-ask.gif" width="100%" alt="Agent Intern chat window for a text ask: the prompt as a CLAUDE chat bubble, the agent's live steps (narration, the real commands it runs, completions) in a collapsible trace, then the final Markdown answer card"></td>
+<td><img src="assets/watch-image.gif" width="100%" alt="Agent Intern chat window generating an image: the prompt bubble, the live step trace, then the finished image shown inline"></td>
 </tr>
 </table>
-<sub>Real captures — the agent runs headless while the <b>Agent Intern</b> window live-streams its steps (▸ narration · <code>$</code> commands · ✓ completions), then shows the final answer or image.</sub>
+<sub>Real captures — the agent runs headless while the <b>Agent Intern</b> window renders the exchange as a chat conversation: your prompt as a <b>CLAUDE</b> bubble, live steps (▸ narration · <code>$</code> commands · ✓ completions) in a collapsible trace, then the final Markdown answer or inline image.</sub>
 </div>
 
 - **Cross-platform & best-effort.** Prefers a Chromium browser (`--app` mode) for the
@@ -378,9 +378,10 @@ thread rather than a blank new window.
   `copilot_ask` at once) each stream into their own view and never clobber each other.
   If you closed the window, the next run opens a fresh one. Set **`AGY_WATCH_ALWAYS_NEW=1`**
   to force a new window every time.
-- **Chat layout & history.** Prompts render as chat bubbles — long ones clamp to a few
-  lines with a **daha fazla / daha az** (expand / collapse) toggle — and answers as
-  Markdown cards tagged with the backend. A **`*_continue`** run seeds the window with
+- **Chat layout & history.** Prompts render as chat bubbles (labelled **CLAUDE**, since the MCP
+  client writes them) — long ones clamp to a few lines with a **show more / show less** toggle — and
+  answers as Markdown cards tagged with the backend (**AGY** / **CODEX** / **COPILOT**). A
+  **`*_continue`** run seeds the window with
   the conversation's **prior turns**, read from each backend's own session store (agy's
   transcript, codex's rollout, copilot's `events.jsonl`). The swarm's per-worker detail
   window uses the same chat design for its one task.
