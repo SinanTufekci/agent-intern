@@ -10,6 +10,15 @@ summary.
 
 ## [Unreleased]
 
+## [0.19.4] - 2026-07-09
+
+### Changed
+
+- **Re-captured the watch GIFs with the English UI.** `assets/watch-ask.gif` and
+  `assets/watch-image.gif` were regenerated after the 0.19.3 string fix, so the on-screen labels in
+  the GIFs ("working…", "N steps", "show more", "close") now match the app instead of the earlier
+  Turkish captures. Frames inspected again for privacy before commit — no paths/usernames leaked.
+
 ## [0.19.3] - 2026-07-09
 
 ### Changed
