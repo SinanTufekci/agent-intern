@@ -189,9 +189,11 @@ def _build_gif(frames: list, out_path: str, label: str) -> None:
 def mode_ask(out_path: str) -> None:
     ws = _make_workspace()
     port = server._ensure_watch_server()
+    # A privacy-safe prompt for a public GIF: pure knowledge + one path-free command,
+    # so agy touches no files and no absolute paths (or usernames) appear on screen.
     prompt = (
-        "Read README.md in this folder and summarize what this MCP bridge does "
-        "in exactly three short markdown bullet points. Be concise."
+        "In exactly two short markdown bullet points, explain what `git bisect` does. "
+        "Then run the command `git --version` and add its exact output as a third bullet."
     )
 
     def start_run():
@@ -205,7 +207,11 @@ def mode_ask(out_path: str) -> None:
 def mode_image(out_path: str) -> None:
     ws = _make_workspace()
     port = server._ensure_watch_server()
-    target = os.path.join(tempfile.gettempdir(), "agy_gif_image.png")
+    # Save under a neutral, username-free dir: the viewer shows "Saved to <path>", so
+    # a per-user temp path would put the OS username on screen in a public GIF.
+    shots = os.path.join(os.environ.get("PUBLIC", r"C:\Users\Public"), "agy-gif")
+    os.makedirs(shots, exist_ok=True)
+    target = os.path.join(shots, "agy_gif_image.png")
     user_prompt = (
         "A friendly little robot intern reading a glowing book at a desk, "
         "flat vector illustration, dark background with neon green and cyan accents."

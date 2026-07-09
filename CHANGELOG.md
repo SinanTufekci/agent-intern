@@ -10,7 +10,19 @@ summary.
 
 ## [Unreleased]
 
-## [0.19.1] - 2026-07-09
+## [0.19.2] - 2026-07-09
+
+### Changed
+
+- **Refreshed the watch-mode GIFs for the chat redesign.** `assets/watch-ask.gif` and
+  `assets/watch-image.gif` now show the current chat UI (a **CLAUDE** prompt bubble → a live
+  collapsible step trace → a Markdown answer card / inline image) instead of the prior terminal-style
+  view. The capture tool (`tools/capture_watch_gif.py`) was made safe for a public asset: the `ask`
+  capture uses a path-free prompt (a knowledge question + `git --version`) so agy touches no files
+  and no absolute paths or usernames appear on screen, and the `image` capture saves under a neutral
+  `C:\Users\Public` dir so the "Saved to …" caption carries no personal username. (The swarm
+  dashboard GIF is unchanged — the chat redesign only touched the per-worker detail window, which
+  that GIF doesn't capture.)
 
 ### Changed
 
