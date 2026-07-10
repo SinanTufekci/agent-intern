@@ -27,14 +27,48 @@
   <style>
     /* ============ 15s loop: user asks -> Claude dispatches 4 CLIs -> done -> celebrate ============ */
 
-    /* Claude gentle bob + celebration hop */
-    @keyframes claude-body {
-      0%, 80%, 100% { transform: translate(300px,170px) scale(1.25) translateY(0); }
-      84%, 90%, 96% { transform: translate(300px,170px) scale(1.25) translateY(-8px); }
-      87%, 93%, 99% { transform: translate(300px,170px) scale(1.25) translateY(0); }
-    }
-    .claude-body { animation: claude-body 15s ease-in-out infinite; }
+    /* ---- Clawd: layered, smooth idle life + celebration.
+           Nested groups keep each transform on its own layer so they never fight:
+           float(translateY) > jump(translateY) > breath(scale) > limbs/eyes.
+           Idle micro-motions run on short, prime-ish periods so they never lock
+           into a robotic beat; the 15s ones sync to the dispatch/celebrate story. ---- */
 
+    /* gentle continuous vertical float */
+    @keyframes cl-float { 0%,100%{transform:translateY(0);} 50%{transform:translateY(-3px);} }
+    .cl-float { animation: cl-float 3.4s ease-in-out infinite; }
+
+    /* celebration hops (three quick bounces near the end) */
+    @keyframes cl-jump {
+      0%,80%,100%{transform:translateY(0);}
+      82.5%,88.5%,94.5%{transform:translateY(-11px);}
+      85.5%,91.5%,97.5%{transform:translateY(0);}
+    }
+    .cl-jump { animation: cl-jump 15s ease-in-out infinite; }
+
+    /* breathing: subtle squash/stretch anchored at the feet */
+    @keyframes cl-breath { 0%,100%{transform:scaleY(1) scaleX(1);} 50%{transform:scaleY(1.028) scaleX(0.986);} }
+    .cl-breath { transform-origin: 0px 28px; animation: cl-breath 2.7s ease-in-out infinite; }
+
+    /* arms: gentle idle sway (short loop, inner) + celebration pump-up (15s, outer).
+       Nested around the same shoulder pivot so both apply without conflict. */
+    @keyframes arm-sway-l { 0%,100%{transform:rotate(5deg);} 50%{transform:rotate(-7deg);} }
+    @keyframes arm-sway-r { 0%,100%{transform:rotate(-5deg);} 50%{transform:rotate(7deg);} }
+    .cl-arm-l { transform-origin: -31.5px 0px; animation: arm-sway-l 2.6s ease-in-out infinite; }
+    .cl-arm-r { transform-origin: 31.5px 0px; animation: arm-sway-r 2.9s ease-in-out infinite; }
+    @keyframes arm-cel-l { 0%,80%,100%{transform:rotate(0);} 82%,88%,94%{transform:rotate(48deg);} 85%,91%,97%{transform:rotate(16deg);} }
+    @keyframes arm-cel-r { 0%,80%,100%{transform:rotate(0);} 82%,88%,94%{transform:rotate(-48deg);} 85%,91%,97%{transform:rotate(-16deg);} }
+    .cl-arm-l-cel { transform-origin: -31.5px 0px; animation: arm-cel-l 15s ease-in-out infinite; }
+    .cl-arm-r-cel { transform-origin: 31.5px 0px; animation: arm-cel-r 15s ease-in-out infinite; }
+
+    /* legs: a soft staggered march-in-place, each swinging from its hip */
+    @keyframes leg-a { 0%,100%{transform:rotate(0);} 50%{transform:rotate(4.5deg);} }
+    @keyframes leg-b { 0%,100%{transform:rotate(0);} 50%{transform:rotate(-4.5deg);} }
+    .cl-leg-1 { transform-origin: -28px 14px; animation: leg-a 1.9s ease-in-out infinite; }
+    .cl-leg-2 { transform-origin: -14px 14px; animation: leg-b 1.9s ease-in-out infinite; animation-delay: -0.95s; }
+    .cl-leg-3 { transform-origin:  14px 14px; animation: leg-a 1.9s ease-in-out infinite; animation-delay: -0.5s; }
+    .cl-leg-4 { transform-origin:  28px 14px; animation: leg-b 1.9s ease-in-out infinite; animation-delay: -1.4s; }
+
+    /* eyes: track the active card, blink, an occasional solo wink, happy squint while celebrating */
     @keyframes eye-look {
       0%, 8%, 80%, 100% { transform: translate(0,0); }
       12%, 20% { transform: translate(2px,-1px); }   /* to top cards */
@@ -42,9 +76,13 @@
       40%, 78% { transform: translate(-1px,0); }
     }
     .eye-look { animation: eye-look 15s ease-in-out infinite; }
+    @keyframes eye-squint { 0%,80%,98%,100%{transform:scaleY(1);} 82.5%,96%{transform:scaleY(0.42);} }
+    .eye-squint { transform-origin: 0px -13.5px; animation: eye-squint 15s ease-in-out infinite; }
     @keyframes blink { 0%,46%,54%,100%{transform:scaleY(1);} 50%{transform:scaleY(0.1);} }
-    .eye-group { transform-box: fill-box; transform-origin: center; animation: blink 4s ease-in-out infinite; }
-    @keyframes blush { 0%,80%,100%{opacity:0;} 82%,95%{opacity:0.8;} }
+    .eye-blink { transform-origin: 0px -13.5px; animation: blink 4.2s ease-in-out infinite; }
+    @keyframes wink { 0%,40%,46%,100%{transform:scaleY(1);} 43%{transform:scaleY(0.12);} }
+    .eye-wink { transform-origin: 19px -13.5px; animation: wink 6.5s ease-in-out infinite; }
+    @keyframes blush { 0%,80%,100%{opacity:0;} 82%,95%{opacity:0.85;} }
     .blush { animation: blush 15s ease-in-out infinite; }
 
     /* Bubble helper (scale-in pop) */
@@ -197,25 +235,27 @@
        welcome sprite: flat top, one solid clay block, small side-arm nubs at mid-
        height, tall thin bar eyes (not squares), and 4 stub legs in two pairs with a
        central belly gap. Pure squares, no curves. cell = 7u, figure centered on 0. -->
-  <g class="claude-body">
+  <g class="claude-body" transform="translate(300 170) scale(1.25)">
+   <g class="cl-float"><g class="cl-jump"><g class="cl-breath">
+    <!-- legs: two pairs with a central belly gap; each marches from its hip -->
+    <g class="cl-leg-1"><rect x="-31.5" y="11" width="7" height="17" fill="#d97757" /></g>
+    <g class="cl-leg-2"><rect x="-17.5" y="11" width="7" height="17" fill="#d97757" /></g>
+    <g class="cl-leg-3"><rect x="10.5" y="11" width="7" height="17" fill="#d97757" /></g>
+    <g class="cl-leg-4"><rect x="24.5" y="11" width="7" height="17" fill="#d97757" /></g>
+    <!-- side arm nubs (idle sway + celebration pump, nested around the shoulder) -->
+    <g class="cl-arm-l-cel"><g class="cl-arm-l"><rect x="-38.5" y="-7" width="11" height="14" fill="#d97757" /></g></g>
+    <g class="cl-arm-r-cel"><g class="cl-arm-r"><rect x="27.5" y="-7" width="11" height="14" fill="#d97757" /></g></g>
     <!-- body core (one solid clay block) -->
     <rect x="-31.5" y="-28" width="63" height="42" fill="#d97757" />
-    <!-- side arm nubs (mid-height) -->
-    <rect x="-38.5" y="-7" width="7" height="14" fill="#d97757" />
-    <rect x="31.5" y="-7" width="7" height="14" fill="#d97757" />
-    <!-- legs: two pairs with a central belly gap -->
-    <rect x="-31.5" y="14" width="7" height="14" fill="#d97757" />
-    <rect x="-17.5" y="14" width="7" height="14" fill="#d97757" />
-    <rect x="10.5" y="14" width="7" height="14" fill="#d97757" />
-    <rect x="24.5" y="14" width="7" height="14" fill="#d97757" />
-    <!-- eyes: tall thin vertical bars (blink + track the active card) -->
-    <g class="eye-look"><g class="eye-group">
+    <!-- eyes: tall thin vertical bars — track the active card, blink, wink, squint -->
+    <g class="eye-look"><g class="eye-squint"><g class="eye-blink">
       <rect x="-21.5" y="-20" width="5" height="13" fill="#201a15" />
-      <rect x="16.5" y="-20" width="5" height="13" fill="#201a15" />
-    </g></g>
+      <g class="eye-wink"><rect x="16.5" y="-20" width="5" height="13" fill="#201a15" /></g>
+    </g></g></g>
     <!-- happy blush (celebration only) -->
     <rect x="-30" y="-3" width="8" height="6" fill="#ff8da1" class="blush" />
     <rect x="22" y="-3" width="8" height="6" fill="#ff8da1" class="blush" />
+   </g></g></g>
   </g>
   <text x="300" y="232" text-anchor="middle" fill="#94a3b8" font-family="ui-sans-serif, system-ui, sans-serif" font-size="10.5" font-weight="700" letter-spacing="0.5">Claude Code</text>
 
