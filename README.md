@@ -1,10 +1,10 @@
 <div align="center">
 
-# Claude Code × Antigravity + Codex + Copilot — MCP Bridge
+# Claude Code × Antigravity + Codex + Copilot + Cursor — MCP Bridge
 
-<img src="assets/bridge-animation.svg" width="100%" alt="Claude Code bridging Google Antigravity, OpenAI Codex, and GitHub Copilot" />
+<img src="assets/bridge-animation.svg" width="100%" alt="Claude Code bridging Google Antigravity, OpenAI Codex, GitHub Copilot, and Cursor" />
 
-**Drive three external coding CLIs — Google's [Antigravity](https://antigravity.google/) (Gemini 3.5 Flash), [OpenAI Codex](https://developers.openai.com/codex/), and the [GitHub Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli) — as sub-agents inside [Claude Code](https://claude.com/claude-code). Text answers, image generation, real repo work, and parallel swarms, on quota you already pay for.**
+**Drive four external coding CLIs — Google's [Antigravity](https://antigravity.google/) (Gemini 3.5 Flash), [OpenAI Codex](https://developers.openai.com/codex/), the [GitHub Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli), and [Cursor](https://cursor.com/cli) — as sub-agents inside [Claude Code](https://claude.com/claude-code). Text answers, image generation, real repo work, and parallel swarms, on quota you already pay for.**
 
 [![CI](https://github.com/SinanTufekci/agent-intern/actions/workflows/ci.yml/badge.svg)](https://github.com/SinanTufekci/agent-intern/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/agent-intern?logo=pypi&logoColor=white&color=2ea44f)](https://pypi.org/project/agent-intern/)
@@ -16,6 +16,7 @@
 [![agy 1.1.0 verified](https://img.shields.io/badge/agy-1.1.0%20verified-2ea44f)](https://antigravity.google/)
 [![codex 0.141.0 verified](https://img.shields.io/badge/codex--cli-0.141.0%20verified-2ea44f)](https://developers.openai.com/codex/)
 [![copilot 1.0.68 verified](https://img.shields.io/badge/copilot--cli-1.0.68%20verified-2ea44f)](https://docs.github.com/en/copilot/how-tos/copilot-cli)
+[![cursor 2026.07.08 verified](https://img.shields.io/badge/cursor--agent-2026.07.08%20verified-2ea44f)](https://cursor.com/cli)
 [![platform](https://img.shields.io/badge/platform-Windows%20·%20macOS%20·%20Linux-lightgrey)](#requirements)
 [![Sponsor](https://img.shields.io/github/sponsors/SinanTufekci?logo=githubsponsors&label=Sponsor&color=ea4aaa)](https://github.com/sponsors/SinanTufekci)
 
@@ -23,10 +24,10 @@
 
 ---
 
-One MCP server, **three backends**. It exposes Google Antigravity, OpenAI Codex, and the GitHub
-Copilot CLI to Claude Code as clean MCP tools so you can delegate work to a different model family
-mid-task — without leaving your terminal, and on the subscriptions you already have. Each backend is
-independent: install one, two, or all three.
+One MCP server, **four backends**. It exposes Google Antigravity, OpenAI Codex, the GitHub
+Copilot CLI, and Cursor to Claude Code as clean MCP tools so you can delegate work to a different model
+family mid-task — without leaving your terminal, and on the subscriptions you already have. Each backend
+is independent: install one, two, three, or all four.
 
 - **🛰️ Antigravity (`agy`, Gemini 3.5 Flash High).** Fast, cheap tool-calling — and the **only**
   backend with an image model. Its headless print mode (`agy -p`) historically had a **stdout bug**:
@@ -41,8 +42,13 @@ independent: install one, two, or all three.
 - **🐙 Copilot (`copilot -p`, GitHub).** GitHub's agentic coder. Stdout-native like Codex (`-s`
   prints just the answer), with **model selection** (`--model`), a **best-effort** tool/path
   permission knob, and a deterministic resume mechanism (the bridge sets each session's UUID itself).
+- **✳️ Cursor (`cursor-agent -p`, Cursor).** Cursor's agentic coder, with the **widest model menu** —
+  GPT, Claude, Grok, and Composer via `--model` (validated against `cursor-agent models`). Stdout-native
+  like Codex/Copilot (`--output-format text` prints just the answer), an **agent-enforced** sandbox
+  (read-only via `--mode ask`), and a deterministic resume mechanism (the bridge mints each chat's id
+  itself via `create-chat`). No image model.
 
-All three share the same niceties: a `*_continue` to resume a thread, a [live "watch" window](#watch-mode)
+All four share the same niceties: a `*_continue` to resume a thread, a [live "watch" window](#watch-mode)
 to see the agent work, a unified [`agent_swarm`](#swarm) that runs many tasks in parallel **across
 all backends at once**, and `*_status` diagnostics that spend no quota.
 
@@ -53,8 +59,10 @@ all backends at once**, and `*_status` diagnostics that spend no quota.
 > `codex exec` also runs autonomously, but its `sandbox` flag (default `read-only`) **is** a real,
 > enforced boundary. `copilot -p` runs headless with `--allow-all-tools`; its `sandbox` maps to
 > **best-effort** tool/path permissions (read-only denies the local write/shell tools) — safer than
-> agy, but **not** an OS sandbox like Codex's. In all three cases the `workspace` argument is a
-> *starting context*, **not** a security boundary. Only use these with **trusted prompts on trusted
+> agy, but **not** an OS sandbox like Codex's. `cursor-agent -p` runs headless with `--trust` (and
+> `--force` for writes); its `sandbox` is **agent-enforced** (read-only = `--mode ask`, which makes the
+> write/shell tools unavailable) — best-effort like Copilot, **not** an OS sandbox. In all four cases
+> the `workspace` argument is a *starting context*, **not** a security boundary. Only use these with **trusted prompts on trusted
 > content**; for real isolation, run the bridge inside a container or VM. **[Full details →](#security)**
 
 ## Why you'd want this
@@ -69,24 +77,24 @@ all backends at once**, and `*_status` diagnostics that spend no quota.
 | 📁 **Cross-repo reads** | Point a worker at another project directory and let it read/answer there. |
 | 🔌 **Zero new auth** | Piggybacks the logins you already did — no keys for the bridge to manage. |
 
-## The three backends at a glance
+## The four backends at a glance
 
-The bridge normalizes all three CLIs into the same shape, but they differ where it matters. Pick per task:
+The bridge normalizes all four CLIs into the same shape, but they differ where it matters. Pick per task:
 
-| | 🛰️ **Antigravity** (`agy`) | 🤖 **Codex** (`codex exec`) | 🐙 **Copilot** (`copilot -p`) |
-|---|---|---|---|
-| **Model** | Selectable via `model` (agy's `--model`); Gemini 3.5 Flash (High) default (see [Model & auth](#model--auth)) | Selectable via `model` (codex's `-m`) | Selectable via `model` (`--model`) |
-| **Best at** | Fast, cheap tool-calling; quick answers | Heavier reasoning; real code/repo work | Agentic coding; real code/repo work |
-| **Image generation** | ✅ `antigravity_image` (+ `antigravity_image_swarm`) | ❌ no image model | ❌ no image model |
-| **Sandbox** | ❌ no real boundary (`--sandbox` blocks only shell) | ✅ real, enforced: `read-only` / `workspace-write` / `danger-full-access` | ⚠️ best-effort: tool/path permissions (`read-only` denies write/shell) — **not** an OS sandbox |
-| **How the answer is read** | stdout on agy 1.0.15+ (Windows); else scraped from `transcript.jsonl` | Written to a file via `-o/--output-last-message` | stdout (`-s` silent mode) |
-| **Continue mechanism** | Pins the workspace's conversation id (`--conversation`) | Resumes the session id (`codex exec resume <id>`) | Resumes a self-set session UUID (`--session-id`) |
-| **Auth** | OS credential store (AI Pro session) | `codex login` (ChatGPT account or API key) | OS credential store (`copilot login`) or a GitHub token env |
-| **In a swarm** | Runs with an isolated `HOME` to avoid state races | Fresh one-shot — needs no isolation | Fresh one-shot — needs no isolation |
+| | 🛰️ **Antigravity** (`agy`) | 🤖 **Codex** (`codex exec`) | 🐙 **Copilot** (`copilot -p`) | ✳️ **Cursor** (`cursor-agent -p`) |
+|---|---|---|---|---|
+| **Model** | Selectable via `model` (agy's `--model`); Gemini 3.5 Flash (High) default (see [Model & auth](#model--auth)) | Selectable via `model` (codex's `-m`) | Selectable via `model` (`--model`) | Selectable via `model` (`--model`), validated against `cursor-agent models` |
+| **Best at** | Fast, cheap tool-calling; quick answers | Heavier reasoning; real code/repo work | Agentic coding; real code/repo work | Agentic coding; wide model menu (GPT/Claude/Grok/Composer) |
+| **Image generation** | ✅ `antigravity_image` (+ `antigravity_image_swarm`) | ❌ no image model | ❌ no image model | ❌ no image model |
+| **Sandbox** | ❌ no real boundary (`--sandbox` blocks only shell) | ✅ real, enforced: `read-only` / `workspace-write` / `danger-full-access` | ⚠️ best-effort: tool/path permissions (`read-only` denies write/shell) — **not** an OS sandbox | ⚠️ agent-enforced: mode/force (`read-only` = `--mode ask`, write/shell tools unavailable) — **not** an OS sandbox |
+| **How the answer is read** | stdout on agy 1.0.15+ (Windows); else scraped from `transcript.jsonl` | Written to a file via `-o/--output-last-message` | stdout (`-s` silent mode) | stdout (`--output-format text`) |
+| **Continue mechanism** | Pins the workspace's conversation id (`--conversation`) | Resumes the session id (`codex exec resume <id>`) | Resumes a self-set session UUID (`--session-id`) | Mints a chat id (`create-chat`) and resumes it (`--resume <id>`) |
+| **Auth** | OS credential store (AI Pro session) | `codex login` (ChatGPT account or API key) | OS credential store (`copilot login`) or a GitHub token env | `cursor-agent login` (OS credential store) or `CURSOR_API_KEY` |
+| **In a swarm** | Runs with an isolated `HOME` to avoid state races | Fresh one-shot — needs no isolation | Fresh one-shot — needs no isolation | Fresh one-shot — needs no isolation |
 
 ## How it works
 
-All three backends run **headless** and one-shot per call; the bridge's job is to get a clean answer
+All four backends run **headless** and one-shot per call; the bridge's job is to get a clean answer
 out of each and hand it to Claude Code as a plain string.
 
 ```mermaid
@@ -95,9 +103,11 @@ flowchart LR
     B -- "antigravity_*" --> C[agy -p]
     B -- "codex_*" --> D[codex exec]
     B -- "copilot_*" --> E[copilot -p]
+    B -- "cursor_*" --> F[cursor-agent -p]
     C -- "stdout (1.0.15+)<br/>or transcript.jsonl / .db" --> B
     D -- "output-last-message file" --> B
     E -- "stdout (-s silent)" --> B
+    F -- "stdout (--output-format text)" --> B
     B -- "plain text" --> A
 ```
 
@@ -131,6 +141,15 @@ Continue is **deterministic**: copilot's `--session-id <uuid>` both *sets* a new
 resumes that exact session — falling back after a restart to the newest on-disk session
 (`~/.copilot/session-state/<id>/workspace.yaml`) whose recorded `cwd` matches.
 
+**Cursor.** `cursor-agent -p --output-format text --trust "<prompt>"` runs a prompt non-interactively
+and writes the clean final answer straight to stdout — the bridge reads it there, no scraping
+(`--trust` trusts the workspace so it never blocks on a prompt). Continue is **deterministic and
+race-free**: `cursor-agent create-chat` mints a fresh chat and prints its id, so the bridge mints the
+id itself, pins it to the workspace, and resumes that exact chat with `-p --resume <chatId>` — no
+rollout-scraping. After a restart it falls back to the newest on-disk chat under
+`~/.cursor/chats/<md5(workspace)>/<chat-id>/` whose `meta.json` `cwd` matches (the chat-dir hash is
+itself md5 of the workspace path).
+
 ## Set up in 60 seconds
 
 **Prerequisites — install whichever backend(s) you want, and sign in once each:**
@@ -139,8 +158,10 @@ resumes that exact session — falling back after a restart to the newest on-dis
 - **Codex:** install `codex` and run `codex login` once (ChatGPT account or API key).
 - **Copilot:** install `copilot` (`npm i -g @github/copilot`, or `winget install GitHub.Copilot`)
   and run `copilot` then `/login` once (or set a `COPILOT_GITHUB_TOKEN`/`GH_TOKEN` env var).
+- **Cursor:** install `cursor-agent` (`curl https://cursor.com/install -fsSL | bash`) and run
+  `cursor-agent login` once (or set a `CURSOR_API_KEY` env var).
 
-You don't need all three — the tools for a missing CLI simply report "not found" via their `*_status`
+You don't need all four — the tools for a missing CLI simply report "not found" via their `*_status`
 tool.
 
 ### Recommended — no clone, you control updates
@@ -208,16 +229,17 @@ Then point Claude Code at the absolute path to `server.py` under `mcpServers` in
 </td></tr>
 </table>
 
-Restart Claude Code. **Twelve tools** appear, each prefixed `mcp__agent-intern__`:
+Restart Claude Code. **Fifteen tools** appear, each prefixed `mcp__agent-intern__`:
 
 - **Antigravity (5):** `antigravity_ask`, `antigravity_continue`, `antigravity_image`,
   `antigravity_image_swarm`, `antigravity_status`
 - **Codex (3):** `codex_ask`, `codex_continue`, `codex_status`
 - **Copilot (3):** `copilot_ask`, `copilot_continue`, `copilot_status`
-- **Shared (1):** `agent_swarm` — fans a list of tasks out across **all three** backends in one run
+- **Cursor (3):** `cursor_ask`, `cursor_continue`, `cursor_status`
+- **Shared (1):** `agent_swarm` — fans a list of tasks out across **all four** backends in one run
 
-The single-prompt tools — Antigravity, Codex, **and** Copilot — take a **`watch=true`** flag for the
-live browser view ([Watch mode](#watch-mode)).
+The single-prompt tools — Antigravity, Codex, Copilot, **and** Cursor — take a **`watch=true`** flag
+for the live browser view ([Watch mode](#watch-mode)).
 
 > [!NOTE]
 > **Your client learns how to use the bridge on its own.** The server ships MCP *instructions* — a
@@ -228,7 +250,8 @@ live browser view ([Watch mode](#watch-mode)).
 
 > *"Use antigravity_ask to summarize the README of this repo in three bullets."* → Claude routes the
 > prompt through the bridge, agy reads the file under the workspace root, and the answer comes back
-> as a plain string. Swap in `codex_ask` or `copilot_ask` to have GPT or Copilot do the same.
+> as a plain string. Swap in `codex_ask`, `copilot_ask`, or `cursor_ask` to have GPT, Copilot, or Cursor
+do the same.
 
 ## Tools
 
@@ -258,15 +281,23 @@ live browser view ([Watch mode](#watch-mode)).
 | `copilot_continue(prompt, workspace?, sandbox?="read-only", timeout_s?=180, watch?=false)` | Continue the Copilot session **rooted at `workspace`** — resumes the exact self-set session id, falling back to the newest on-disk session for that cwd after a restart. Unlike Codex, `sandbox` applies here too (copilot re-applies permissions each turn). `watch=true` opens the live view. |
 | `copilot_status()` | Setup diagnostics: copilot version, an auth hint (no `login status` command exists, so best-effort), session-state dir. Spends no quota. |
 
+### ✳️ Cursor
+
+| Tool | Purpose |
+|---|---|
+| `cursor_ask(prompt, workspace?, sandbox?="read-only", model?, timeout_s?=180, watch?=false)` | Start a **new** Cursor chat. `sandbox` maps to cursor's mode/force flags (**agent-enforced**, not an OS sandbox — see [Cursor bridge](#cursor-bridge)); `model` selects the model (`--model`, validated against `cursor-agent models`). `watch=true` opens the live view, streaming cursor's steps from its `--output-format stream-json` event stream. |
+| `cursor_continue(prompt, workspace?, sandbox?="read-only", timeout_s?=180, watch?=false)` | Continue the Cursor chat **rooted at `workspace`** — resumes the exact chat id the bridge minted (`create-chat` + `--resume`), falling back to the newest on-disk chat for that cwd after a restart. `watch=true` opens the live view. |
+| `cursor_status()` | Setup diagnostics: **the bridge's own version + whether a newer release is available**, plus cursor version and login status (`cursor-agent status`). Spends no quota. |
+
 ### 🐝 Shared
 
 | Tool | Purpose |
 |---|---|
-| `agent_swarm(tasks, max_concurrency?=4, timeout_s?=180, watch?=false)` | Run **several tasks in parallel across all three backends** — each task names its `backend` (`antigravity`, `codex`, or `copilot`) plus a `prompt` (an optional `model` for any backend, and `sandbox` for Codex/Copilot). Every answer comes back in one block; `watch=true` opens the live dashboard ([Swarm](#swarm)). |
+| `agent_swarm(tasks, max_concurrency?=4, timeout_s?=180, watch?=false)` | Run **several tasks in parallel across all four backends** — each task names its `backend` (`antigravity`, `codex`, `copilot`, or `cursor`) plus a `prompt` (an optional `model` for any backend, and `sandbox` for Codex/Copilot/Cursor). Every answer comes back in one block; `watch=true` opens the live dashboard ([Swarm](#swarm)). |
 
 `workspace` defaults to the MCP server's current working directory. Point it at a real project dir
-for context-aware answers — every backend gives the model access to files under that root (Codex and
-Copilot honoring their `sandbox`).
+for context-aware answers — every backend gives the model access to files under that root (Codex,
+Copilot, and Cursor honoring their `sandbox`).
 
 `antigravity_image` forces agy to save to an explicit absolute path — without one, agy
 falls back to its own scratch dir (`~/.gemini/antigravity-cli/scratch/`). It then
@@ -289,7 +320,7 @@ fixed its stdout). Three things make Codex worth reaching for over Antigravity:
   interactive approval gate, so this flag **is** your safety boundary — opt into write access
   deliberately.
 - **Model selection works.** `model` maps to codex's `-m`. (agy's `--model` works in print mode too
-  as of 1.0.16; all three backends now expose the same `model` knob.)
+  as of 1.0.16; all four backends now expose the same `model` knob.)
 - **Stronger reasoning.** Codex is a coding agent, not an image model — there's no `codex_image`. Its
   strength is reasoning and real code/repo work; hand it the jobs that need a heavier model.
 
@@ -341,26 +372,75 @@ set **`COPILOT_BIN`** to its full path — e.g.
 > headless). Its `sandbox` is **best-effort tool/path permissions**, not an OS sandbox — safer than
 > agy, weaker than Codex's `read-only`. Only use it with **trusted prompts on trusted content**.
 
+<a id="cursor-bridge"></a>
+
+## ✳️ Cursor bridge — the widest model menu
+
+Cursor's agent CLI (`cursor-agent`, from [cursor.com/cli](https://cursor.com/cli)) is stdout-native
+like Codex and Copilot: `cursor-agent -p --output-format text --trust "<prompt>"` runs a prompt
+non-interactively and writes just the final answer to stdout, so the bridge reads it there — no
+scraping (`--trust` trusts the workspace so it won't block on a prompt). What makes it worth reaching
+for:
+
+- **The widest model menu.** `model` maps to cursor's `--model` (e.g. `gpt-5.2`, `sonnet-4-thinking`,
+  `auto`, and parameterized ids like `claude-opus-4-8[context=1m]`) — GPT, Claude, Grok, and Composer
+  in one place. The bridge validates the label against `cursor-agent models` and rejects a typo up
+  front (like agy). Omit `model` to use your Cursor account default.
+- **Deterministic, race-free continue.** `cursor-agent create-chat` mints a fresh chat and prints its
+  id, and `-p --resume <chatId>` resumes that exact chat — so the bridge mints the id itself, pins it
+  to the workspace, and resumes deterministically (no rollout-scraping, same idea as Copilot's
+  self-set session id). After a restart it falls back to the newest on-disk chat under
+  `~/.cursor/chats/<md5(workspace)>/<chat-id>/` whose `meta.json` `cwd` matches (the chat-dir hash is
+  itself md5 of the workspace path).
+
+**Sandbox is agent-enforced, not an OS sandbox.** Like Copilot, cursor's boundary is which tools the
+agent can reach, not an OS jail. The `sandbox` knob maps to cursor's mode/force flags for a uniform
+cross-backend field:
+
+- **`read-only`** (default) — `--mode ask`: the `write` and `shell` tools are **unavailable**, so
+  cursor analyzes and answers but makes no edits (verified: it refuses to write files). Agent-enforced
+  and best-effort — it is **not** an OS sandbox. For a **hard** read-only boundary, use `codex_ask`
+  instead.
+- **`workspace-write`** — `--force`: edits and commands allowed, file access rooted at `--workspace`.
+- **`danger-full-access`** — `--force --sandbox disabled` (OS sandbox off). Avoid.
+
+(Cursor also exposes an OS-level `--sandbox enabled/disabled`; the bridge drives the uniform field via
+mode/force.)
+
+**Auth.** Uses your existing Cursor login — run `cursor-agent login` once (OS credential store), or
+set `CURSOR_API_KEY` for headless use. Check with `cursor_status`. If `cursor-agent` isn't reliably on
+`PATH` (the installer drops a `cursor-agent.CMD` shim a bare name can't launch on Windows), set
+**`CURSOR_BIN`** to its full path — mirrors the `AGY_BIN`/`CODEX_BIN`/`COPILOT_BIN` overrides.
+
+> [!WARNING]
+> `cursor-agent -p` runs the model as an **autonomous agent** with `--trust` (and `--force` when
+> writes are allowed). Its `sandbox` is **agent-enforced** (read-only makes the write/shell tools
+> unavailable), not an OS sandbox — safer than agy, weaker than Codex's `read-only`. Only use it with
+> **trusted prompts on trusted content**.
+
 <a id="watch-mode"></a>
 
 ## 👁️ Watch mode — Agent Intern (experimental)
 
 Pass **`watch=true`** to **any single-prompt tool** — `antigravity_ask`, `antigravity_continue`,
-`antigravity_image`, `codex_ask`, `codex_continue`, `copilot_ask`, or `copilot_continue` — to **watch
+`antigravity_image`, `codex_ask`, `codex_continue`, `copilot_ask`, `copilot_continue`, `cursor_ask`,
+or `cursor_continue` — to **watch
 the agent work live in a little chat-style browser window** called **Agent Intern**. The agent
 still runs headless; alongside it the bridge serves a tiny page on `127.0.0.1` and opens it in a
 small, chromeless app window that renders the exchange as a **conversation**: your prompt shows as a
 chat bubble, the agent's live steps stream in a collapsible "thinking" trace — its planner narration
 (▸), the **real commands** it runs (`$`), and completions (✓), read live (from agy's transcript, or
-codex's / copilot's JSON event stream) — and the final answer arrives as a Markdown card (and, for
+codex's / copilot's JSON event stream, or cursor's `--output-format stream-json`) — and the final
+answer arrives as a Markdown card (and, for
 `antigravity_image` with `watch=true`, the generated image shown inline). A **`*_continue`** run
 opens with the **prior turns of the conversation shown as history**, so it reads as one ongoing
-thread rather than a blank new window.
+thread rather than a blank new window. (A watched `cursor_continue` is the exception — Cursor stores
+its transcript in an opaque SQLite blob, so its window opens without visible prior-turn history.)
 
 <div align="center">
 <table>
 <tr>
-<td width="50%" align="center"><b>text ask / continue (agy, codex, <i>or</i> copilot)</b></td>
+<td width="50%" align="center"><b>text ask / continue (agy, codex, copilot, <i>or</i> cursor)</b></td>
 <td width="50%" align="center"><b><code>antigravity_image</code> — image inline</b></td>
 </tr>
 <tr>
@@ -387,17 +467,18 @@ thread rather than a blank new window.
   to force a new window every time.
 - **Chat layout & history.** Prompts render as chat bubbles (labelled **CLAUDE**, since the MCP
   client writes them) — long ones clamp to a few lines with a **show more / show less** toggle — and
-  answers as Markdown cards tagged with the backend (**AGY** / **CODEX** / **COPILOT**). A
+  answers as Markdown cards tagged with the backend (**AGY** / **CODEX** / **COPILOT** / **CURSOR**). A
   **`*_continue`** run seeds the window with
   the conversation's **prior turns**, read from each backend's own session store (agy's
-  transcript, codex's rollout, copilot's `events.jsonl`). The swarm's per-worker detail
+  transcript, codex's rollout, copilot's `events.jsonl`; Cursor's store is opaque, so a watched
+  `cursor_continue` opens without visible history). The swarm's per-worker detail
   window uses the same chat design for its one task.
 - **Progress, keyboard & copy.** Each panel shows a time progress bar (elapsed /
   timeout). The swarm dashboard adds an overall done/total bar and per-row time bars;
   use **↑/↓** to select a worker and **↵** to open its detail window. Answers render
   as Markdown with a **copy** button, and a "jump to latest" badge appears if you
   scroll up.
-- **Coarse, not token-level.** Both backends flush their step stream in chunks, so you
+- **Coarse, not token-level.** The backends flush their step stream in chunks, so you
   get a handful of live steps, not character streaming. The returned value is identical
   to the non-watch call. Nothing is sent anywhere but your own machine.
 
@@ -408,8 +489,8 @@ thread rather than a blank new window.
 `agent_swarm` fans a list of **tasks** out to workers that run **truly
 concurrently** (capped at `max_concurrency`, default 4), then returns every
 worker's result in one block. Each task names its own `backend`, so a **single
-swarm can mix Antigravity (Gemini), Codex, and Copilot** workers — hand the
-reasoning-heavy jobs to Codex or Copilot and the quick ones to Gemini, all at
+swarm can mix Antigravity (Gemini), Codex, Copilot, and Cursor** workers — hand the
+reasoning-heavy jobs to Codex, Copilot, or Cursor and the quick ones to Gemini, all at
 once. Good for independent sub-tasks: summarise N files, ask the same question
 about N repos, fix N bugs. (`antigravity_image_swarm` stays separate — it
 generates N images, and only agy has an image model.)
@@ -421,6 +502,8 @@ agent_swarm(tasks=[
    "sandbox": "workspace-write", "workspace": "./repo"},
   {"backend": "copilot", "prompt": "Explain what src/api.py exposes.",
    "sandbox": "read-only", "workspace": "./repo"},
+  {"backend": "cursor", "prompt": "Draft a docstring for src/utils.py.",
+   "model": "auto", "workspace": "./repo"},
 ])
 ```
 
@@ -436,16 +519,16 @@ concurrent runs sharing one state dir would race. The swarm sidesteps this: each
 **agy** worker runs with its **own isolated `HOME`/`USERPROFILE`**, so agy's
 `brain/`, `cache/`, and `last_conversations.json` never collide — no lock needed.
 Auth still works because agy reads it from the **OS credential store**, not from
-`~/.gemini` (verified on agy 1.0.9). **Codex** and **Copilot** workers need no such
+`~/.gemini` (verified on agy 1.0.9). **Codex**, **Copilot**, and **Cursor** workers need no such
 isolation — each is a fresh one-shot (`codex exec` with its own `-o` file; `copilot
--p` with its own self-set session id). Each worker's `cwd` is its real `workspace`,
+-p` with its own self-set session id; `cursor-agent -p` with its own minted chat id). Each worker's `cwd` is its real `workspace`,
 so file access is unchanged. Measured ~**2.8× speedup at 3 agy workers** (the AI Pro
 backend does not serialize per-account); higher `max_concurrency` trades
 quota/rate-limit pressure for wall-clock.
 
-- **Per-task fields** — `backend` (`antigravity`/`codex`/`copilot`) and `prompt`
+- **Per-task fields** — `backend` (`antigravity`/`codex`/`copilot`/`cursor`) and `prompt`
   are required; `workspace` defaults to the server cwd; `sandbox` and `model` apply
-  to **Codex and Copilot** (ignored for Antigravity). Swarm workers are
+  to **Codex, Copilot, and Cursor** (ignored for Antigravity). Swarm workers are
   **one-shot** — there is no `*_continue` for a swarm worker's session.
 - **Error isolation** — a worker that fails is reported in place; the others still
   return.
@@ -457,22 +540,22 @@ quota/rate-limit pressure for wall-clock.
 > A swarm launches **N unsandboxed agents at once** — N× the prompt-injection
 > "lethal trifecta" surface of a single call (see [Security](#security)). Only use
 > it with **trusted prompts on trusted content**. Codex workers honor their
-> enforced `sandbox`; Copilot workers honor their best-effort `sandbox`;
+> enforced `sandbox`; Copilot and Cursor workers honor their best-effort `sandbox`;
 > Antigravity workers have no real boundary.
 
 ## Model & auth
 
-| | 🛰️ **Antigravity** | 🤖 **Codex** | 🐙 **Copilot** |
-|---|---|---|---|
-| **Model** | **Selectable** via the `model` argument (agy's `--model`, e.g. `"Gemini 3.1 Pro (High)"`, `"Claude Sonnet 4.6 (Thinking)"`); omit to use the `"model"` field in agy's `settings.json` (**Gemini 3.5 Flash (High)** by default). Switching model in `-p` used to hang (through ~1.0.14) but is **fixed as of 1.0.16**. agy silently ignores an unknown label, so the bridge validates it against `agy models` and rejects a typo. Flash High is speed-optimized for cheap tool-calling; pick a bigger label for heavier work. | **Selectable** via the `model` argument (codex's `-m`). codex does not hang on a switch, so model choice is a first-class knob. | **Selectable** via the `model` argument (`--model`, e.g. `gpt-5.3-codex`, `claude-sonnet-4.6`, `auto`); omit for your account default. An unavailable model errors immediately. |
-| **Auth** | Piggybacks whatever credential store `agy` uses on your OS (Windows Credential Manager, macOS Keychain, libsecret on Linux — the bridge never touches it directly). Log in once; every call silent-auths on the **same AI Pro quota** you already pay for. | Uses your existing **Codex login** — ChatGPT account or API key. Run `codex login` once; verify with `codex_status`. | Uses your existing **Copilot login** — run `copilot` then `/login` once (OS credential store), or set `COPILOT_GITHUB_TOKEN`/`GH_TOKEN`/`GITHUB_TOKEN`. Verify with `copilot_status`. |
+| | 🛰️ **Antigravity** | 🤖 **Codex** | 🐙 **Copilot** | ✳️ **Cursor** |
+|---|---|---|---|---|
+| **Model** | **Selectable** via the `model` argument (agy's `--model`, e.g. `"Gemini 3.1 Pro (High)"`, `"Claude Sonnet 4.6 (Thinking)"`); omit to use the `"model"` field in agy's `settings.json` (**Gemini 3.5 Flash (High)** by default). Switching model in `-p` used to hang (through ~1.0.14) but is **fixed as of 1.0.16**. agy silently ignores an unknown label, so the bridge validates it against `agy models` and rejects a typo. Flash High is speed-optimized for cheap tool-calling; pick a bigger label for heavier work. | **Selectable** via the `model` argument (codex's `-m`). codex does not hang on a switch, so model choice is a first-class knob. | **Selectable** via the `model` argument (`--model`, e.g. `gpt-5.3-codex`, `claude-sonnet-4.6`, `auto`); omit for your account default. An unavailable model errors immediately. | **Selectable** via the `model` argument (`--model`, e.g. `gpt-5.2`, `sonnet-4-thinking`, `auto`, or parameterized ids like `claude-opus-4-8[context=1m]`); a wide GPT/Claude/Grok/Composer menu, validated against `cursor-agent models` (a typo is rejected up front). Omit for your Cursor account default. |
+| **Auth** | Piggybacks whatever credential store `agy` uses on your OS (Windows Credential Manager, macOS Keychain, libsecret on Linux — the bridge never touches it directly). Log in once; every call silent-auths on the **same AI Pro quota** you already pay for. | Uses your existing **Codex login** — ChatGPT account or API key. Run `codex login` once; verify with `codex_status`. | Uses your existing **Copilot login** — run `copilot` then `/login` once (OS credential store), or set `COPILOT_GITHUB_TOKEN`/`GH_TOKEN`/`GITHUB_TOKEN`. Verify with `copilot_status`. | Uses your existing **Cursor login** — run `cursor-agent login` once (OS credential store), or set `CURSOR_API_KEY`. Verify with `cursor_status`. |
 
 <a id="security"></a>
 
 ## ⚠️ Security
 
-All three backends run the model as an **autonomous agent**. The difference is whether you get a real
-boundary: Codex enforces one, Copilot offers a best-effort one, Antigravity offers none.
+All four backends run the model as an **autonomous agent**. The difference is whether you get a real
+boundary: Codex enforces one, Copilot and Cursor offer best-effort ones, Antigravity offers none.
 
 ### Antigravity — no usable boundary
 
@@ -530,50 +613,66 @@ permission prompts). Its `sandbox` maps to copilot's tool/path permission flags,
 
 For a **hard** read-only boundary, prefer `codex_ask`.
 
+### Cursor — best-effort, agent-enforced
+
+`cursor-agent -p` runs headless with `--trust` (and `--force` when writes are allowed). Its `sandbox`
+maps to cursor's mode/force flags — an **agent-enforced**, not OS-level, boundary:
+
+- **`read-only`** (default) — `--mode ask`: the local `write` and `shell` tools are **unavailable**,
+  so cursor analyzes and answers but makes no edits (verified: it refuses to write files). Like
+  Copilot, this is agent-enforced and **not** an OS sandbox. Weaker than Codex's `read-only`.
+- **`workspace-write`** — `--force`: edits and commands allowed, file access rooted at `--workspace`.
+- **`danger-full-access`** — `--force --sandbox disabled` (OS sandbox off). Avoid.
+
+For a **hard** read-only boundary, prefer `codex_ask`.
+
 ### What that means for you
 
 - The `workspace` argument is only a *starting context*, **not a security boundary** — Antigravity
   can and does act outside it; Codex is bounded by its enforced `sandbox`; Copilot by its best-effort
-  tool/path permissions.
-- An Antigravity call effectively runs **arbitrary code with your user privileges**. A Copilot call
-  does too outside its best-effort denials; a Codex call does unless you keep it at `read-only`.
+  tool/path permissions; Cursor by its agent-enforced mode/force.
+- An Antigravity call effectively runs **arbitrary code with your user privileges**. A Copilot or
+  Cursor call does too outside its best-effort denials; a Codex call does unless you keep it at
+  `read-only`.
 - Only invoke these with **trusted prompts on trusted content**. Untrusted input here is the classic
   prompt-injection *lethal trifecta*: private-data access + code execution + network egress.
 - For real isolation, run the **whole bridge inside a container or VM**.
 
 The bridge itself does only cross-platform filesystem reads under `~/.gemini/antigravity-cli/`,
-`~/.codex/`, and `~/.copilot/` — no private APIs, no token theft. The risk above is entirely in what
-the sub-agents are allowed to do.
+`~/.codex/`, `~/.copilot/`, and `~/.cursor/` — no private APIs, no token theft. The risk above is
+entirely in what the sub-agents are allowed to do.
 
 ## FAQ
 
 <details>
-<summary><b>Is this against Google's / OpenAI's / GitHub's Terms of Service?</b></summary>
+<summary><b>Is this against Google's / OpenAI's / GitHub's / Cursor's Terms of Service?</b></summary>
 
-It runs the **official `agy`, `codex`, and `copilot` CLIs under your own logins** — no private APIs,
-no token theft, no quota abuse. It just bridges what the CLIs already do. That said, your AI Pro /
-Antigravity, OpenAI / Codex, and GitHub Copilot ToS apply, and you're responsible for staying within
-them.
+It runs the **official `agy`, `codex`, `copilot`, and `cursor-agent` CLIs under your own logins** — no
+private APIs, no token theft, no quota abuse. It just bridges what the CLIs already do. That said, your
+AI Pro / Antigravity, OpenAI / Codex, GitHub Copilot, and Cursor ToS apply, and you're responsible for
+staying within them.
 </details>
 
 <details>
-<summary><b>Do I need all three CLIs?</b></summary>
+<summary><b>Do I need all four CLIs?</b></summary>
 
 No. Each backend is independent — install only the CLI(s) you want. The tools for a missing backend
 report "not found" via their `*_status` tool (`antigravity_status` / `codex_status` /
-`copilot_status`) and never crash the server.
+`copilot_status` / `cursor_status`) and never crash the server.
 </details>
 
 <details>
-<summary><b>When should I use Antigravity vs Codex vs Copilot?</b></summary>
+<summary><b>When should I use Antigravity vs Codex vs Copilot vs Cursor?</b></summary>
 
 Use **Antigravity** for fast, cheap tool-calling, quick answers, and **image generation** (it's the
 only backend with an image model) — and it now lets you **pick the model** too (agy's `--model`). Use
 **Codex** for heavier reasoning, real code/repo work, or when you want a **real, enforced
 `workspace-write` sandbox**. Use **Copilot** for agentic coding on your GitHub Copilot plan, or as a
-second coding opinion alongside Codex — noting its sandbox is **best-effort**, not enforced. All three
-let you choose a `model`; in a swarm you can mix all three. See
-[The three backends at a glance](#the-three-backends-at-a-glance).
+second coding opinion alongside Codex — noting its sandbox is **best-effort**, not enforced. Use
+**Cursor** for agentic coding on a Cursor plan, or when you want the **widest model menu** —
+GPT, Claude, Grok, and Composer, all via `model` — noting its sandbox is **agent-enforced**, like
+Copilot's. All four let you choose a `model`; in a swarm you can mix all four. See
+[The four backends at a glance](#the-four-backends-at-a-glance).
 </details>
 
 <details>
@@ -619,7 +718,8 @@ model — it's a coding agent.
 <summary><b>Does it cost extra money?</b></summary>
 
 No. It uses the **same quota you already pay for** — AI Pro for Antigravity, your Codex plan for
-Codex, your GitHub Copilot plan for Copilot. The smoke test spends a negligible amount.
+Codex, your GitHub Copilot plan for Copilot, your Cursor plan for Cursor. The smoke test spends a
+negligible amount.
 </details>
 
 <details>
@@ -641,8 +741,8 @@ on every call, so concurrent runs sharing one state dir would race and could ret
 conversation. A `threading.Lock` makes extra requests queue rather than race.
 
 For real parallelism use **[`agent_swarm`](#swarm)** — each agy worker runs in its own isolated state
-dir (and Codex/Copilot workers need none), so they don't race and the lock isn't needed (~2.8× at 3
-workers). That's the supported way to run many calls at once, across any backend.
+dir (and Codex/Copilot/Cursor workers need none), so they don't race and the lock isn't needed (~2.8×
+at 3 workers). That's the supported way to run many calls at once, across any backend.
 </details>
 
 ## Status & caveats
@@ -666,6 +766,11 @@ workers). That's the supported way to run many calls at once, across any backend
   set-then-resume, `--model`, `--output-format json` (watch stream), and the
   `~/.copilot/session-state/<id>/workspace.yaml` layout the continue fallback reads are all in place;
   live `copilot_ask` / `copilot_continue` round-trips + a mixed `agent_swarm` pass.
+- ✅ **Verified on cursor-agent 2026.07.08** — `cursor-agent -p --output-format text --trust` (clean
+  stdout answer), `create-chat` + `-p --resume <id>`, `--model` (validated against `cursor-agent
+  models`), `--output-format stream-json` (watch stream), and the
+  `~/.cursor/chats/<md5(workspace)>/<chat-id>/meta.json` layout the continue fallback reads are all in
+  place; live `cursor_ask` / `cursor_continue` round-trips + a mixed `agent_swarm` pass.
 - 🖥️ **Console-detach** — before 1.0.15 agy `-p` wrote its answer to the *controlling terminal*,
   not stdout; under a TUI that text leaked into the host's prompt (seen on 1.0.9). 1.0.15 fixed this
   on Windows (stdout now carries the answer), but the bridge still spawns agy detached
@@ -685,7 +790,8 @@ workers). That's the supported way to run many calls at once, across any backend
 - 🔒 **Sandbox** — agy's `--sandbox` blocks only shell commands, so it's no boundary and the bridge
   never passes it. **Codex's `sandbox` is real and enforced** — use it; default `read-only`.
   **Copilot's `sandbox` is best-effort** (tool/path denials, not an OS sandbox); default `read-only`.
-  See [Security](#security).
+  **Cursor's `sandbox` is agent-enforced** (mode/force; read-only = `--mode ask` makes write/shell
+  unavailable, not an OS sandbox); default `read-only`. See [Security](#security).
 
 ## Requirements
 
@@ -693,6 +799,7 @@ workers). That's the supported way to run many calls at once, across any backend
 - **For the Antigravity tools:** [`agy`](https://antigravity.google/) 1.0.0+ on `PATH` (state-file layout re-verified on **1.0.15**) and an active Antigravity / AI Pro session
 - **For the Codex tools:** [`codex`](https://developers.openai.com/codex/) on `PATH` and logged in (`codex login`) — verified on **codex-cli 0.141.0**
 - **For the Copilot tools:** [`copilot`](https://docs.github.com/en/copilot/how-tos/copilot-cli) on `PATH` and logged in (`copilot` → `/login`, or a `COPILOT_GITHUB_TOKEN`/`GH_TOKEN` env) — verified on **copilot 1.0.68**
+- **For the Cursor tools:** [`cursor-agent`](https://cursor.com/cli) on `PATH` and logged in (`cursor-agent login`, or a `CURSOR_API_KEY` env) — verified on **cursor-agent 2026.07.08**
 
 Each backend is independent — install only the CLI(s) you plan to use; the other tools simply report "not found" via their `*_status` tool.
 
@@ -702,12 +809,14 @@ Each backend is independent — install only the CLI(s) you plan to use; the oth
 > `AGY_BIN=%LOCALAPPDATA%\agy\bin\agy.exe`. Likewise, set **`CODEX_BIN`** if `codex` isn't reliably on
 > `PATH` (the native Windows installer puts it under `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin\`), and
 > **`COPILOT_BIN`** if `copilot` isn't (the winget install lands under
-> `%LOCALAPPDATA%\Microsoft\WinGet\Packages\GitHub.Copilot_*\copilot.exe`).
+> `%LOCALAPPDATA%\Microsoft\WinGet\Packages\GitHub.Copilot_*\copilot.exe`). Finally, set
+> **`CURSOR_BIN`** if `cursor-agent` isn't reliably on `PATH` (the installer drops a `cursor-agent.CMD`
+> shim a bare name can't launch on Windows).
 
 The bridge uses only cross-platform Python (`Path.home()`, `subprocess`) and reads paths under
-`~/.gemini/antigravity-cli/`, `~/.codex/`, and `~/.copilot/`, which the CLIs write the same way on
-every OS. **Developed and verified on Windows; macOS and Linux should work unmodified provided the
-CLIs run there.** If you test it on those platforms, please open an issue / PR to confirm.
+`~/.gemini/antigravity-cli/`, `~/.codex/`, `~/.copilot/`, and `~/.cursor/`, which the CLIs write the
+same way on every OS. **Developed and verified on Windows; macOS and Linux should work unmodified
+provided the CLIs run there.** If you test it on those platforms, please open an issue / PR to confirm.
 
 ## 🌐 Community & Acknowledgments
 

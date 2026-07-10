@@ -10,6 +10,35 @@ summary.
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-07-10
+
+### Added
+
+- **Fourth backend: Cursor (`cursor-agent`).** The bridge now drives Cursor's agent CLI alongside
+  Antigravity, Codex, and Copilot, with the same shape as the others: `cursor_ask`,
+  `cursor_continue`, and `cursor_status`, plus a `cursor` backend option in `agent_swarm`. Fifteen
+  tools total.
+  - **Stdout-native.** `cursor-agent -p --output-format text --trust` returns the clean final answer
+    on stdout — no scraping, like Codex/Copilot.
+  - **Deterministic, race-free continue.** The bridge mints a chat id with `cursor-agent create-chat`,
+    runs the ask with `-p --resume <id>`, and pins it to the workspace; `cursor_continue` resumes that
+    exact chat. Restart-proof fallback: the newest on-disk chat under
+    `~/.cursor/chats/<md5(workspace)>/<chat-id>/` whose `meta.json` cwd matches.
+  - **Wide model menu.** `model` maps to `--model` (GPT / Claude / Grok / Composer, and parameterized
+    ids like `claude-opus-4-8[context=1m]`), validated against `cursor-agent models` and rejected on a
+    typo — like agy.
+  - **Sandbox knob** maps to cursor's mode/force flags for cross-backend uniformity: `read-only` =
+    `--mode ask` (agent-enforced — write/shell tools unavailable; best-effort, not an OS sandbox, so
+    for a hard boundary use Codex), `workspace-write` = `--force`, `danger-full-access` =
+    `--force --sandbox disabled`.
+  - **Watch mode** streams cursor's steps from its `--output-format stream-json` event stream (with a
+    `cursor` swarm badge). Note: cursor stores its transcript in an opaque SQLite blob store, so a
+    watched `cursor_continue` opens without prior-turn history (best-effort).
+  - **Auth** uses your Cursor login (`cursor-agent login`) or a `CURSOR_API_KEY` env var; check with
+    `cursor_status`. On Windows the `cursor-agent.CMD` shim is resolved via PATH; set `CURSOR_BIN` to
+    override (mirrors `AGY_BIN` / `CODEX_BIN` / `COPILOT_BIN`).
+  - Covered by a new `test_cursor.py` (54 offline tests) plus server/swarm wiring tests.
+
 ## [0.20.1] - 2026-07-10
 
 ### Fixed

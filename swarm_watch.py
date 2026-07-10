@@ -279,6 +279,7 @@ header{display:flex;align-items:center;gap:9px;padding:7px 11px;background:#0d0f
 .bk.codex{color:#0a0c10;background:#7c9cff}
 .bk.antigravity{color:#0a0c10;background:#f5b94a}
 .bk.copilot{color:#0a0c10;background:#c3a6ff}
+.bk.cursor{color:#0a0c10;background:#7ad9a8}
 .prompt{color:#e9eef3;font-weight:600;flex:1;min-width:0;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;word-break:break-word}
 .st{color:var(--dim);font-size:10.5px;flex:none;font-variant-numeric:tabular-nums;margin-top:1px}
 .pop{color:var(--green);opacity:.55;flex:none;font-size:11px;margin-top:1px}
@@ -318,7 +319,7 @@ function build(ws){
   const p=document.createElement("div");p.className="pane "+w.status;p.id="p"+w.index;
   p.title="click to open this agent's full step log";p.onclick=()=>openWorker(w.index);
   p.innerHTML="<div class='r1'><span class='dot'></span>"+
-   (w.backend?"<span class='bk "+w.backend+"' title='"+esc(w.backend)+"'>"+(w.backend==='codex'?'codex':w.backend==='copilot'?'copilot':'agy')+"</span>":"")+
+   (w.backend?"<span class='bk "+w.backend+"' title='"+esc(w.backend)+"'>"+(w.backend==='codex'?'codex':w.backend==='copilot'?'copilot':w.backend==='cursor'?'cursor':'agy')+"</span>":"")+
    (w.repo?"<span class='repo' title='"+esc(w.repo)+"'>"+esc(w.repo)+"</span>":"")+
    "<span class='prompt' title='"+esc(w.label)+"'>"+esc(w.label||("Worker "+w.index))+"</span>"+
    "<span class='st' id='st"+w.index+"'></span><span class='pop'>↗</span></div>"+
@@ -402,7 +403,7 @@ header{display:flex;align-items:center;gap:8px;padding:9px 14px;background:#0d0f
 .name{color:var(--green);font-weight:700;text-shadow:0 0 10px rgba(63,223,127,.4)}
 .repo{color:#0a0c10;background:var(--green);border-radius:4px;padding:0 6px;font-size:10px;font-weight:700}
 .bk{border-radius:4px;padding:0 6px;font-size:9.5px;font-weight:700;letter-spacing:.3px;color:#0a0c10}
-.bk.antigravity{background:#f5b94a}.bk.codex{background:#7c9cff}.bk.copilot{background:#c3a6ff}
+.bk.antigravity{background:#f5b94a}.bk.codex{background:#7c9cff}.bk.copilot{background:#c3a6ff}.bk.cursor{background:#7ad9a8}
 .pill{margin-left:auto;display:flex;align-items:center;gap:7px;font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
 .dot{width:8px;height:8px;border-radius:50%;flex:none;display:none}
 .dot.done{background:var(--cyan);box-shadow:0 0 7px var(--cyan);animation:pop .45s ease}
@@ -593,7 +594,7 @@ async function tick(){
   const s=await(await fetch("/events",{cache:"no-store"})).json();
   const w=s.workers[IDX];
   if(w){
-   const back=w.backend||"agy";const bname=back==="codex"?"codex":back==="copilot"?"copilot":"agy";
+   const back=w.backend||"agy";const bname=back==="codex"?"codex":back==="copilot"?"copilot":back==="cursor"?"cursor":"agy";
    if(s.started!==started){started=s.started;timeout=s.timeout||0;rebuild(w,bname);}
    document.title="Intern · "+(w.repo?w.repo+" · ":"")+(w.label||("Worker "+IDX));
    if(w.repo){$("repo").style.display="";$("repo").textContent=w.repo;}

@@ -1338,6 +1338,19 @@ def test_copilot_status_includes_bridge_version_row(monkeypatch):
     assert "v99.0.0 available" in out
 
 
+def test_cursor_status_includes_bridge_version_row(monkeypatch):
+    # Same guarantee for a Cursor-only install.
+    monkeypatch.setattr(server, "_fetch_latest_release_version", lambda: (99, 0, 0))
+    monkeypatch.setattr(
+        server.cursor_bridge, "status_rows", lambda: [("cursor CLI", True, "2026.07.08")]
+    )
+    out = server.cursor_status()
+    assert out.startswith("cursor bridge status")
+    assert "bridge version" in out
+    assert f"v{server.__version__}" in out
+    assert "v99.0.0 available" in out
+
+
 # --------------------------------------------------------------------------
 # image generation: byte fixtures + _detect_image_format / ext helpers
 # --------------------------------------------------------------------------
@@ -1715,9 +1728,9 @@ def test_server_wires_instructions_into_the_mcp_object():
     assert instr == server.SERVER_INSTRUCTIONS
 
 
-def test_server_instructions_cover_all_three_backends():
+def test_server_instructions_cover_all_backends():
     instr = server.mcp.instructions.lower()
-    for backend in ("antigravity", "codex", "copilot"):
+    for backend in ("antigravity", "codex", "copilot", "cursor"):
         assert backend in instr, f"instructions never mention the {backend} backend"
 
 

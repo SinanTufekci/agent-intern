@@ -41,4 +41,4 @@ jobs:
         run: ruff format --check .
 
       - name: Unit tests (offline — no agy, no quota)
-        run: pytest test_server.py test_swarm.py test_codex.py test_copilot.py -q
+        run: pytest test_server.py test_swarm.py test_codex.py test_copilot.py test_cursor.py -q

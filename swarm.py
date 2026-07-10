@@ -509,6 +509,7 @@ _BACKEND_ALIASES = {
     "copilot": "copilot",
     "github": "copilot",
     "gh": "copilot",
+    "cursor": "cursor",
 }
 
 
@@ -529,8 +530,8 @@ def _normalize_tasks(tasks) -> list[dict]:
         backend = _BACKEND_ALIASES.get(str(t.get("backend", "")).strip().lower())
         if backend is None:
             raise ValueError(
-                f"task {i}: backend must be 'antigravity', 'codex', or 'copilot' "
-                f"(got {t.get('backend')!r})"
+                f"task {i}: backend must be 'antigravity', 'codex', 'copilot', or "
+                f"'cursor' (got {t.get('backend')!r})"
             )
         prompt = t.get("prompt")
         if not prompt or not str(prompt).strip():
@@ -551,6 +552,12 @@ def _normalize_tasks(tasks) -> list[dict]:
             sandbox = t.get("sandbox") or copilot_bridge.DEFAULT_SANDBOX
             copilot_bridge.validate_sandbox(sandbox)  # fail fast on a bad policy
             model = t.get("model") or None
+        elif backend == "cursor":
+            import cursor_bridge
+
+            sandbox = t.get("sandbox") or cursor_bridge.DEFAULT_SANDBOX
+            cursor_bridge.validate_sandbox(sandbox)  # fail fast on a bad policy
+            model = cursor_bridge.validate_model(t.get("model") or None)  # fail fast on a typo
         else:  # antigravity: no sandbox, but --model works in print mode (agy 1.0.16)
             import server
 
@@ -703,6 +710,74 @@ def _run_copilot_worker_watched(
         )
 
 
+def _run_cursor_worker(index, prompt, workspace, sandbox, model, timeout_s) -> WorkerResult:
+    import cursor_bridge
+
+    start = time.time()
+    try:
+        os.makedirs(workspace, exist_ok=True)
+        ans = cursor_bridge.run_cursor(
+            prompt, workspace, sandbox, model, False, timeout_s, pin=False
+        )
+        return WorkerResult(
+            index,
+            True,
+            answer=ans,
+            elapsed=round(time.time() - start, 1),
+            workspace=workspace,
+            backend="cursor",
+        )
+    except Exception as e:  # noqa: BLE001 — error isolation: one worker must not sink the swarm
+        return WorkerResult(
+            index,
+            False,
+            error=str(e),
+            elapsed=round(time.time() - start, 1),
+            workspace=workspace,
+            backend="cursor",
+        )
+
+
+def _run_cursor_worker_watched(index, prompt, workspace, sandbox, model, timeout_s) -> WorkerResult:
+    import cursor_bridge
+    import server
+    import swarm_watch
+
+    start = time.time()
+    swarm_watch.worker_update(index, status="working", started=start)
+
+    def on_event(ev: dict) -> None:
+        lines = server._cursor_event_to_watch_lines(ev)
+        if lines:
+            t = round(time.time() - start, 1)
+            swarm_watch.worker_append(index, [{"kind": k, "text": x, "t": t} for k, x in lines])
+
+    try:
+        os.makedirs(workspace, exist_ok=True)
+        ans = cursor_bridge.run_cursor_streaming(
+            prompt, workspace, sandbox, model, False, timeout_s, on_event, pin=False
+        )
+        swarm_watch.worker_finish(index, "done", ans, time.time() - start)
+        return WorkerResult(
+            index,
+            True,
+            answer=ans,
+            elapsed=round(time.time() - start, 1),
+            workspace=workspace,
+            backend="cursor",
+        )
+    except Exception as e:  # noqa: BLE001
+        swarm_watch.worker_finish(index, "error", str(e), time.time() - start)
+        return WorkerResult(
+            index,
+            False,
+            error=str(e),
+            elapsed=round(time.time() - start, 1),
+            workspace=workspace,
+            backend="cursor",
+        )
+
+
 def swarm_agents(
     tasks,
     max_concurrency: int = DEFAULT_MAX_CONCURRENCY,
@@ -734,6 +809,9 @@ def swarm_agents(
             return fn(i, t["prompt"], t["workspace"], t["sandbox"], t["model"], timeout_s)
         if t["backend"] == "copilot":
             fn = _run_copilot_worker_watched if watch else _run_copilot_worker
+            return fn(i, t["prompt"], t["workspace"], t["sandbox"], t["model"], timeout_s)
+        if t["backend"] == "cursor":
+            fn = _run_cursor_worker_watched if watch else _run_cursor_worker
             return fn(i, t["prompt"], t["workspace"], t["sandbox"], t["model"], timeout_s)
         fn = _run_text_worker_watched if watch else _run_text_worker
         return fn(i, t["prompt"], t["workspace"], t["model"], timeout_s)
