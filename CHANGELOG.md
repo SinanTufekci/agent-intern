@@ -10,6 +10,19 @@ summary.
 
 ## [Unreleased]
 
+## [0.20.1] - 2026-07-10
+
+### Fixed
+
+- **The "newer bridge available" notice now shows on any single-backend install, not just
+  Antigravity.** `codex_status` and `copilot_status` reported only their own CLI's version and auth,
+  so a user who installed just Codex or just Copilot (each backend is independent) never saw the
+  bridge's own update notice from a status tool — it lived only in `antigravity_status` and the
+  startup stderr warning (which lands in host logs, not the chat). Both now prepend the same
+  `bridge version` row (bridge version + best-effort GitHub update check, honoring
+  `AGY_BRIDGE_NO_UPDATE_CHECK`) that `antigravity_status` already showed. Guarded by two regression
+  tests.
+
 ## [0.20.0] - 2026-07-10
 
 ### Added

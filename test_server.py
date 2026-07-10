@@ -1310,6 +1310,34 @@ def test_antigravity_status_formats_report(status_dirs, monkeypatch):
     assert "Overall:" in out
 
 
+def test_codex_status_includes_bridge_version_row(monkeypatch):
+    # The bridge's update notice must surface on a Codex-only install too, not
+    # just via antigravity_status. Stub the backend rows so the test doesn't need
+    # codex installed, and pin a newer release so the notice shows.
+    monkeypatch.setattr(server, "_fetch_latest_release_version", lambda: (99, 0, 0))
+    monkeypatch.setattr(
+        server.codex_bridge, "status_rows", lambda: [("codex CLI", True, "v0.141.0")]
+    )
+    out = server.codex_status()
+    assert out.startswith("codex bridge status")
+    assert "bridge version" in out
+    assert f"v{server.__version__}" in out
+    assert "v99.0.0 available" in out
+
+
+def test_copilot_status_includes_bridge_version_row(monkeypatch):
+    # Same guarantee for a Copilot-only install.
+    monkeypatch.setattr(server, "_fetch_latest_release_version", lambda: (99, 0, 0))
+    monkeypatch.setattr(
+        server.copilot_bridge, "status_rows", lambda: [("copilot CLI", True, "v1.0.68")]
+    )
+    out = server.copilot_status()
+    assert out.startswith("copilot bridge status")
+    assert "bridge version" in out
+    assert f"v{server.__version__}" in out
+    assert "v99.0.0 available" in out
+
+
 # --------------------------------------------------------------------------
 # image generation: byte fixtures + _detect_image_format / ext helpers
 # --------------------------------------------------------------------------

@@ -204,7 +204,7 @@ mcp = FastMCP("agent-intern", instructions=SERVER_INSTRUCTIONS)
 # installed package metadata, which goes stale on editable installs). Keep in
 # sync with pyproject.toml's version. Compared at startup against the latest
 # tag on GitHub so a long-lived clone learns when to `git pull`.
-__version__ = "0.20.0"
+__version__ = "0.20.1"
 
 # Logs go to stderr (stdout is the MCP protocol channel). Quiet by default;
 # set AGY_BRIDGE_DEBUG=1 for per-call diagnostics. See _configure_logging.
@@ -2381,12 +2381,15 @@ async def codex_continue(
 def codex_status() -> str:
     """Report diagnostics for the Codex bridge setup (spends no quota).
 
-    Checks whether codex is on PATH (and its version), whether you're logged in
-    (`codex login status` — no model call, no quota), where codex stores its
-    sessions, and how many workspace sessions are pinned this run. Use this to
+    Reports the bridge's own version and whether a newer release is available
+    (best-effort GitHub check; honors AGY_BRIDGE_NO_UPDATE_CHECK) — the same
+    update notice antigravity_status shows, so a Codex-only install still surfaces
+    it — then checks whether codex is on PATH (and its version), whether you're
+    logged in (`codex login status` — no model call, no quota), where codex stores
+    its sessions, and how many workspace sessions are pinned this run. Use this to
     debug "codex not found" or auth errors before spending quota.
     """
-    rows = codex_bridge.status_rows()
+    rows = [_bridge_version_status()] + codex_bridge.status_rows()
     width = max(len(label) for label, _, _ in rows)
     lines = ["codex bridge status"]
     for label, ok, detail in rows:
@@ -2584,13 +2587,17 @@ async def copilot_continue(
 def copilot_status() -> str:
     """Report diagnostics for the Copilot bridge setup (spends no quota).
 
-    Checks whether copilot is on PATH (and its version), an auth hint (copilot has
-    no `login status` command, so this is best-effort — an env token is reported
-    when set, otherwise login via the credential store is assumed and unverified),
-    where copilot stores session state, and how many workspace sessions are pinned
-    this run. Use this to debug "copilot not found" or auth errors before a call.
+    Reports the bridge's own version and whether a newer release is available
+    (best-effort GitHub check; honors AGY_BRIDGE_NO_UPDATE_CHECK) — the same
+    update notice antigravity_status shows, so a Copilot-only install still
+    surfaces it — then checks whether copilot is on PATH (and its version), an auth
+    hint (copilot has no `login status` command, so this is best-effort — an env
+    token is reported when set, otherwise login via the credential store is
+    assumed and unverified), where copilot stores session state, and how many
+    workspace sessions are pinned this run. Use this to debug "copilot not found"
+    or auth errors before a call.
     """
-    rows = copilot_bridge.status_rows()
+    rows = [_bridge_version_status()] + copilot_bridge.status_rows()
     width = max(len(label) for label, _, _ in rows)
     lines = ["copilot bridge status"]
     for label, ok, detail in rows:
