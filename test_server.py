@@ -1670,3 +1670,34 @@ def test_read_response_raises_when_neither_source(tmp_path, monkeypatch):
     monkeypatch.setattr(server, "CONVERSATIONS_DIR", tmp_path)
     with pytest.raises(RuntimeError):
         server._read_response("44444444-4444-4444-4444-444444444444")
+
+
+# --------------------------------------------------------------------------
+# Server instructions (taught to the client's model on connect)
+# --------------------------------------------------------------------------
+
+
+def test_server_wires_instructions_into_the_mcp_object():
+    # FastMCP surfaces .instructions from the underlying MCP server object, which
+    # is exactly what the client receives in the initialize response and injects
+    # into its model's context. Non-empty + same object == the wiring holds, so a
+    # future refactor that drops the instructions= arg fails loudly here.
+    instr = server.mcp.instructions
+    assert instr and instr.strip()
+    assert instr == server.SERVER_INSTRUCTIONS
+
+
+def test_server_instructions_cover_all_three_backends():
+    instr = server.mcp.instructions.lower()
+    for backend in ("antigravity", "codex", "copilot"):
+        assert backend in instr, f"instructions never mention the {backend} backend"
+
+
+def test_server_instructions_route_key_capabilities():
+    # The high-value cues that justify an always-on, every-session block: image
+    # generation, parallel fan-out, the workspace footgun, and the safety
+    # boundary. Dropping any of these silently degrades how well client models
+    # use the bridge, so guard them.
+    instr = server.mcp.instructions.lower()
+    for cue in ("antigravity_image", "agent_swarm", "workspace", "sandbox"):
+        assert cue in instr, f"instructions omit the {cue!r} routing cue"

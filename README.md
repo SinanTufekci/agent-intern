@@ -219,6 +219,13 @@ Restart Claude Code. **Twelve tools** appear, each prefixed `mcp__agent-intern__
 The single-prompt tools — Antigravity, Codex, **and** Copilot — take a **`watch=true`** flag for the
 live browser view ([Watch mode](#watch-mode)).
 
+> [!NOTE]
+> **Your client learns how to use the bridge on its own.** The server ships MCP *instructions* — a
+> short routing guide (when to reach for each tool, which backend to pick, and to pass `workspace` so
+> the sub-agent has repo context) that a client like Claude Code injects into the model's context on
+> connect, as an "MCP Server Instructions" block. So the host model knows how and when to drive these
+> tools without you explaining them — you can just ask for the result.
+
 > *"Use antigravity_ask to summarize the README of this repo in three bullets."* → Claude routes the
 > prompt through the bridge, agy reads the file under the workspace root, and the answer comes back
 > as a plain string. Swap in `codex_ask` or `copilot_ask` to have GPT or Copilot do the same.

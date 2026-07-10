@@ -151,13 +151,60 @@ from fastmcp import Context, FastMCP
 import codex_bridge
 import copilot_bridge
 
-mcp = FastMCP("agent-intern")
+# Server-level instructions. The MCP client sends these to its model on connect
+# (Claude Code surfaces them as an "MCP Server Instructions" block), so EVERY
+# user who installs the bridge gets their host model taught how and WHEN to reach
+# for these tools — without ever opening the README. Keep this a tight ROUTING
+# guide, not a manual: it costs context tokens in every session, and per-tool
+# detail already lives in each tool's own description/annotations. The highest-
+# value content here is what a model can't infer from tool schemas alone —
+# proactive triggers, which backend to pick, and the workspace footgun.
+SERVER_INSTRUCTIONS = """\
+This server bridges three external coding CLIs — Antigravity (Gemini), OpenAI \
+Codex, and GitHub Copilot — into your session as sub-agents that run on the \
+USER'S OWN quota. Delegating here spends their Gemini/Codex/Copilot quota \
+instead of your tokens, gets a second model-family opinion, or generates images.
+
+Reach for these tools when:
+- the user wants an IMAGE — antigravity_image is your only image generator \
+(antigravity_image_swarm for several at once).
+- a job splits into many independent sub-tasks — agent_swarm runs them in \
+parallel, mixing any backends in one call.
+- you want a heavier or different-family model's take, or want to offload grunt \
+work off your own token budget.
+Don't delegate what you can just answer: each call takes ~10-30s and spends the \
+user's quota.
+
+Pick a backend:
+- antigravity_* (Gemini) — fast, cheap tool-calling; the ONLY image model. No \
+real sandbox, so trusted prompts only.
+- codex_* (OpenAI) — strongest reasoning and real repo edits behind a REAL \
+enforced sandbox (read-only by default; pass sandbox="workspace-write" to let \
+it edit files).
+- copilot_* (GitHub) — agentic coding on a Copilot plan; sandbox is best-effort, \
+not an OS boundary.
+
+Mechanics:
+- Pass `workspace` = the relevant project directory. It defaults to the server's \
+cwd, so WITHOUT it the sub-agent answers with no repo context — this is the most \
+common mistake.
+- *_continue resumes the thread rooted at a workspace; swarm workers are \
+one-shot (no continue).
+- watch=true opens a live browser view of the agent working (identical return \
+value).
+- *_status checks a backend is installed and logged in, and spends no quota — \
+use it if a call reports "not found".
+
+Security: all three run as autonomous agents and only Codex's sandbox is a hard \
+boundary. Use only with trusted prompts on trusted content."""
+
+mcp = FastMCP("agent-intern", instructions=SERVER_INSTRUCTIONS)
 
 # The running bridge's version — the source of truth is THIS file (not the
 # installed package metadata, which goes stale on editable installs). Keep in
 # sync with pyproject.toml's version. Compared at startup against the latest
 # tag on GitHub so a long-lived clone learns when to `git pull`.
-__version__ = "0.19.5"
+__version__ = "0.20.0"
 
 # Logs go to stderr (stdout is the MCP protocol channel). Quiet by default;
 # set AGY_BRIDGE_DEBUG=1 for per-call diagnostics. See _configure_logging.

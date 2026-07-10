@@ -10,6 +10,22 @@ summary.
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-07-10
+
+### Added
+
+- **The bridge now teaches your MCP client how to use it.** The server ships a set of server-level
+  `instructions` (FastMCP's `instructions=`, sent to the client in the `initialize` response), which
+  a client like Claude Code injects into its model's context as an "MCP Server Instructions" block.
+  So every user who installs the bridge gets their host model taught — with no README reading —
+  *when* to reach for these tools (image generation → `antigravity_image`, independent sub-tasks →
+  `agent_swarm`, a second/heavier model's opinion, or offloading grunt work off its own token
+  budget), *which* backend to pick (Antigravity / Codex / Copilot and their sandbox differences),
+  and the most common footgun (pass `workspace` = the project dir, or the sub-agent answers with no
+  repo context). Kept deliberately tight — a routing guide, not a manual — since it costs context
+  tokens every session; per-tool detail still lives in each tool's own description/annotations.
+  Guarded by three regression tests (`test_server.py`).
+
 ## [0.19.5] - 2026-07-09
 
 ### Changed
