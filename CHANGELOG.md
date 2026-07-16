@@ -10,6 +10,8 @@ summary.
 
 ## [Unreleased]
 
+## [0.21.1] - 2026-07-16
+
 ### Fixed
 
 - **agy 1.1.3 broke every tool-using Antigravity call; the bridge now passes
