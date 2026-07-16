@@ -10,6 +10,36 @@ summary.
 
 ## [Unreleased]
 
+### Fixed
+
+- **agy 1.1.3 broke every tool-using Antigravity call; the bridge now passes
+  `--dangerously-skip-permissions`.** 1.1.3 stopped headless `-p` from auto-approving tool calls:
+  a tool needing a permission confirmation is **soft-denied** (print mode cannot prompt), agy exits
+  **0** having done nothing, and the reason appears only on stderr. This denied even a plain file
+  read, so `antigravity_ask` / `antigravity_continue` / `antigravity_image` and the antigravity
+  `agent_swarm` workers could no longer read files or run commands. All six agy argv paths now go
+  through a shared `_agy_base_args()` that passes the flag — agy's own remedy — restoring file
+  writes, terminal commands and workspace reads (verified live end-to-end).
+  - **The flag must precede `-p`.** agy's `-p`/`--print` takes the prompt as its *value*, so
+    `-p --dangerously-skip-permissions <task>` parses the flag *as* the prompt and silently drops
+    the task. `_agy_base_args()` documents this; every caller appends `-p` last.
+  - **No opt-out knob**, deliberately. 1.1.3's gate is not a usable safety mode for this bridge (it
+    soft-denies read-only reads and cannot prompt), so a "gated" call would be a sub-agent that can
+    do nothing. The security posture is unchanged: `-p` still runs arbitrary code with your
+    privileges — trusted prompts only.
+- **A failed agy run no longer reports a misleading transcript error.** When agy exits 0 but writes
+  neither stdout nor a readable transcript, `_run_agy` now folds agy's stderr into the raised error
+  instead of surfacing only the scrape failure, which read as a bridge/schema bug and hid agy's
+  actionable notice (e.g. the allow-rule 1.1.3 asks for).
+
+### Changed
+
+- **Docs re-verified against agy 1.1.3** (badge, SECURITY notes, compat log). Two long-standing
+  claims are now retired: `--dangerously-skip-permissions` is no longer a no-op for `-p`, and an
+  unknown `--model` no longer falls back silently — **1.1.2** made it hard-fail in print mode with a
+  non-zero exit. `validate_model` stays: it fails fast without spending an agy call, and still
+  matters on pre-1.1.2 agy.
+
 ## [0.21.0] - 2026-07-10
 
 ### Added

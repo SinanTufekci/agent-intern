@@ -555,6 +555,31 @@ def test_build_agy_args_honors_custom_agy_bin(monkeypatch):
 
 
 # --------------------------------------------------------------------------
+# --dangerously-skip-permissions: required, and required BEFORE -p (agy 1.1.3)
+# --------------------------------------------------------------------------
+
+
+def test_agy_base_args_passes_skip_permissions():
+    """agy 1.1.3 soft-denies any tool needing a permission headlessly (print mode
+    can't prompt), which kills every tool-using call. The flag is agy's own remedy.
+    """
+    assert "--dangerously-skip-permissions" in server._agy_base_args(10)
+
+
+@pytest.mark.parametrize("model", [None, "Gemini 3.1 Pro (High)"])
+def test_build_agy_args_skip_permissions_precedes_prompt(model):
+    """The flag MUST come before -p: agy's -p takes the prompt as its VALUE, so
+    `-p --dangerously-skip-permissions <task>` makes the flag the prompt and drops
+    the task (verified on 1.1.3 — agy replied describing the flag).
+    """
+    args, _ = server._build_agy_args(
+        "hi", "C:\\ws", continue_conv=False, timeout_s=10, model=model
+    )
+    assert args.index("--dangerously-skip-permissions") < args.index("-p")
+    assert args[-2:] == ["-p", "hi"]
+
+
+# --------------------------------------------------------------------------
 # --model plumbing: _build_agy_args / list_agy_models / validate_model
 # --------------------------------------------------------------------------
 
@@ -833,6 +858,27 @@ def test_run_agy_nonzero_exit_raises(fake_agy):
 
 
 def test_run_agy_unresolved_conversation_raises(fake_agy, last_conv_file):
+    last_conv_file.write_text(json.dumps({}), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="No conversation found"):
+        server._run_agy("hi", "C:\\ws", continue_conv=False, timeout_s=10)
+
+
+def test_run_agy_exit0_without_answer_surfaces_agy_stderr(fake_agy, last_conv_file):
+    """The agy 1.1.3 soft-deny shape: exit 0, empty stdout, reason only on stderr.
+
+    The scrape failure is a symptom, so the error must carry agy's own notice —
+    otherwise a permission denial reads as a bridge/transcript bug.
+    """
+    last_conv_file.write_text(json.dumps({}), encoding="utf-8")
+    fake_agy["stderr"] = 'a tool required the "command" permission, so it was auto-denied'
+    with pytest.raises(RuntimeError, match="auto-denied"):
+        server._run_agy("hi", "C:\\ws", continue_conv=False, timeout_s=10)
+
+
+def test_run_agy_exit0_without_answer_keeps_scrape_error_when_stderr_empty(
+    fake_agy, last_conv_file
+):
+    # No stderr to add: the original scrape failure must survive unchanged.
     last_conv_file.write_text(json.dumps({}), encoding="utf-8")
     with pytest.raises(RuntimeError, match="No conversation found"):
         server._run_agy("hi", "C:\\ws", continue_conv=False, timeout_s=10)

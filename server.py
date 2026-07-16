@@ -28,12 +28,16 @@ the active label returned in seconds, any other hung >60s), so the bridge kept
 its distance. Re-verified on 1.0.16 that the hang is FIXED: `agy -p --model
 "<label>"` switches the model and returns in seconds (a Claude label answered as
 Anthropic Claude, a Gemini label as Gemini). So antigravity_ask/continue and the
-antigravity swarm path now take an optional `model`. One caveat: agy SILENTLY
-IGNORES an unknown --model label — it falls back to the settings.json default
-with NO error — so the bridge validates a requested label against `agy models`
-(via validate_model) and raises on a typo, matching codex/copilot's fail-fast.
-When the label list can't be read (agy missing, models call failed) validation
-is skipped and the label passes through unchecked. `agy models` itself must be
+antigravity swarm path now take an optional `model`. Unknown labels: through
+1.1.1 agy SILENTLY IGNORED an unknown --model, falling back to the settings.json
+default with NO error; 1.1.2 changed -p to hard-fail with a non-zero exit that
+lists the valid labels (interactive sessions keep the fallback-with-warning).
+The bridge still validates a requested label against `agy models` (via
+validate_model) and raises on a typo — that now fails fast WITHOUT spending an
+agy call, and keeps the guard meaningful on pre-1.1.2 agy where a typo would
+otherwise run the wrong model silently. When the label list can't be read (agy
+missing, models call failed) validation is skipped and the label passes through
+unchecked. `agy models` itself must be
 run with stdin closed (it blocks on an interactive terminal otherwise), same as
 -p is spawned with DEVNULL stdin.
 
@@ -91,14 +95,40 @@ continue round-trips return clean over stdout, and base dir /
 last_conversations.json / JSONL-primary transcript are all intact (SQLite
 dual-write present — 260 .db — but JSONL still written).
 
+Headless permissions (agy 1.1.3) — the one change that DID break this bridge, and
+why we now pass --dangerously-skip-permissions. Everything above about print mode
+auto-executing tools was true through 1.1.2. 1.1.3 closed exactly that gap: a tool
+needing a permission confirmation is no longer auto-approved headlessly, it is
+SOFT-DENIED (print mode has no way to prompt), and agy names the allow-rule on
+stderr. Verified on 1.1.3: without the flag even a plain "read pyproject.toml and
+report the version" is denied — agy exits 0 having done nothing, stdout empty,
+stderr "a tool required the \"command\" permission ... so it was auto-denied". That
+makes every tool-using bridge call dead, so _agy_base_args now passes
+--dangerously-skip-permissions on all six agy argv paths (ask/continue, watch,
+image, and the four swarm workers). Verified with the flag: file writes, terminal
+commands and workspace reads all run again, exit 0 with the clean answer on stdout
+(a bridge round-trip against this repo returned the correct pyproject version).
+ORDER MATTERS — see _agy_base_args: `-p` takes the prompt as its VALUE, so the flag
+must precede it or it BECOMES the prompt. Note the 1.1.3 gate is NOT a usable
+safety knob for this bridge, for the same reason as --sandbox: it denies read-only
+file reads and cannot prompt, so "gated" here means a sub-agent that can do
+nothing — hence no opt-out knob. That exit-0-with-no-answer shape is also why
+_run_agy now folds agy's stderr into the error when the transcript scrape comes up
+empty; otherwise agy's actionable notice never reaches the caller.
+
 SECURITY — read this: `agy -p` runs the model as an autonomous agent that
-auto-executes its tools (read/write files, run shell commands, reach the
-network) with NO approval gate and NO opt-out. Re-verified empirically on
-agy 1.0.9 / Windows that print mode runs out-of-workspace writes even WITHOUT
---dangerously-skip-permissions (that flag is a no-op for -p). agy 1.0.5
-integrated a permission system (its logs show toolPermission=request-review),
-but it still does NOT gate print-mode tool execution — -p created a file
-outside the workspace with no prompt.
+executes its tools (read/write files, run shell commands, reach the network)
+with no approval gate. Through 1.1.2 that was unconditional and had NO opt-out:
+re-verified empirically on agy 1.0.9 / Windows that print mode ran
+out-of-workspace writes even WITHOUT --dangerously-skip-permissions, a no-op for
+-p at the time, and agy 1.0.5's permission system (its logs show
+toolPermission=request-review) never gated print-mode execution either. agy 1.1.3
+added a real headless gate at last — but it soft-denies so broadly (plain file
+reads included) that a gated -p can do no useful work, so this bridge opts out of
+it with --dangerously-skip-permissions (see the headless-permissions note above).
+The flag is load-bearing now rather than decorative, and what it restores is
+exactly the posture this note has always described: assume every call runs
+arbitrary code with your privileges.
 
 --sandbox is NOT a usable safety knob for this bridge. agy 1.0.6 fixed
 --sandbox flag propagation into -p (its 1.0.6 changelog calls this "sandbox
@@ -117,8 +147,10 @@ gets blocked and stalls print mode (it returned "Error: timeout waiting for
 response", exit 1, having executed nothing), while write_to_file still runs under
 --sandbox and still lands OUTSIDE the declared workspace (exit 0). The new 1.1.0
 `--mode accept-edits` and `--sandbox` coexist without error, but neither makes -p
-safe. For both reasons the bridge deliberately does NOT pass --sandbox; there is
-still no agy flag that makes print mode safe.
+safe. For both reasons the bridge deliberately does NOT pass --sandbox. There is
+still no agy flag that makes print mode both safe and useful: 1.1.3's headless
+permission gate is the closest thing, and it lands on the useless side of that
+line (see the headless-permissions note above).
 
 So `workspace` is only a starting context, NOT a security boundary:
 every call effectively runs arbitrary code with your privileges. Only invoke
@@ -1009,6 +1041,25 @@ def validate_model(model: Optional[str]) -> Optional[str]:
     return model
 
 
+def _agy_base_args(timeout_s: int) -> list[str]:
+    """agy's argv prefix: binary, print deadline, and the headless permission opt-out.
+
+    --dangerously-skip-permissions is REQUIRED as of agy 1.1.3, which stopped
+    headless `-p` from auto-approving tools: a tool needing permission is now
+    soft-denied (print mode can't prompt), agy exits 0 having done nothing, and
+    only stderr names the allow-rule. That denies even a plain file read, so
+    without this flag every tool-using bridge call is dead — verified on 1.1.3.
+    The flag is what agy's own notice recommends; it restores the pre-1.1.3
+    behaviour the SECURITY note in the module docstring already describes.
+
+    ORDER MATTERS: it must come BEFORE `-p`. agy's `-p`/`--print` takes the prompt
+    as its VALUE, so `-p --dangerously-skip-permissions <task>` parses the flag as
+    the prompt and silently drops <task> (verified on 1.1.3 — agy replied with a
+    description of the flag). Every caller appends `-p` LAST for this reason.
+    """
+    return [AGY_BIN, "--print-timeout", f"{timeout_s}s", "--dangerously-skip-permissions"]
+
+
 def _build_agy_args(
     prompt: str,
     workspace: str,
@@ -1021,15 +1072,14 @@ def _build_agy_args(
     `model` (when given) becomes agy's `--model <label>` — verified working in
     print mode on 1.0.16; validate it via validate_model before calling this.
 
-    Note: agy's `-p` mode auto-executes all tools/commands with no approval gate,
-    so we deliberately do NOT pass --dangerously-skip-permissions (a no-op for -p)
-    or --sandbox. On 1.0.6+ --sandbox blocks only terminal/shell commands, not
+    The base args carry --dangerously-skip-permissions (see _agy_base_args: it is
+    load-bearing on agy 1.1.3+, not the no-op it was through 1.1.2). We still do
+    NOT pass --sandbox: on 1.0.6+ it blocks only terminal/shell commands, not
     write_to_file/FS or network egress, so it is no real boundary; and a
-    sandbox-blocked terminal run writes no JSONL transcript for us to read. There
-    is no agy flag that makes print mode safe; see the module docstring's SECURITY
-    note.
+    sandbox-blocked terminal run writes no JSONL transcript for us to read. No agy
+    flag makes print mode safe; see the module docstring's SECURITY note.
     """
-    args = [AGY_BIN, "--print-timeout", f"{timeout_s}s"]
+    args = _agy_base_args(timeout_s)
     if model:
         args.extend(["--model", model])
     pinned_conv: Optional[str] = None
@@ -1104,13 +1154,25 @@ def _run_agy(
         while True:
             try:
                 return _resolve_and_read(pinned_conv, workspace, start)
-            except RuntimeError:
+            except RuntimeError as exc:
                 # Retries transient resolution/flush lag. A persistent failure
                 # (e.g. the SQLite-migration "transcript not found" from
                 # _read_response) is caught here too and surfaces only after the
                 # deadline; that small delay is an accepted tradeoff for keeping
                 # this loop simple.
                 if time.time() >= deadline:
+                    # agy exited 0 but wrote neither stdout nor a readable
+                    # transcript, so the scrape failure is a symptom, not the
+                    # cause — and agy puts the cause on stderr (1.1.3+ soft-denies
+                    # a tool print mode can't prompt for and names the allow-rule
+                    # needed). Surface that instead of a bare "transcript not
+                    # found", which reads as a bridge/schema bug.
+                    stderr_tail = (proc.stderr or "").strip()
+                    if stderr_tail:
+                        raise RuntimeError(
+                            f"{exc}\nagy exited 0 but produced no answer — "
+                            f"stderr: {stderr_tail[-1000:]}"
+                        ) from exc
                     raise
                 time.sleep(_RESPONSE_POLL_INTERVAL_S)
 

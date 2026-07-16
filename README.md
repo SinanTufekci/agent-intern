@@ -13,7 +13,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![MCP server](https://img.shields.io/badge/MCP-server-7c3aed)](https://modelcontextprotocol.io/)
 [![Glama](https://glama.ai/mcp/servers/SinanTufekci/agent-intern/badges/score.svg)](https://glama.ai/mcp/servers/SinanTufekci/agent-intern)
-[![agy 1.1.0 verified](https://img.shields.io/badge/agy-1.1.0%20verified-2ea44f)](https://antigravity.google/)
+[![agy 1.1.3 verified](https://img.shields.io/badge/agy-1.1.3%20verified-2ea44f)](https://antigravity.google/)
 [![codex 0.141.0 verified](https://img.shields.io/badge/codex--cli-0.141.0%20verified-2ea44f)](https://developers.openai.com/codex/)
 [![copilot 1.0.68 verified](https://img.shields.io/badge/copilot--cli-1.0.68%20verified-2ea44f)](https://docs.github.com/en/copilot/how-tos/copilot-cli)
 [![cursor 2026.07.08 verified](https://img.shields.io/badge/cursor--agent-2026.07.08%20verified-2ea44f)](https://cursor.com/cli)
@@ -547,7 +547,7 @@ quota/rate-limit pressure for wall-clock.
 
 | | 🛰️ **Antigravity** | 🤖 **Codex** | 🐙 **Copilot** | ✳️ **Cursor** |
 |---|---|---|---|---|
-| **Model** | **Selectable** via the `model` argument (agy's `--model`, e.g. `"Gemini 3.1 Pro (High)"`, `"Claude Sonnet 4.6 (Thinking)"`); omit to use the `"model"` field in agy's `settings.json` (**Gemini 3.5 Flash (High)** by default). Switching model in `-p` used to hang (through ~1.0.14) but is **fixed as of 1.0.16**. agy silently ignores an unknown label, so the bridge validates it against `agy models` and rejects a typo. Flash High is speed-optimized for cheap tool-calling; pick a bigger label for heavier work. | **Selectable** via the `model` argument (codex's `-m`). codex does not hang on a switch, so model choice is a first-class knob. | **Selectable** via the `model` argument (`--model`, e.g. `gpt-5.3-codex`, `claude-sonnet-4.6`, `auto`); omit for your account default. An unavailable model errors immediately. | **Selectable** via the `model` argument (`--model`, e.g. `gpt-5.2`, `sonnet-4-thinking`, `auto`, or parameterized ids like `claude-opus-4-8[context=1m]`); a wide GPT/Claude/Grok/Composer menu, validated against `cursor-agent models` (a typo is rejected up front). Omit for your Cursor account default. |
+| **Model** | **Selectable** via the `model` argument (agy's `--model`, e.g. `"Gemini 3.1 Pro (High)"`, `"Claude Sonnet 4.6 (Thinking)"`); omit to use the `"model"` field in agy's `settings.json` (**Gemini 3.5 Flash (High)** by default). Switching model in `-p` used to hang (through ~1.0.14) but is **fixed as of 1.0.16**. An unknown label was silently ignored through 1.1.1 and hard-fails in `-p` as of **1.1.2**; either way the bridge validates it against `agy models` and rejects a typo up front. Flash High is speed-optimized for cheap tool-calling; pick a bigger label for heavier work. | **Selectable** via the `model` argument (codex's `-m`). codex does not hang on a switch, so model choice is a first-class knob. | **Selectable** via the `model` argument (`--model`, e.g. `gpt-5.3-codex`, `claude-sonnet-4.6`, `auto`); omit for your account default. An unavailable model errors immediately. | **Selectable** via the `model` argument (`--model`, e.g. `gpt-5.2`, `sonnet-4-thinking`, `auto`, or parameterized ids like `claude-opus-4-8[context=1m]`); a wide GPT/Claude/Grok/Composer menu, validated against `cursor-agent models` (a typo is rejected up front). Omit for your Cursor account default. |
 | **Auth** | Piggybacks whatever credential store `agy` uses on your OS (Windows Credential Manager, macOS Keychain, libsecret on Linux — the bridge never touches it directly). Log in once; every call silent-auths on the **same AI Pro quota** you already pay for. | Uses your existing **Codex login** — ChatGPT account or API key. Run `codex login` once; verify with `codex_status`. | Uses your existing **Copilot login** — run `copilot` then `/login` once (OS credential store), or set `COPILOT_GITHUB_TOKEN`/`GH_TOKEN`/`GITHUB_TOKEN`. Verify with `copilot_status`. | Uses your existing **Cursor login** — run `cursor-agent login` once (OS credential store), or set `CURSOR_API_KEY`. Verify with `cursor_status`. |
 
 <a id="security"></a>
@@ -559,14 +559,19 @@ boundary: Codex enforces one, Copilot and Cursor offer best-effort ones, Antigra
 
 ### Antigravity — no usable boundary
 
-`agy -p` auto-executes its own tools — reading and writing files, running shell commands, reaching
-the network — with **no approval gate and no opt-out**. This isn't a choice the bridge makes; it's
-how agy's print mode works. Re-verified empirically on **agy 1.0.9 / Windows** (all three checks
-below still hold):
+`agy -p` executes its own tools — reading and writing files, running shell commands, reaching
+the network — with **no approval gate**. Through agy 1.1.2 that was simply how print mode worked,
+with no opt-out at all. As of **1.1.3** it is a choice the bridge makes: agy finally gates headless
+tool calls, and the bridge deliberately opts out with `--dangerously-skip-permissions`, because a
+gated `-p` can do no useful work (it soft-denies even a plain file read, and print mode has no way
+to prompt). The posture below is therefore unchanged — assume every call runs arbitrary code with
+your privileges. Re-verified empirically on **agy 1.0.9 / Windows**, with the 1.1.3 amendment noted:
 
 - Print mode runs out-of-workspace file writes and live network fetches **even without**
-  `--dangerously-skip-permissions` — that flag is a **no-op** for `-p`. There is **no** agy flag
-  that disables tool execution in print mode.
+  `--dangerously-skip-permissions` — that flag was a **no-op** for `-p` through 1.1.2. As of 1.1.3
+  it is **load-bearing**: without it every tool-using call is soft-denied, and the bridge now always
+  passes it (it must precede `-p`, whose *value* is the prompt). There is still **no** agy flag that
+  makes print mode both safe and useful.
 - agy 1.0.5 integrated a permission system (its logs show `toolPermission=request-review`), but it
   **still does not gate print-mode execution** — a fresh `-p` run created a file outside the
   workspace with no prompt. agy 1.0.12 reshuffled how that permission config *merges* (per-project
@@ -747,17 +752,23 @@ at 3 workers). That's the supported way to run many calls at once, across any ba
 
 ## Status & caveats
 
-- ✅ **Verified on agy 1.1.0** — base dir, `last_conversations.json` (still keyed by workspace path),
+- ✅ **Verified on agy 1.1.3** — base dir, `last_conversations.json` (still keyed by workspace path),
   the `brain/.../transcript.jsonl` path, the transcript schema, and the `-p`/`-c`/`--print-timeout`
   flags are all unchanged; a live `antigravity_ask` + conversation-pinned `antigravity_continue`
-  round-trip returns clean over stdout and `antigravity_status` diagnostics pass. **1.1.0 added an
-  agent execution-mode system** — a `--mode` flag (`accept-edits` | `plan`) and a new interactive
-  **request-review** default that pauses before file writes — but it does **not** touch the bridge:
-  `-p` is spawned with DEVNULL stdin, so the approval gate never engages and print mode still
-  auto-executes (a file-writing task completed in ~36 s, exit 0, with and without `--mode
-  accept-edits`). `--sandbox` behavior is likewise unchanged (blocks the terminal, not file writes).
-  The print-mode stdout path (fixed on **1.0.15**, Windows) still applies; the transcript stays the
-  fallback.
+  round-trip returns clean over stdout and `antigravity_status` diagnostics pass. **1.1.3 broke and
+  the bridge fixed** the one thing that mattered: headless `-p` no longer auto-approves tool calls,
+  it **soft-denies** them (print mode cannot prompt), so without a flag even "read `pyproject.toml`
+  and report the version" returned nothing — exit 0, empty stdout, the reason only on stderr. The
+  bridge now passes `--dangerously-skip-permissions` on every agy path, which restores file writes,
+  terminal commands and workspace reads (a live bridge round-trip reads this repo's real version
+  again). The flag **must precede `-p`**, whose *value* is the prompt — otherwise the flag *becomes*
+  the prompt and the task is silently dropped. **1.1.2** also made an unresolvable `--model` hard-fail
+  in `-p` instead of silently falling back to the settings.json default (the bridge's `validate_model`
+  still rejects a typo up front, without spending a call). **1.1.0's** execution-mode system
+  (`--mode`, `request-review`) remains a no-op for the bridge: `-p` is spawned with DEVNULL stdin, so
+  that interactive gate never engages. `--sandbox` behavior is likewise unchanged (blocks the
+  terminal, not file writes). The print-mode stdout path (fixed on **1.0.15**, Windows) still
+  applies; the transcript stays the fallback.
 - ✅ **Verified on codex-cli 0.141.0** — `codex exec`, `-o/--output-last-message`,
   `codex exec resume`, the `--json` event stream, and the `~/.codex/sessions/.../rollout-*.jsonl`
   layout the continue path reads are all in place; a live `codex_ask` round-trip + `codex_status`

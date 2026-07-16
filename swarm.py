@@ -192,7 +192,7 @@ def _run_text_worker(index, prompt, workspace, model, timeout_s) -> WorkerResult
     t0 = time.time()
     try:
         os.makedirs(workspace, exist_ok=True)
-        args = [server.AGY_BIN, "--print-timeout", f"{timeout_s}s"]
+        args = server._agy_base_args(timeout_s)
         if model:
             args += ["--model", model]
         args += ["-p", prompt]
@@ -244,7 +244,7 @@ def _run_text_worker_watched(index, prompt, workspace, model, timeout_s) -> Work
     feed = _Feed(home, index, start)
     try:
         os.makedirs(workspace, exist_ok=True)
-        args = [server.AGY_BIN, "--print-timeout", f"{timeout_s}s"]
+        args = server._agy_base_args(timeout_s)
         if model:
             args += ["--model", model]
         args += ["-p", prompt]
@@ -347,7 +347,7 @@ def _run_image_worker(index, prompt, target, workspace, timeout_s) -> WorkerResu
         os.makedirs(os.path.dirname(target) or ".", exist_ok=True)
         os.makedirs(workspace, exist_ok=True)
         wrapped = server._wrap_image_prompt(prompt, target)
-        args = [server.AGY_BIN, "--print-timeout", f"{timeout_s}s", "-p", wrapped]
+        args = server._agy_base_args(timeout_s) + ["-p", wrapped]
         proc = subprocess.run(
             args,
             cwd=workspace,
@@ -397,7 +397,7 @@ def _run_image_worker_watched(index, prompt, target, workspace, timeout_s) -> Wo
         os.makedirs(os.path.dirname(target) or ".", exist_ok=True)
         os.makedirs(workspace, exist_ok=True)
         wrapped = server._wrap_image_prompt(prompt, target)
-        args = [server.AGY_BIN, "--print-timeout", f"{timeout_s}s", "-p", wrapped]
+        args = server._agy_base_args(timeout_s) + ["-p", wrapped]
         proc = subprocess.Popen(
             args,
             cwd=workspace,
