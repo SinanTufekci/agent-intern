@@ -28,9 +28,11 @@ summary.
     do nothing. The security posture is unchanged: `-p` still runs arbitrary code with your
     privileges — trusted prompts only.
 - **A failed agy run no longer reports a misleading transcript error.** When agy exits 0 but writes
-  neither stdout nor a readable transcript, `_run_agy` now folds agy's stderr into the raised error
-  instead of surfacing only the scrape failure, which read as a bridge/schema bug and hid agy's
-  actionable notice (e.g. the allow-rule 1.1.3 asks for).
+  neither stdout nor a readable transcript, every agy runner now folds agy's stderr into the raised
+  error instead of surfacing only the scrape failure, which read as a bridge/schema bug and hid agy's
+  actionable notice (e.g. the allow-rule 1.1.3 asks for). Covers all four paths: `_run_agy`, the
+  watched `_run_agy_watched`, and both swarm text workers. (The image workers key off the produced
+  file, not a transcript scrape, so their "no image produced" error was already meaningful.)
 
 ### Changed
 
