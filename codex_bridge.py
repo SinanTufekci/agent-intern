@@ -17,7 +17,9 @@ rollout file that appeared during the run) and pin it to the workspace; a later
 `codex_continue` resumes the exact session with `codex exec resume <id>`. If the
 in-memory pin is gone (server restarted) we fall back to the newest rollout whose
 recorded cwd matches the workspace — the codex analogue of agy's
-last_conversations.json lookup. This is verified against codex-cli 0.141.0.
+last_conversations.json lookup. This is verified against codex-cli 0.144.1
+(flags, the rollout-*.jsonl session layout, and a live round-trip all unchanged
+from the 0.141.0 baseline).
 
 SECURITY. `codex exec` runs the model as an autonomous agent with no interactive
 approval gate. Unlike agy's no-op `--sandbox`, codex's `-s/--sandbox` is a REAL

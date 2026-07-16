@@ -5,7 +5,9 @@ Third backend alongside the agy bridge (server.py) and the Codex bridge
 `copilot -p "<prompt>" -s` runs a prompt non-interactively and writes the clean
 final answer straight to STDOUT (the `-s/--silent` flag drops the usage stats),
 then exits. No transcript-scraping — we read the answer from stdout. Verified
-against copilot 1.0.68 on Windows.
+against copilot 1.0.69 on Windows (bumped from 1.0.68: 1.0.69 adds a `--resume`
+convenience flag the bridge doesn't use, and `--session-id` still both sets a
+fresh id and resumes it — re-verified live via a set-then-resume round-trip).
 
 CONTINUE / RESUME. copilot's `--session-id <uuid>` flag does double duty: on a
 fresh run it SETS the id of the new session; later it RESUMES that exact session.

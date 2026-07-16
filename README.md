@@ -14,8 +14,8 @@
 [![MCP server](https://img.shields.io/badge/MCP-server-7c3aed)](https://modelcontextprotocol.io/)
 [![Glama](https://glama.ai/mcp/servers/SinanTufekci/agent-intern/badges/score.svg)](https://glama.ai/mcp/servers/SinanTufekci/agent-intern)
 [![agy 1.1.3 verified](https://img.shields.io/badge/agy-1.1.3%20verified-2ea44f)](https://antigravity.google/)
-[![codex 0.141.0 verified](https://img.shields.io/badge/codex--cli-0.141.0%20verified-2ea44f)](https://developers.openai.com/codex/)
-[![copilot 1.0.68 verified](https://img.shields.io/badge/copilot--cli-1.0.68%20verified-2ea44f)](https://docs.github.com/en/copilot/how-tos/copilot-cli)
+[![codex 0.144.1 verified](https://img.shields.io/badge/codex--cli-0.144.1%20verified-2ea44f)](https://developers.openai.com/codex/)
+[![copilot 1.0.69 verified](https://img.shields.io/badge/copilot--cli-1.0.69%20verified-2ea44f)](https://docs.github.com/en/copilot/how-tos/copilot-cli)
 [![cursor 2026.07.08 verified](https://img.shields.io/badge/cursor--agent-2026.07.08%20verified-2ea44f)](https://cursor.com/cli)
 [![platform](https://img.shields.io/badge/platform-Windows%20·%20macOS%20·%20Linux-lightgrey)](#requirements)
 [![Sponsor](https://img.shields.io/github/sponsors/SinanTufekci?logo=githubsponsors&label=Sponsor&color=ea4aaa)](https://github.com/sponsors/SinanTufekci)
@@ -769,19 +769,24 @@ at 3 workers). That's the supported way to run many calls at once, across any ba
   that interactive gate never engages. `--sandbox` behavior is likewise unchanged (blocks the
   terminal, not file writes). The print-mode stdout path (fixed on **1.0.15**, Windows) still
   applies; the transcript stays the fallback.
-- ✅ **Verified on codex-cli 0.141.0** — `codex exec`, `-o/--output-last-message`,
+- ✅ **Verified on codex-cli 0.144.1** — `codex exec`, `-o/--output-last-message`,
   `codex exec resume`, the `--json` event stream, and the `~/.codex/sessions/.../rollout-*.jsonl`
   layout the continue path reads are all in place; a live `codex_ask` round-trip + `codex_status`
-  pass.
-- ✅ **Verified on copilot 1.0.68** — `copilot -p -s` (clean stdout answer), `--session-id`
+  pass. (Bumped from the 0.141.0 baseline: flags, session layout and the round-trip all re-verified
+  unchanged.)
+- ✅ **Verified on copilot 1.0.69** — `copilot -p -s` (clean stdout answer), `--session-id`
   set-then-resume, `--model`, `--output-format json` (watch stream), and the
   `~/.copilot/session-state/<id>/workspace.yaml` layout the continue fallback reads are all in place;
-  live `copilot_ask` / `copilot_continue` round-trips + a mixed `agent_swarm` pass.
+  live `copilot_ask` / `copilot_continue` round-trips + a mixed `agent_swarm` pass. (Bumped from
+  1.0.68: 1.0.69 adds a `--resume` convenience flag the bridge doesn't need; `--session-id` still
+  both *sets* a fresh id and resumes it — re-verified live, ACK then codeword recall.)
 - ✅ **Verified on cursor-agent 2026.07.08** — `cursor-agent -p --output-format text --trust` (clean
   stdout answer), `create-chat` + `-p --resume <id>`, `--model` (validated against `cursor-agent
   models`), `--output-format stream-json` (watch stream), and the
   `~/.cursor/chats/<md5(workspace)>/<chat-id>/meta.json` layout the continue fallback reads are all in
-  place; live `cursor_ask` / `cursor_continue` round-trips + a mixed `agent_swarm` pass.
+  place; live `cursor_ask` / `cursor_continue` round-trips + a mixed `agent_swarm` pass. (2026.07.09
+  is installed and `cursor_status` — found, logged in, chats dir — passes with flags/layout intact; a
+  fresh live round-trip was deferred, Cursor usage limit reached.)
 - 🖥️ **Console-detach** — before 1.0.15 agy `-p` wrote its answer to the *controlling terminal*,
   not stdout; under a TUI that text leaked into the host's prompt (seen on 1.0.9). 1.0.15 fixed this
   on Windows (stdout now carries the answer), but the bridge still spawns agy detached
@@ -808,8 +813,8 @@ at 3 workers). That's the supported way to run many calls at once, across any ba
 
 - Python 3.10+
 - **For the Antigravity tools:** [`agy`](https://antigravity.google/) 1.0.0+ on `PATH` (state-file layout re-verified on **1.0.15**) and an active Antigravity / AI Pro session
-- **For the Codex tools:** [`codex`](https://developers.openai.com/codex/) on `PATH` and logged in (`codex login`) — verified on **codex-cli 0.141.0**
-- **For the Copilot tools:** [`copilot`](https://docs.github.com/en/copilot/how-tos/copilot-cli) on `PATH` and logged in (`copilot` → `/login`, or a `COPILOT_GITHUB_TOKEN`/`GH_TOKEN` env) — verified on **copilot 1.0.68**
+- **For the Codex tools:** [`codex`](https://developers.openai.com/codex/) on `PATH` and logged in (`codex login`) — verified on **codex-cli 0.144.1**
+- **For the Copilot tools:** [`copilot`](https://docs.github.com/en/copilot/how-tos/copilot-cli) on `PATH` and logged in (`copilot` → `/login`, or a `COPILOT_GITHUB_TOKEN`/`GH_TOKEN` env) — verified on **copilot 1.0.69**
 - **For the Cursor tools:** [`cursor-agent`](https://cursor.com/cli) on `PATH` and logged in (`cursor-agent login`, or a `CURSOR_API_KEY` env) — verified on **cursor-agent 2026.07.08**
 
 Each backend is independent — install only the CLI(s) you plan to use; the other tools simply report "not found" via their `*_status` tool.
