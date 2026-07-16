@@ -572,9 +572,7 @@ def test_build_agy_args_skip_permissions_precedes_prompt(model):
     `-p --dangerously-skip-permissions <task>` makes the flag the prompt and drops
     the task (verified on 1.1.3 — agy replied describing the flag).
     """
-    args, _ = server._build_agy_args(
-        "hi", "C:\\ws", continue_conv=False, timeout_s=10, model=model
-    )
+    args, _ = server._build_agy_args("hi", "C:\\ws", continue_conv=False, timeout_s=10, model=model)
     assert args.index("--dangerously-skip-permissions") < args.index("-p")
     assert args[-2:] == ["-p", "hi"]
 
