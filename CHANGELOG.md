@@ -34,11 +34,20 @@ summary.
 
 ### Changed
 
-- **Docs re-verified against agy 1.1.3** (badge, SECURITY notes, compat log). Two long-standing
-  claims are now retired: `--dangerously-skip-permissions` is no longer a no-op for `-p`, and an
-  unknown `--model` no longer falls back silently — **1.1.2** made it hard-fail in print mode with a
-  non-zero exit. `validate_model` stays: it fails fast without spending an agy call, and still
-  matters on pre-1.1.2 agy.
+- **Docs re-verified against agy 1.1.3** (badge, SECURITY notes, compat log, and the
+  `VERIFIED_AGY_VERSION` constant → `(1, 1, 3)` so the startup staleness warning no longer fires on a
+  current agy). Two long-standing claims are now retired: `--dangerously-skip-permissions` is no
+  longer a no-op for `-p`, and an unknown `--model` no longer falls back silently — **1.1.2** made it
+  hard-fail in print mode with a non-zero exit. `validate_model` stays: it fails fast without spending
+  an agy call, and still matters on pre-1.1.2 agy.
+- **All four backends re-verified against their current CLIs; only agy needed a code change.** The
+  other three bumped without breaking anything the bridge depends on (flags and on-disk session
+  layouts intact): **codex-cli 0.141.0 → 0.144.1** (live `codex_ask` round-trip) and **copilot 1.0.68
+  → 1.0.69** (live set-then-resume round-trip — 1.0.69 adds a `--resume` convenience flag the bridge
+  doesn't use, and `--session-id` still both sets and resumes an id) have their verified badges/notes
+  bumped. **cursor-agent 2026.07.08 → 2026.07.09** is status-verified (found, logged in, flags/layout
+  intact) but its live round-trip was deferred (Cursor usage limit), so its verified claim stays at
+  2026.07.08.
 
 ## [0.21.0] - 2026-07-10
 
