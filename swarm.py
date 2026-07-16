@@ -224,7 +224,14 @@ def _run_text_worker(index, prompt, workspace, model, timeout_s) -> WorkerResult
             except RuntimeError:
                 pass
             if time.time() >= deadline:
-                raise RuntimeError("no readable transcript after agy exit")
+                # agy exited 0 but wrote no readable transcript — its stderr holds
+                # the real cause (e.g. a 1.1.3 permission soft-deny), so surface it
+                # rather than a bare scrape failure that reads as a bridge bug.
+                tail = (proc.stderr or "").strip()
+                raise RuntimeError(
+                    "no readable transcript after agy exit"
+                    + (f" — stderr: {tail[-300:]}" if tail else "")
+                )
             time.sleep(0.1)
     except Exception as e:  # error isolation: never propagate, return the failure
         return WorkerResult(
@@ -293,7 +300,13 @@ def _run_text_worker_watched(index, prompt, workspace, model, timeout_s) -> Work
             except RuntimeError:
                 pass
             if time.time() >= deadline:
-                raise RuntimeError("no readable transcript after agy exit")
+                # Same exit-0-with-no-answer case as the non-watched worker; agy's
+                # stderr (already drained into err_chunks) names the real cause.
+                tail = "".join(err_chunks).strip()
+                raise RuntimeError(
+                    "no readable transcript after agy exit"
+                    + (f" — stderr: {tail[-300:]}" if tail else "")
+                )
             time.sleep(0.1)
     except Exception as e:
         swarm_watch.worker_finish(index, "error", str(e), time.time() - start)

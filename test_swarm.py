@@ -391,6 +391,30 @@ def test_run_codex_worker_never_pins(monkeypatch):
     assert seen["pin"] is False
 
 
+def test_run_text_worker_exit0_without_transcript_surfaces_stderr(monkeypatch, tmp_path):
+    """A swarm agy worker whose agy exits 0 but writes no readable transcript must
+    surface agy's stderr (e.g. a 1.1.3 permission soft-deny) in the WorkerResult
+    error, not a bare scrape failure that reads as a bridge bug.
+    """
+    denial = 'a tool required the "command" permission, so it was auto-denied'
+
+    class _Done:
+        returncode = 0
+        stdout = ""
+        stderr = denial
+
+    monkeypatch.setattr(swarm.subprocess, "run", lambda *a, **k: _Done())
+    # Fresh isolated HOME has no conversation, so _only_conv stays None and the
+    # read loop runs to its deadline. Jump time.time() past the 5s deadline at once.
+    times = iter([0.0] + [1e9 * i for i in range(1, 50)])
+    monkeypatch.setattr(swarm.time, "time", lambda: next(times))
+    monkeypatch.setattr(swarm.time, "sleep", lambda *a, **k: None)
+
+    res = swarm._run_text_worker(0, "hi", str(tmp_path), None, 10)
+    assert res.ok is False
+    assert "no readable transcript" in res.error and "auto-denied" in res.error
+
+
 def test_normalize_tasks_copilot_default_sandbox_and_aliases():
     import copilot_bridge
 
