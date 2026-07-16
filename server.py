@@ -1958,9 +1958,19 @@ def _run_agy_watched(
             try:
                 answer = _resolve_and_read(pinned_conv or feed.conv, workspace, start)
                 break
-            except RuntimeError:
+            except RuntimeError as exc:
                 if time.time() >= deadline:
                     _watch_finish(rid, "error", "(no answer found)", time.time() - start)
+                    # Same exit-0-with-no-answer case as _run_agy: agy's stderr
+                    # carries the real cause (e.g. a 1.1.3 permission soft-deny),
+                    # and err_chunks is already drained here — fold it in rather
+                    # than raising a bare scrape failure that reads as a bridge bug.
+                    stderr_tail = "".join(err_chunks).strip()
+                    if stderr_tail:
+                        raise RuntimeError(
+                            f"{exc}\nagy exited 0 but produced no answer — "
+                            f"stderr: {stderr_tail[-1000:]}"
+                        ) from exc
                     raise
                 time.sleep(_RESPONSE_POLL_INTERVAL_S)
         _watch_finish(rid, "done", answer, time.time() - start)

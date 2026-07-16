@@ -1129,6 +1129,44 @@ def test_run_agy_watched_stores_full_prompt_not_just_title(monkeypatch, brain_di
     assert "detail line 29" not in snap["title"]  # the tail is NOT in the caption
 
 
+def test_run_agy_watched_exit0_without_answer_surfaces_agy_stderr(
+    monkeypatch, brain_dir, last_conv_file
+):
+    """The watched runner must fold agy's stderr into the error too (mirrors
+    _run_agy). agy 1.1.3 soft-deny shape: exit 0, no transcript, reason on stderr.
+    """
+    last_conv_file.write_text(json.dumps({}), encoding="utf-8")  # nothing resolves
+    denial = 'a tool required the "command" permission, so it was auto-denied'
+
+    class _DenyingPopen:
+        def __init__(self, *a, **k):
+            self.returncode = 0
+            self._polls = 1
+            self.stdout = io.StringIO("")
+            self.stderr = io.StringIO(denial)  # never writes a transcript
+
+        def poll(self):
+            if self._polls > 0:
+                self._polls -= 1
+                return None
+            return self.returncode
+
+        def communicate(self, timeout=None):
+            return ("", denial)
+
+        def kill(self):
+            pass
+
+    monkeypatch.setattr(server.subprocess, "Popen", lambda *a, **k: _DenyingPopen())
+    monkeypatch.setattr(server, "_ensure_watch_server", lambda: 12345)
+    monkeypatch.setattr(server, "_open_watch_window", lambda *a, **k: None)
+    monkeypatch.setattr(server.time, "sleep", lambda *a, **k: None)
+    monkeypatch.setattr(server, "_RESPONSE_POLL_DEADLINE_S", 0.0)
+
+    with pytest.raises(RuntimeError, match="auto-denied"):
+        server._run_agy_watched("hi", "C:\\ws", continue_conv=False, timeout_s=10)
+
+
 def test_run_agy_watched_continue_seeds_prior_turns_as_history(
     monkeypatch, brain_dir, last_conv_file
 ):
