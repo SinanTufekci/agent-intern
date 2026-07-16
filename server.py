@@ -116,6 +116,23 @@ nothing — hence no opt-out knob. That exit-0-with-no-answer shape is also why
 _run_agy now folds agy's stderr into the error when the transcript scrape comes up
 empty; otherwise agy's actionable notice never reaches the caller.
 
+Rest of 1.1.1–1.1.3 reviewed: nothing else breaks the bridge, and several changes
+help it. Benign-and-beneficial: 1.1.1 made `-p` return a non-zero exit + stderr on
+a server-side failure (was a silent empty success) and stopped `-p` reading stdin
+when the prompt comes from a flag (we already pass DEVNULL, so belt-and-suspenders
+against the subprocess hang); 1.1.2 makes a truly headless run with no auth
+fail-fast instead of blocking; 1.1.3 fixed conversations breaking after certain
+tool calls (corrupted history that blocked all further responses) — a win for the
+continue/transcript path. Not-us: the 1.1.2/1.1.3 "MCP servers hanging / schema
+paths / leaked subprocesses" fixes are agy acting as an MCP *client* toward custom
+servers — the opposite direction from this bridge, which drives agy's CLI. The rest
+(1.1.3 `/codesearch`, no-flickering copy-on-select, compaction markers, startup /
+render / keybinding fixes; 1.1.1 artifact-viewer search, nested-subagent display,
+`--project` default rename) is interactive-TUI and never on the `-p` path. One
+security-tightening note, not a break: 1.1.3 stopped auto-approving out-of-workspace
+writes in always-proceed mode; the module's SECURITY posture stays deliberately
+conservative regardless (assume arbitrary code), so no claim is loosened on it.
+
 SECURITY — read this: `agy -p` runs the model as an autonomous agent that
 executes its tools (read/write files, run shell commands, reach the network)
 with no approval gate. Through 1.1.2 that was unconditional and had NO opt-out:
@@ -273,7 +290,7 @@ _AGY_LOCK = threading.Lock()
 # Latest agy version the bridge's state-file assumptions were verified against.
 # Newer agy releases may change paths/schemas (the SQLite migration is the known
 # risk), so we warn at startup if the installed agy is newer than this.
-VERIFIED_AGY_VERSION = (1, 1, 0)
+VERIFIED_AGY_VERSION = (1, 1, 3)
 
 # Poll window for the transcript/conversation-id to appear after agy exits.
 # agy has already returned 0 by the time we read, so the common case resolves
