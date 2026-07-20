@@ -174,6 +174,8 @@ summary.
   dashboard GIF is unchanged — the chat redesign only touched the per-worker detail window, which
   that GIF doesn't capture.)
 
+## [0.19.1] - 2026-07-09
+
 ### Changed
 
 - **Codex/Copilot watch finishes ~2s sooner after the answer.** The streaming runners join their
@@ -610,7 +612,27 @@ summary.
 
 - **BREAKING:** `antigravity_ask_stream` (superseded by watch mode).
 
-[Unreleased]: https://github.com/SinanTufekci/agent-intern/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/SinanTufekci/agent-intern/compare/v0.21.2...HEAD
+[0.21.2]: https://github.com/SinanTufekci/agent-intern/compare/v0.21.1...v0.21.2
+[0.21.1]: https://github.com/SinanTufekci/agent-intern/compare/v0.21.0...v0.21.1
+[0.21.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.20.1...v0.21.0
+[0.20.1]: https://github.com/SinanTufekci/agent-intern/compare/v0.20.0...v0.20.1
+[0.20.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.19.5...v0.20.0
+[0.19.5]: https://github.com/SinanTufekci/agent-intern/compare/v0.19.4...v0.19.5
+[0.19.4]: https://github.com/SinanTufekci/agent-intern/compare/v0.19.3...v0.19.4
+[0.19.3]: https://github.com/SinanTufekci/agent-intern/compare/v0.19.2...v0.19.3
+[0.19.2]: https://github.com/SinanTufekci/agent-intern/compare/v0.19.1...v0.19.2
+[0.19.1]: https://github.com/SinanTufekci/agent-intern/compare/v0.19.0...v0.19.1
+[0.19.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.18.1...v0.19.0
+[0.18.1]: https://github.com/SinanTufekci/agent-intern/compare/v0.18.0...v0.18.1
+[0.18.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.17.2...v0.18.0
+[0.17.2]: https://github.com/SinanTufekci/agent-intern/compare/v0.17.1...v0.17.2
+[0.17.1]: https://github.com/SinanTufekci/agent-intern/compare/v0.17.0...v0.17.1
+[0.17.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.16.0...v0.17.0
+[0.16.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.15.3...v0.16.0
+[0.15.3]: https://github.com/SinanTufekci/agent-intern/compare/v0.15.2...v0.15.3
+[0.15.2]: https://github.com/SinanTufekci/agent-intern/compare/v0.15.1...v0.15.2
+[0.15.1]: https://github.com/SinanTufekci/agent-intern/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.14.1...v0.15.0
 [0.14.1]: https://github.com/SinanTufekci/agent-intern/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.13.0...v0.14.0
