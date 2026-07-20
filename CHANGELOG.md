@@ -10,6 +10,24 @@ summary.
 
 ## [Unreleased]
 
+## [0.21.2] - 2026-07-20
+
+### Changed
+
+- **Re-verified against agy 1.1.4 — no code change needed.** 1.1.4 walked back part of the 1.1.3
+  headless gate: `-p` now honors your persisted `settings.json` policies (permissions, file access,
+  sandbox mode, auto-execution, artifact review) rather than blanket-denying. The bridge's
+  `--dangerously-skip-permissions` still overrides those policies, so it stays load-bearing and stays
+  where it is. Verified live against a workspace deliberately **absent** from `trustedWorkspaces`,
+  with a `permissions.allow` list naming neither file nor command access: a workspace file read
+  returned the right contents, and a terminal command and a file write both executed.
+  `VERIFIED_AGY_VERSION` is bumped to `(1, 1, 4)` so `antigravity_status` stops reporting
+  "newer than verified", and the module docstring records the 1.1.4 review.
+- Two 1.1.4 notes carried into the docs: the flag is now the only thing between a bridge call and
+  the user's own `settings.json` policy (dropping it yields that policy, not 1.1.3's deny-all), and
+  1.1.4's `/btw` fix — side-questions no longer leak into the conversation list as duplicates
+  carrying the parent's title — removes one way for `_read_last_conv_id` to pin the wrong thread.
+
 ## [0.21.1] - 2026-07-16
 
 ### Fixed

@@ -13,7 +13,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![MCP server](https://img.shields.io/badge/MCP-server-7c3aed)](https://modelcontextprotocol.io/)
 [![Glama](https://glama.ai/mcp/servers/SinanTufekci/agent-intern/badges/score.svg)](https://glama.ai/mcp/servers/SinanTufekci/agent-intern)
-[![agy 1.1.3 verified](https://img.shields.io/badge/agy-1.1.3%20verified-2ea44f)](https://antigravity.google/)
+[![agy 1.1.4 verified](https://img.shields.io/badge/agy-1.1.4%20verified-2ea44f)](https://antigravity.google/)
 [![codex 0.144.1 verified](https://img.shields.io/badge/codex--cli-0.144.1%20verified-2ea44f)](https://developers.openai.com/codex/)
 [![copilot 1.0.69 verified](https://img.shields.io/badge/copilot--cli-1.0.69%20verified-2ea44f)](https://docs.github.com/en/copilot/how-tos/copilot-cli)
 [![cursor 2026.07.08 verified](https://img.shields.io/badge/cursor--agent-2026.07.08%20verified-2ea44f)](https://cursor.com/cli)
@@ -752,6 +752,17 @@ at 3 workers). That's the supported way to run many calls at once, across any ba
 
 ## Status & caveats
 
+- ✅ **Verified on agy 1.1.4** — no code change was needed. 1.1.4 relaxed the 1.1.3 headless gate so
+  that `-p` now **honors your persisted `settings.json` policies** (permissions, file access, sandbox
+  mode, auto-execution, artifact review) instead of blanket-denying. `--dangerously-skip-permissions`
+  still overrides those policies, so the flag stays load-bearing and stays exactly where it is —
+  re-verified live against a workspace deliberately **absent** from `trustedWorkspaces`, with a
+  `permissions.allow` list naming neither file nor command access: a workspace file read returned the
+  right contents, and a terminal command and a file write both executed. Worth knowing: that flag is
+  now the only thing between a bridge call and your own `settings.json` policy, and dropping it would
+  get you whatever that file says rather than 1.1.3's deny-everything. 1.1.4 also stopped `/btw`
+  side-questions from leaking into the conversation list as duplicates carrying the *parent's* title —
+  that list is what conversation pinning reads, so one way to resume the wrong thread is gone.
 - ✅ **Verified on agy 1.1.3** — base dir, `last_conversations.json` (still keyed by workspace path),
   the `brain/.../transcript.jsonl` path, the transcript schema, and the `-p`/`-c`/`--print-timeout`
   flags are all unchanged; a live `antigravity_ask` + conversation-pinned `antigravity_continue`

@@ -116,19 +116,43 @@ nothing — hence no opt-out knob. That exit-0-with-no-answer shape is also why
 _run_agy now folds agy's stderr into the error when the transcript scrape comes up
 empty; otherwise agy's actionable notice never reaches the caller.
 
-Rest of 1.1.1–1.1.3 reviewed: nothing else breaks the bridge, and several changes
+1.1.4 walked back part of that gate, and it does NOT affect us. Its note reads
+"headless (-p) runs now honor persisted settings.json policies, including
+permissions, file access, sandbox mode, auto-execution, and artifact review" —
+i.e. -p stopped being a blanket soft-deny and instead follows whatever the user's
+settings.json says. That would matter if we relied on the default, but
+--dangerously-skip-permissions still wins over those persisted policies, so the
+flag stays load-bearing and stays exactly where it is. Re-verified live on 1.1.4
+against a workspace deliberately ABSENT from settings.json trustedWorkspaces and
+with a permissions.allow list naming neither file nor command access: a workspace
+file read returned the right contents, and a terminal command and a file write
+both executed. Two consequences worth keeping in mind: the flag is now the only
+thing standing between a bridge call and the user's own settings.json policy, and
+a user who removed it hoping for a safety gate would get whatever their
+settings.json happens to say rather than the 1.1.3 deny-everything — neither
+changes this module's posture, which already assumes arbitrary code execution.
+
+Rest of 1.1.1–1.1.4 reviewed: nothing else breaks the bridge, and several changes
 help it. Benign-and-beneficial: 1.1.1 made `-p` return a non-zero exit + stderr on
 a server-side failure (was a silent empty success) and stopped `-p` reading stdin
 when the prompt comes from a flag (we already pass DEVNULL, so belt-and-suspenders
 against the subprocess hang); 1.1.2 makes a truly headless run with no auth
 fail-fast instead of blocking; 1.1.3 fixed conversations breaking after certain
 tool calls (corrupted history that blocked all further responses) — a win for the
-continue/transcript path. Not-us: the 1.1.2/1.1.3 "MCP servers hanging / schema
+continue/transcript path; 1.1.4 stopped `/btw` side-questions leaking into the
+conversation list as duplicates carrying the PARENT's title, which is the list
+_read_last_conv_id picks from, so one way to resume the wrong conversation is now
+gone (we never issue /btw ourselves, but the user's interactive sessions share
+that store). Not-us: the 1.1.2/1.1.3 "MCP servers hanging / schema
 paths / leaked subprocesses" fixes are agy acting as an MCP *client* toward custom
 servers — the opposite direction from this bridge, which drives agy's CLI. The rest
 (1.1.3 `/codesearch`, no-flickering copy-on-select, compaction markers, startup /
 render / keybinding fixes; 1.1.1 artifact-viewer search, nested-subagent display,
-`--project` default rename) is interactive-TUI and never on the `-p` path. One
+`--project` default rename; 1.1.4 stacked leading slash commands, `/diff` scroll
+jitter, a custom Enter binding, and clearer eligibility errors) is interactive-TUI
+and never on the `-p` path. 1.1.4's `subagent: false` fix (agents declaring it were
+still invocable as subagents) rides along on `--agent`, which this bridge does not
+pass — it stays on agy's default agent. One
 security-tightening note, not a break: 1.1.3 stopped auto-approving out-of-workspace
 writes in always-proceed mode; the module's SECURITY posture stays deliberately
 conservative regardless (assume arbitrary code), so no claim is loosened on it.
@@ -258,7 +282,7 @@ mcp = FastMCP("agent-intern", instructions=SERVER_INSTRUCTIONS)
 # installed package metadata, which goes stale on editable installs). Keep in
 # sync with pyproject.toml's version. Compared at startup against the latest
 # tag on GitHub so a long-lived clone learns when to `git pull`.
-__version__ = "0.21.1"
+__version__ = "0.21.2"
 
 # Logs go to stderr (stdout is the MCP protocol channel). Quiet by default;
 # set AGY_BRIDGE_DEBUG=1 for per-call diagnostics. See _configure_logging.
@@ -290,7 +314,7 @@ _AGY_LOCK = threading.Lock()
 # Latest agy version the bridge's state-file assumptions were verified against.
 # Newer agy releases may change paths/schemas (the SQLite migration is the known
 # risk), so we warn at startup if the installed agy is newer than this.
-VERIFIED_AGY_VERSION = (1, 1, 3)
+VERIFIED_AGY_VERSION = (1, 1, 4)
 
 # Poll window for the transcript/conversation-id to appear after agy exits.
 # agy has already returned 0 by the time we read, so the common case resolves
