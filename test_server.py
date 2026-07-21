@@ -566,7 +566,7 @@ def test_agy_base_args_passes_skip_permissions():
     assert "--dangerously-skip-permissions" in server._agy_base_args(10)
 
 
-@pytest.mark.parametrize("model", [None, "Gemini 3.1 Pro (High)"])
+@pytest.mark.parametrize("model", [None, "gemini-3.1-pro-high"])
 def test_build_agy_args_skip_permissions_precedes_prompt(model):
     """The flag MUST come before -p: agy's -p takes the prompt as its VALUE, so
     `-p --dangerously-skip-permissions <task>` makes the flag the prompt and drops
@@ -585,10 +585,10 @@ def test_build_agy_args_skip_permissions_precedes_prompt(model):
 def test_build_agy_args_includes_model_when_given(monkeypatch):
     monkeypatch.setattr(server, "AGY_BIN", "agy")
     args, _ = server._build_agy_args(
-        "hi", "C:\\ws", continue_conv=False, timeout_s=10, model="Gemini 3.1 Pro (High)"
+        "hi", "C:\\ws", continue_conv=False, timeout_s=10, model="gemini-3.1-pro-high"
     )
     assert "--model" in args
-    assert args[args.index("--model") + 1] == "Gemini 3.1 Pro (High)"
+    assert args[args.index("--model") + 1] == "gemini-3.1-pro-high"
     # the prompt still trails the command line
     assert args[-2:] == ["-p", "hi"]
 
@@ -630,12 +630,12 @@ def test_validate_model_none_and_empty_pass():
 
 
 def test_validate_model_accepts_known(monkeypatch):
-    monkeypatch.setattr(server, "list_agy_models", lambda: ["Gemini 3.5 Flash (High)", "X"])
+    monkeypatch.setattr(server, "list_agy_models", lambda: ["gemini-3.5-flash-high", "X"])
     assert server.validate_model("X") == "X"
 
 
 def test_validate_model_rejects_unknown(monkeypatch):
-    monkeypatch.setattr(server, "list_agy_models", lambda: ["Gemini 3.5 Flash (High)"])
+    monkeypatch.setattr(server, "list_agy_models", lambda: ["gemini-3.5-flash-high"])
     with pytest.raises(ValueError, match="unknown agy model"):
         server.validate_model("Bogus 9000")
 
@@ -644,6 +644,29 @@ def test_validate_model_skips_when_list_unavailable(monkeypatch):
     # If we can't enumerate models, pass the label through rather than wrongly reject.
     monkeypatch.setattr(server, "list_agy_models", lambda: [])
     assert server.validate_model("Whatever") == "Whatever"
+
+
+# Every model name our docs hand to callers, checked against the LIVE `agy models`.
+# agy 1.1.5 renamed all of them ("Gemini 3.5 Flash (High)" -> gemini-3.5-flash-high)
+# and this suite stayed fully green, because every other model test mocks
+# list_agy_models and the plumbing is format-agnostic. Only the docstrings and
+# README broke — steering callers into a guaranteed rejection — so this is the test
+# that notices. Spends no AI Pro quota (`agy models` is a local subcommand) and
+# skips where agy isn't installed.
+DOCUMENTED_AGY_MODELS = ["gemini-3.5-flash-high", "gemini-3.1-pro-high", "claude-sonnet-4-6"]
+
+
+def test_documented_model_slugs_still_accepted_by_live_agy(monkeypatch):
+    monkeypatch.setattr(server, "_AGY_MODELS_CACHE", None)  # force a fresh read
+    live = server.list_agy_models()
+    if not live:
+        pytest.skip("agy not installed or `agy models` unreadable")
+    missing = [m for m in DOCUMENTED_AGY_MODELS if m not in live]
+    assert not missing, (
+        f"docs advertise model(s) agy no longer accepts: {missing}. Live list: {live}. "
+        "agy renames models between releases — update the antigravity_ask/continue/"
+        "agent_swarm docstrings and README, then this list."
+    )
 
 
 # --------------------------------------------------------------------------

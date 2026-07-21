@@ -10,6 +10,39 @@ summary.
 
 ## [Unreleased]
 
+## [0.21.3] - 2026-07-21
+
+### Changed
+
+- **agy 1.1.5 renamed every model — the docs, not the code, were what broke.** 1.1.5 introduced
+  "stable, user-facing model slugs" accepted by `--model`, and `agy models` now reports *only* those:
+  `gemini-3.5-flash-{low,medium,high}`, `gemini-3.1-pro-{low,high}`, `claude-sonnet-4-6`,
+  `claude-opus-4-6-thinking`, `gpt-oss-120b-medium`. The old human labels (`"Gemini 3.5 Flash (High)"`,
+  `"Claude Sonnet 4.6 (Thinking)"`) are gone from the list, so `validate_model` rejects them. Verified
+  live on 1.1.5: the old label raised `unknown agy model ... expected one of: <slugs>` **without
+  spending an agy call**, while `--model gemini-3.5-flash-high` round-tripped clean. No plumbing
+  changed — validation matches whatever `agy models` prints — but every docstring and README example
+  named a now-invalid label, i.e. the docs were steering callers into a guaranteed failed first call.
+  All of them now name slugs, in `antigravity_ask` / `antigravity_continue` / `agent_swarm`, the
+  module docstring, and the README's model table and FAQ.
+- `VERIFIED_AGY_VERSION` → `(1, 1, 5)` so `antigravity_status` stops reporting "newer than verified".
+  Nothing else in 1.1.5 reaches the bridge: the `/effort` command and `--effort` flag are a second
+  model axis we deliberately don't pass (the slug already pins the effort variant), the agent-frontmatter
+  `model` option and `subagent: false` fix are interactive-subagent features, the MCP fixes (embedded
+  resources, auth crash, call timeouts) are agy acting as an MCP **client** — the opposite direction
+  from this bridge — and the rest is TUI, `/diff`, `/btw`, and background-task lifecycle work. The
+  headless-`settings.json` note that 1.1.5 repeats was already assessed in 0.21.2:
+  `--dangerously-skip-permissions` still overrides those policies.
+
+### Added
+
+- **A test that would have caught this.** `test_documented_model_slugs_still_accepted_by_live_agy`
+  checks every model name the docs hand to callers against the live `agy models` output, failing with
+  the current list when agy renames things. The existing model tests all mock `list_agy_models`, and
+  the plumbing is format-agnostic, so all 347 stayed green through a break that made every documented
+  `model` value invalid — a green suite was not evidence the docs were right. Spends no AI Pro quota
+  (`agy models` is a local subcommand) and skips where agy isn't installed.
+
 ## [0.21.2] - 2026-07-20
 
 ### Changed
@@ -612,7 +645,8 @@ summary.
 
 - **BREAKING:** `antigravity_ask_stream` (superseded by watch mode).
 
-[Unreleased]: https://github.com/SinanTufekci/agent-intern/compare/v0.21.2...HEAD
+[Unreleased]: https://github.com/SinanTufekci/agent-intern/compare/v0.21.3...HEAD
+[0.21.3]: https://github.com/SinanTufekci/agent-intern/compare/v0.21.2...v0.21.3
 [0.21.2]: https://github.com/SinanTufekci/agent-intern/compare/v0.21.1...v0.21.2
 [0.21.1]: https://github.com/SinanTufekci/agent-intern/compare/v0.21.0...v0.21.1
 [0.21.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.20.1...v0.21.0

@@ -269,25 +269,25 @@ def test_normalize_tasks_antigravity_honors_model_drops_sandbox(monkeypatch):
     import server
 
     # agy has no sandbox (dropped), but --model now works in print mode (1.0.16).
-    monkeypatch.setattr(server, "list_agy_models", lambda: ["Gemini 3.1 Pro (High)"])
+    monkeypatch.setattr(server, "list_agy_models", lambda: ["gemini-3.1-pro-high"])
     out = swarm._normalize_tasks(
         [
             {
                 "backend": "antigravity",
                 "prompt": "x",
                 "sandbox": "danger-full-access",
-                "model": "Gemini 3.1 Pro (High)",
+                "model": "gemini-3.1-pro-high",
             }
         ]
     )
     assert out[0]["sandbox"] is None
-    assert out[0]["model"] == "Gemini 3.1 Pro (High)"
+    assert out[0]["model"] == "gemini-3.1-pro-high"
 
 
 def test_normalize_tasks_antigravity_rejects_unknown_model(monkeypatch):
     import server
 
-    monkeypatch.setattr(server, "list_agy_models", lambda: ["Gemini 3.5 Flash (High)"])
+    monkeypatch.setattr(server, "list_agy_models", lambda: ["gemini-3.5-flash-high"])
     with pytest.raises(ValueError, match="unknown agy model"):
         swarm._normalize_tasks([{"backend": "antigravity", "prompt": "x", "model": "Bogus 9000"}])
 

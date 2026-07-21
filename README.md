@@ -13,7 +13,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![MCP server](https://img.shields.io/badge/MCP-server-7c3aed)](https://modelcontextprotocol.io/)
 [![Glama](https://glama.ai/mcp/servers/SinanTufekci/agent-intern/badges/score.svg)](https://glama.ai/mcp/servers/SinanTufekci/agent-intern)
-[![agy 1.1.4 verified](https://img.shields.io/badge/agy-1.1.4%20verified-2ea44f)](https://antigravity.google/)
+[![agy 1.1.5 verified](https://img.shields.io/badge/agy-1.1.5%20verified-2ea44f)](https://antigravity.google/)
 [![codex 0.144.1 verified](https://img.shields.io/badge/codex--cli-0.144.1%20verified-2ea44f)](https://developers.openai.com/codex/)
 [![copilot 1.0.69 verified](https://img.shields.io/badge/copilot--cli-1.0.69%20verified-2ea44f)](https://docs.github.com/en/copilot/how-tos/copilot-cli)
 [![cursor 2026.07.08 verified](https://img.shields.io/badge/cursor--agent-2026.07.08%20verified-2ea44f)](https://cursor.com/cli)
@@ -259,7 +259,7 @@ do the same.
 
 | Tool | Purpose |
 |---|---|
-| `antigravity_ask(prompt, workspace?, model?, timeout_s?=180, watch?=false)` | Start a **new** Antigravity conversation. `model` selects the model (agy's `--model`, e.g. `"Claude Sonnet 4.6 (Thinking)"`); validated against `agy models`, defaults to your `settings.json` model. `watch=true` opens the live browser view ([Watch mode](#watch-mode)). |
+| `antigravity_ask(prompt, workspace?, model?, timeout_s?=180, watch?=false)` | Start a **new** Antigravity conversation. `model` selects the model (agy's `--model`, e.g. `"claude-sonnet-4-6"`); validated against `agy models`, defaults to your `settings.json` model. `watch=true` opens the live browser view ([Watch mode](#watch-mode)). |
 | `antigravity_continue(prompt, workspace?, model?, timeout_s?=180, watch?=false)` | Continue the conversation **rooted at `workspace`** (pinned by id). agy's model is per-invocation, so `model` can differ from the original ask. `watch=true` opens the live view. |
 | `antigravity_image(prompt, output_path?, workspace?, timeout_s?=240, watch?=false)` | Generate an image; saves the file (extension corrected to the real bytes) and returns its path + format/size. `watch=true` streams progress and **shows the image** inline. |
 | `antigravity_image_swarm(prompts, output_paths?, workspaces?, max_concurrency?=4, timeout_s?=240, watch?=false)` | Generate **several images in parallel** (one worker per prompt). |
@@ -547,7 +547,7 @@ quota/rate-limit pressure for wall-clock.
 
 | | 🛰️ **Antigravity** | 🤖 **Codex** | 🐙 **Copilot** | ✳️ **Cursor** |
 |---|---|---|---|---|
-| **Model** | **Selectable** via the `model` argument (agy's `--model`, e.g. `"Gemini 3.1 Pro (High)"`, `"Claude Sonnet 4.6 (Thinking)"`); omit to use the `"model"` field in agy's `settings.json` (**Gemini 3.5 Flash (High)** by default). Switching model in `-p` used to hang (through ~1.0.14) but is **fixed as of 1.0.16**. An unknown label was silently ignored through 1.1.1 and hard-fails in `-p` as of **1.1.2**; either way the bridge validates it against `agy models` and rejects a typo up front. Flash High is speed-optimized for cheap tool-calling; pick a bigger label for heavier work. | **Selectable** via the `model` argument (codex's `-m`). codex does not hang on a switch, so model choice is a first-class knob. | **Selectable** via the `model` argument (`--model`, e.g. `gpt-5.3-codex`, `claude-sonnet-4.6`, `auto`); omit for your account default. An unavailable model errors immediately. | **Selectable** via the `model` argument (`--model`, e.g. `gpt-5.2`, `sonnet-4-thinking`, `auto`, or parameterized ids like `claude-opus-4-8[context=1m]`); a wide GPT/Claude/Grok/Composer menu, validated against `cursor-agent models` (a typo is rejected up front). Omit for your Cursor account default. |
+| **Model** | **Selectable** via the `model` argument (agy's `--model`, e.g. `"gemini-3.1-pro-high"`, `"claude-sonnet-4-6"`); omit to use the `"model"` field in agy's `settings.json` (**`gemini-3.5-flash-high`** by default). **agy 1.1.5 replaced the old human labels with these slugs** — the old `"Gemini 3.1 Pro (High)"` form no longer works. Switching model in `-p` used to hang (through ~1.0.14) but is **fixed as of 1.0.16**. An unknown model was silently ignored through 1.1.1 and hard-fails in `-p` as of **1.1.2**; either way the bridge validates it against `agy models` and rejects a typo up front. Flash High is speed-optimized for cheap tool-calling; pick a bigger model for heavier work. | **Selectable** via the `model` argument (codex's `-m`). codex does not hang on a switch, so model choice is a first-class knob. | **Selectable** via the `model` argument (`--model`, e.g. `gpt-5.3-codex`, `claude-sonnet-4.6`, `auto`); omit for your account default. An unavailable model errors immediately. | **Selectable** via the `model` argument (`--model`, e.g. `gpt-5.2`, `sonnet-4-thinking`, `auto`, or parameterized ids like `claude-opus-4-8[context=1m]`); a wide GPT/Claude/Grok/Composer menu, validated against `cursor-agent models` (a typo is rejected up front). Omit for your Cursor account default. |
 | **Auth** | Piggybacks whatever credential store `agy` uses on your OS (Windows Credential Manager, macOS Keychain, libsecret on Linux — the bridge never touches it directly). Log in once; every call silent-auths on the **same AI Pro quota** you already pay for. | Uses your existing **Codex login** — ChatGPT account or API key. Run `codex login` once; verify with `codex_status`. | Uses your existing **Copilot login** — run `copilot` then `/login` once (OS credential store), or set `COPILOT_GITHUB_TOKEN`/`GH_TOKEN`/`GITHUB_TOKEN`. Verify with `copilot_status`. | Uses your existing **Cursor login** — run `cursor-agent login` once (OS credential store), or set `CURSOR_API_KEY`. Verify with `cursor_status`. |
 
 <a id="security"></a>
@@ -697,15 +697,21 @@ known-good `agy` version.
 <summary><b>Which model does Antigravity use — can I pick it?</b></summary>
 
 Yes. Pass `model` to `antigravity_ask`/`antigravity_continue` (or per task in `agent_swarm`) — it maps
-to agy's `--model`, taking any label from `agy models` (e.g. `"Gemini 3.1 Pro (High)"`,
-`"Claude Sonnet 4.6 (Thinking)"`). Omit it to use the `"model"` field in agy's `settings.json`, which
-defaults to **Gemini 3.5 Flash (High)** — speed-optimized for cheap tool-calling.
+to agy's `--model`, taking any slug from `agy models` (e.g. `"gemini-3.1-pro-high"`,
+`"claude-sonnet-4-6"`). Omit it to use the `"model"` field in agy's `settings.json`, which
+defaults to **`gemini-3.5-flash-high`** — speed-optimized for cheap tool-calling.
+
+**agy 1.1.5 renamed every model**, replacing the old human labels (`"Gemini 3.1 Pro (High)"`) with
+stable slugs (`gemini-3.1-pro-high`) — the old form is no longer accepted, so pass slugs. The full
+list as of 1.1.5: `gemini-3.5-flash-low|medium|high`, `gemini-3.1-pro-low|high`, `claude-sonnet-4-6`,
+`claude-opus-4-6-thinking`, `gpt-oss-120b-medium`. Note the slug bakes in the reasoning effort, which
+is why the flash and pro models appear once per level.
 
 agy 1.0.5 added `--model`, but through ~1.0.14 switching to a different model in `-p` **hung** the
 call, so earlier bridge versions stayed single-model. **Re-verified on agy 1.0.16 that the hang is
-fixed** — a Claude label answers as Anthropic Claude, a Gemini label as Gemini, each in seconds. One
-caveat the bridge handles for you: agy **silently ignores an unknown label** (it falls back to the
-default with no error), so the bridge validates your label against `agy models` and rejects a typo up
+fixed** — a Claude model answers as Anthropic Claude, a Gemini model as Gemini, each in seconds. One
+caveat the bridge handles for you: agy **silently ignores an unknown model** (it falls back to the
+default with no error), so the bridge validates your slug against `agy models` and rejects a typo up
 front.
 </details>
 
@@ -752,6 +758,19 @@ at 3 workers). That's the supported way to run many calls at once, across any ba
 
 ## Status & caveats
 
+- ⚠️ **Verified on agy 1.1.5 — it renamed every model, so old `model` values now fail.** 1.1.5
+  replaced agy's human-readable model labels with stable slugs, and `agy models` reports only those:
+  `"Gemini 3.1 Pro (High)"` is now `gemini-3.1-pro-high`, and the Claude entries are
+  `claude-sonnet-4-6` and `claude-opus-4-6-thinking` (the mapping is not 1:1 — check
+  `agy models`, or `antigravity_status`, for the current eight). Since the bridge validates `model` against
+  `agy models`, an old label is **rejected up front** with the valid list — you lose the call, not
+  your money, and never silently run on the wrong model. Pass slugs and you're fine. Nothing in the
+  bridge's machinery needed changing (validation was always format-agnostic — which is exactly why
+  the entire test suite stayed green while every *documented example* went stale), so this release is
+  docs plus one new test that checks the models we advertise against the live `agy models` list.
+  Everything else in 1.1.5 is interactive-TUI, MCP-client, or background-task work that doesn't reach
+  the bridge; its new `--effort` flag is a second axis we don't pass, because the slug already pins
+  the effort variant.
 - ✅ **Verified on agy 1.1.4** — no code change was needed. 1.1.4 relaxed the 1.1.3 headless gate so
   that `-p` now **honors your persisted `settings.json` policies** (permissions, file access, sandbox
   mode, auto-execution, artifact review) instead of blanket-denying. `--dangerously-skip-permissions`

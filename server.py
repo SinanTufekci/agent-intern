@@ -21,8 +21,8 @@ must have logged in interactively at least once via the Antigravity IDE or
 `agy -i`. Uses the same AI Pro quota. The bridge itself only does cross-
 platform filesystem reads under `~/.gemini/antigravity-cli/`.
 
-Model: defaults to agy's settings.json "model" field (e.g. Gemini 3.5 Flash
-(High)). agy 1.0.5 added a --model flag (and a `models` subcommand); through
+Model: defaults to agy's settings.json "model" field (e.g. gemini-3.5-flash-high).
+agy 1.0.5 added a --model flag (and a `models` subcommand); through
 ~1.0.14 switching to a DIFFERENT model in -p HUNG the call (verified on 1.0.5:
 the active label returned in seconds, any other hung >60s), so the bridge kept
 its distance. Re-verified on 1.0.16 that the hang is FIXED: `agy -p --model
@@ -40,6 +40,24 @@ missing, models call failed) validation is skipped and the label passes through
 unchecked. `agy models` itself must be
 run with stdin closed (it blocks on an interactive terminal otherwise), same as
 -p is spawned with DEVNULL stdin.
+
+Model SLUGS (agy 1.1.5) — the label format CHANGED and every old example is now
+invalid. 1.1.5 introduced "stable, user-facing model slugs" that the /model picker
+shows and --model accepts, and `agy models` now emits ONLY those slugs:
+gemini-3.5-flash-{low,medium,high}, gemini-3.1-pro-{low,high}, claude-sonnet-4-6,
+claude-opus-4-6-thinking, gpt-oss-120b-medium. The old human labels ("Gemini 3.5
+Flash (High)", "Claude Sonnet 4.6 (Thinking)") are GONE from the list, so
+validate_model rejects them — verified live on 1.1.5: the old label raised
+"unknown agy model ... expected one of: <slugs>" without spending a call, while
+`--model gemini-3.5-flash-high` round-tripped clean. Nothing in the bridge's
+machinery had to change (validation was always format-agnostic, which is exactly
+why the whole suite stayed green through this break) — but every docstring and
+README example that named an old label was actively steering callers into a
+failed first call, so all of them now name slugs. Note the slug bakes the
+reasoning effort in for the models that expose variants, which is why there are
+three flash entries and no separate effort argument here; 1.1.5 also added an
+`--effort low|medium|high` session flag as a second axis, which this bridge does
+NOT pass — the slug already pins the combination we want.
 
 Compat (re-verified on agy 1.0.15): state-file paths, last_conversations.json
 (still keyed by workspace path), and the transcript schema are unchanged, and a
@@ -282,7 +300,7 @@ mcp = FastMCP("agent-intern", instructions=SERVER_INSTRUCTIONS)
 # installed package metadata, which goes stale on editable installs). Keep in
 # sync with pyproject.toml's version. Compared at startup against the latest
 # tag on GitHub so a long-lived clone learns when to `git pull`.
-__version__ = "0.21.2"
+__version__ = "0.21.3"
 
 # Logs go to stderr (stdout is the MCP protocol channel). Quiet by default;
 # set AGY_BRIDGE_DEBUG=1 for per-call diagnostics. See _configure_logging.
@@ -314,7 +332,7 @@ _AGY_LOCK = threading.Lock()
 # Latest agy version the bridge's state-file assumptions were verified against.
 # Newer agy releases may change paths/schemas (the SQLite migration is the known
 # risk), so we warn at startup if the installed agy is newer than this.
-VERIFIED_AGY_VERSION = (1, 1, 4)
+VERIFIED_AGY_VERSION = (1, 1, 5)
 
 # Poll window for the transcript/conversation-id to appear after agy exits.
 # agy has already returned 0 by the time we read, so the common case resolves
@@ -1026,16 +1044,16 @@ def _resolve_and_read(pinned_conv: Optional[str], workspace: str, start: float) 
     return _read_response(conv_id)
 
 
-# Cache of the `agy models` label list for this process. agy silently ignores an
+# Cache of the `agy models` slug list for this process. agy silently ignores an
 # unknown --model (falls back to the settings.json default with NO error), so we
-# validate a requested label against this list and fail loudly on a typo — the way
+# validate a requested slug against this list and fail loudly on a typo — the way
 # codex/copilot reject an unknown model. Populated (once) on first validation.
 _AGY_MODELS_CACHE: Optional[list[str]] = None
 _AGY_MODELS_LOCK = threading.Lock()
 
 
 def list_agy_models() -> list[str]:
-    """Model labels reported by `agy models`, cached for the process ([] if unreadable).
+    """Model slugs reported by `agy models`, cached for the process ([] if unreadable).
 
     Runs `agy models` with stdin CLOSED — the subcommand otherwise blocks waiting
     on an interactive terminal (the same reason `-p` is spawned with DEVNULL
@@ -1066,13 +1084,17 @@ def list_agy_models() -> list[str]:
 
 
 def validate_model(model: Optional[str]) -> Optional[str]:
-    """Return `model` unchanged, or raise ValueError if it isn't a known agy label.
+    """Return `model` unchanged, or raise ValueError if it isn't a known agy slug.
 
     agy accepts --model but SILENTLY falls back to the settings.json default on an
-    unknown label, so a typo would quietly run the wrong model. We reject it up
-    front, listing the valid labels. If the label list can't be read (agy missing
-    or the models call failed), validation is skipped and the label passes through
+    unknown model (pre-1.1.2), so a typo would quietly run the wrong one. We reject
+    it up front, listing the valid slugs. If the list can't be read (agy missing or
+    the models call failed), validation is skipped and the value passes through
     — better than blocking a real model just because we couldn't enumerate them.
+
+    Matching is EXACT against `agy models`, so agy 1.1.5's switch from human labels
+    ("Gemini 3.5 Flash (High)") to slugs (gemini-3.5-flash-high) is surfaced here as
+    a loud rejection listing the new names, not a silent run on the wrong model.
     """
     if not model:
         return model
@@ -2103,13 +2125,15 @@ async def antigravity_ask(
         prompt: Question or instruction for Antigravity.
         workspace: Working directory for the conversation. Defaults to cwd.
                    Choose an existing project dir for context-aware responses.
-        model: Optional model label to run this conversation on (agy's --model),
-               e.g. "Gemini 3.1 Pro (High)" or "Claude Sonnet 4.6 (Thinking)".
-               Omit to use the model set in agy's settings.json (Gemini 3.5 Flash
-               (High) by default). Must be one of `agy models` — an unknown label
-               is rejected up front (agy would otherwise silently ignore it and
-               fall back to the default). See antigravity_status / `agy models`
-               for the valid labels.
+        model: Optional model slug to run this conversation on (agy's --model),
+               e.g. "gemini-3.1-pro-high" or "claude-sonnet-4-6". Omit to use the
+               model set in agy's settings.json (gemini-3.5-flash-high by
+               default). Must be one of `agy models` — an unknown slug is
+               rejected up front (agy would otherwise silently ignore it and fall
+               back to the default). agy 1.1.5 replaced the old human labels
+               ("Gemini 3.1 Pro (High)") with these slugs; the old form is no
+               longer accepted. See antigravity_status / `agy models` for the
+               valid slugs.
         timeout_s: Max seconds to wait for agy to complete. Default 180.
         watch: If true, open a live "watch" view in your browser that streams
                agy's steps (narration + the real commands it runs) as it works.
@@ -2149,11 +2173,12 @@ async def antigravity_continue(
     Args:
         prompt: Follow-up message.
         workspace: Working directory used by the prior conversation. Defaults to cwd.
-        model: Optional model label for this turn (agy's --model). agy's model is
-               per-invocation, not baked into the conversation, so a follow-up can
-               run on a different model than the original ask — omit to use agy's
-               settings.json default. Validated against `agy models`; an unknown
-               label is rejected (agy would silently ignore it).
+        model: Optional model slug for this turn (agy's --model), e.g.
+               "claude-sonnet-4-6". agy's model is per-invocation, not baked into
+               the conversation, so a follow-up can run on a different model than
+               the original ask — omit to use agy's settings.json default.
+               Validated against `agy models`; an unknown slug is rejected (agy
+               would silently ignore it).
         timeout_s: Max seconds to wait for agy to complete. Default 180.
         watch: If true, open a live "watch" view in your browser that streams
                agy's steps as it works (same return value, best-effort). Default false.
@@ -2288,9 +2313,9 @@ def agent_swarm(
                           copilot_ask / cursor_ask.)
                - model:   optional model override for ANY backend — Codex's `-m`,
                           Copilot's/Cursor's `--model`, or Antigravity's `--model`
-                          (an agy label like "Claude Sonnet 4.6 (Thinking)";
-                          validated against each backend's model list). Omit for
-                          each backend's default.
+                          (an agy slug like "claude-sonnet-4-6"; validated
+                          against each backend's model list). Omit for each
+                          backend's default.
         max_concurrency: Max workers running at once (default 4). Higher = faster
                          but more quota/rate-limit pressure and more agents at once.
         timeout_s: Per-worker timeout in seconds. Default 180.
