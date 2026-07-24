@@ -10,6 +10,30 @@ summary.
 
 ## [Unreleased]
 
+## [0.21.4] - 2026-07-24
+
+### Changed
+
+- **Re-verified against agy 1.1.6 — no code change needed.** agy self-updated 1.1.5 → 1.1.6, which
+  added the `gemini-3.6-flash` family to `agy models` and moved the `settings.json` default to
+  **Gemini 3.6 Flash (High)**. Verified live through the bridge: the default path and
+  `--model gemini-3.6-flash-high` both round-tripped clean, and both read paths still work on 1.1.6's
+  **unchanged** conversation schema — the JSONL transcript and the SQLite `steps` fallback each
+  extracted the same answer from a real `-p` run. `validate_model` needed nothing: it matches whatever
+  `agy models` prints, so the new slugs pass and typos still fail fast. `VERIFIED_AGY_VERSION` →
+  `(1, 1, 6)` so `antigravity_status` stops reporting "newer than verified".
+- **Docs refreshed for the new model list.** The module docstring, the `antigravity_ask` param docs,
+  and the README's model table + FAQ now enumerate the 1.1.6 list (`gemini-3.6-flash-{low,medium,high}`
+  ahead of the 3.5 flash, pro, Claude, and gpt-oss entries) and name `gemini-3.6-flash-high` as the
+  default, so no documented example steers a caller at a stale default. `DOCUMENTED_AGY_MODELS` gains
+  `gemini-3.6-flash-high` so the live-list guard test covers the new default.
+- Nothing else in 1.1.6 reaches the bridge. Its one adjacent fix — print mode surfacing the real
+  conversation-creation failure instead of a misleading "no active conversation" — only sharpens the
+  error the bridge already reads on a failed run. The rest (Markdown custom agents, `/copy <n>` and
+  streaming `/codesearch`, the temp-dir read grant, background-task double-spawn and print-mode
+  fixes) is interactive-TUI or client-side work that doesn't touch the print-mode + transcript path
+  this bridge drives.
+
 ## [0.21.3] - 2026-07-21
 
 ### Changed
@@ -645,7 +669,8 @@ summary.
 
 - **BREAKING:** `antigravity_ask_stream` (superseded by watch mode).
 
-[Unreleased]: https://github.com/SinanTufekci/agent-intern/compare/v0.21.3...HEAD
+[Unreleased]: https://github.com/SinanTufekci/agent-intern/compare/v0.21.4...HEAD
+[0.21.4]: https://github.com/SinanTufekci/agent-intern/compare/v0.21.3...v0.21.4
 [0.21.3]: https://github.com/SinanTufekci/agent-intern/compare/v0.21.2...v0.21.3
 [0.21.2]: https://github.com/SinanTufekci/agent-intern/compare/v0.21.1...v0.21.2
 [0.21.1]: https://github.com/SinanTufekci/agent-intern/compare/v0.21.0...v0.21.1

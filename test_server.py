@@ -653,7 +653,12 @@ def test_validate_model_skips_when_list_unavailable(monkeypatch):
 # README broke — steering callers into a guaranteed rejection — so this is the test
 # that notices. Spends no AI Pro quota (`agy models` is a local subcommand) and
 # skips where agy isn't installed.
-DOCUMENTED_AGY_MODELS = ["gemini-3.5-flash-high", "gemini-3.1-pro-high", "claude-sonnet-4-6"]
+DOCUMENTED_AGY_MODELS = [
+    "gemini-3.6-flash-high",  # 1.1.6's new default (added the gemini-3.6-flash family)
+    "gemini-3.5-flash-high",
+    "gemini-3.1-pro-high",
+    "claude-sonnet-4-6",
+]
 
 
 def test_documented_model_slugs_still_accepted_by_live_agy(monkeypatch):

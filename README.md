@@ -4,7 +4,7 @@
 
 <img src="assets/bridge-animation.svg" width="100%" alt="Claude Code bridging Google Antigravity, OpenAI Codex, GitHub Copilot, and Cursor" />
 
-**Drive four external coding CLIs — Google's [Antigravity](https://antigravity.google/) (Gemini 3.5 Flash), [OpenAI Codex](https://developers.openai.com/codex/), the [GitHub Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli), and [Cursor](https://cursor.com/cli) — as sub-agents inside [Claude Code](https://claude.com/claude-code). Text answers, image generation, real repo work, and parallel swarms, on quota you already pay for.**
+**Drive four external coding CLIs — Google's [Antigravity](https://antigravity.google/) (Gemini 3.6 Flash), [OpenAI Codex](https://developers.openai.com/codex/), the [GitHub Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli), and [Cursor](https://cursor.com/cli) — as sub-agents inside [Claude Code](https://claude.com/claude-code). Text answers, image generation, real repo work, and parallel swarms, on quota you already pay for.**
 
 [![CI](https://github.com/SinanTufekci/agent-intern/actions/workflows/ci.yml/badge.svg)](https://github.com/SinanTufekci/agent-intern/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/agent-intern?logo=pypi&logoColor=white&color=2ea44f)](https://pypi.org/project/agent-intern/)
@@ -13,7 +13,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![MCP server](https://img.shields.io/badge/MCP-server-7c3aed)](https://modelcontextprotocol.io/)
 [![Glama](https://glama.ai/mcp/servers/SinanTufekci/agent-intern/badges/score.svg)](https://glama.ai/mcp/servers/SinanTufekci/agent-intern)
-[![agy 1.1.5 verified](https://img.shields.io/badge/agy-1.1.5%20verified-2ea44f)](https://antigravity.google/)
+[![agy 1.1.6 verified](https://img.shields.io/badge/agy-1.1.6%20verified-2ea44f)](https://antigravity.google/)
 [![codex 0.144.1 verified](https://img.shields.io/badge/codex--cli-0.144.1%20verified-2ea44f)](https://developers.openai.com/codex/)
 [![copilot 1.0.69 verified](https://img.shields.io/badge/copilot--cli-1.0.69%20verified-2ea44f)](https://docs.github.com/en/copilot/how-tos/copilot-cli)
 [![cursor 2026.07.08 verified](https://img.shields.io/badge/cursor--agent-2026.07.08%20verified-2ea44f)](https://cursor.com/cli)
@@ -29,7 +29,7 @@ Copilot CLI, and Cursor to Claude Code as clean MCP tools so you can delegate wo
 family mid-task — without leaving your terminal, and on the subscriptions you already have. Each backend
 is independent: install one, two, three, or all four.
 
-- **🛰️ Antigravity (`agy`, Gemini 3.5 Flash High).** Fast, cheap tool-calling — and the **only**
+- **🛰️ Antigravity (`agy`, Gemini 3.6 Flash High).** Fast, cheap tool-calling — and the **only**
   backend with an image model. Its headless print mode (`agy -p`) historically had a **stdout bug**:
   it wrote the answer to the *controlling terminal* instead of its stdout, so anything capturing
   stdout got nothing (and, under a TUI, agy's text leaked into the host's prompt). **agy 1.0.15 fixed
@@ -83,7 +83,7 @@ The bridge normalizes all four CLIs into the same shape, but they differ where i
 
 | | 🛰️ **Antigravity** (`agy`) | 🤖 **Codex** (`codex exec`) | 🐙 **Copilot** (`copilot -p`) | ✳️ **Cursor** (`cursor-agent -p`) |
 |---|---|---|---|---|
-| **Model** | Selectable via `model` (agy's `--model`); Gemini 3.5 Flash (High) default (see [Model & auth](#model--auth)) | Selectable via `model` (codex's `-m`) | Selectable via `model` (`--model`) | Selectable via `model` (`--model`), validated against `cursor-agent models` |
+| **Model** | Selectable via `model` (agy's `--model`); Gemini 3.6 Flash (High) default (see [Model & auth](#model--auth)) | Selectable via `model` (codex's `-m`) | Selectable via `model` (`--model`) | Selectable via `model` (`--model`), validated against `cursor-agent models` |
 | **Best at** | Fast, cheap tool-calling; quick answers | Heavier reasoning; real code/repo work | Agentic coding; real code/repo work | Agentic coding; wide model menu (GPT/Claude/Grok/Composer) |
 | **Image generation** | ✅ `antigravity_image` (+ `antigravity_image_swarm`) | ❌ no image model | ❌ no image model | ❌ no image model |
 | **Sandbox** | ❌ no real boundary (`--sandbox` blocks only shell) | ✅ real, enforced: `read-only` / `workspace-write` / `danger-full-access` | ⚠️ best-effort: tool/path permissions (`read-only` denies write/shell) — **not** an OS sandbox | ⚠️ agent-enforced: mode/force (`read-only` = `--mode ask`, write/shell tools unavailable) — **not** an OS sandbox |
@@ -547,7 +547,7 @@ quota/rate-limit pressure for wall-clock.
 
 | | 🛰️ **Antigravity** | 🤖 **Codex** | 🐙 **Copilot** | ✳️ **Cursor** |
 |---|---|---|---|---|
-| **Model** | **Selectable** via the `model` argument (agy's `--model`, e.g. `"gemini-3.1-pro-high"`, `"claude-sonnet-4-6"`); omit to use the `"model"` field in agy's `settings.json` (**`gemini-3.5-flash-high`** by default). **agy 1.1.5 replaced the old human labels with these slugs** — the old `"Gemini 3.1 Pro (High)"` form no longer works. Switching model in `-p` used to hang (through ~1.0.14) but is **fixed as of 1.0.16**. An unknown model was silently ignored through 1.1.1 and hard-fails in `-p` as of **1.1.2**; either way the bridge validates it against `agy models` and rejects a typo up front. Flash High is speed-optimized for cheap tool-calling; pick a bigger model for heavier work. | **Selectable** via the `model` argument (codex's `-m`). codex does not hang on a switch, so model choice is a first-class knob. | **Selectable** via the `model` argument (`--model`, e.g. `gpt-5.3-codex`, `claude-sonnet-4.6`, `auto`); omit for your account default. An unavailable model errors immediately. | **Selectable** via the `model` argument (`--model`, e.g. `gpt-5.2`, `sonnet-4-thinking`, `auto`, or parameterized ids like `claude-opus-4-8[context=1m]`); a wide GPT/Claude/Grok/Composer menu, validated against `cursor-agent models` (a typo is rejected up front). Omit for your Cursor account default. |
+| **Model** | **Selectable** via the `model` argument (agy's `--model`, e.g. `"gemini-3.1-pro-high"`, `"claude-sonnet-4-6"`); omit to use the `"model"` field in agy's `settings.json` (**`gemini-3.6-flash-high`** by default as of 1.1.6). **agy 1.1.5 replaced the old human labels with these slugs** — the old `"Gemini 3.1 Pro (High)"` form no longer works. Switching model in `-p` used to hang (through ~1.0.14) but is **fixed as of 1.0.16**. An unknown model was silently ignored through 1.1.1 and hard-fails in `-p` as of **1.1.2**; either way the bridge validates it against `agy models` and rejects a typo up front. Flash High is speed-optimized for cheap tool-calling; pick a bigger model for heavier work. | **Selectable** via the `model` argument (codex's `-m`). codex does not hang on a switch, so model choice is a first-class knob. | **Selectable** via the `model` argument (`--model`, e.g. `gpt-5.3-codex`, `claude-sonnet-4.6`, `auto`); omit for your account default. An unavailable model errors immediately. | **Selectable** via the `model` argument (`--model`, e.g. `gpt-5.2`, `sonnet-4-thinking`, `auto`, or parameterized ids like `claude-opus-4-8[context=1m]`); a wide GPT/Claude/Grok/Composer menu, validated against `cursor-agent models` (a typo is rejected up front). Omit for your Cursor account default. |
 | **Auth** | Piggybacks whatever credential store `agy` uses on your OS (Windows Credential Manager, macOS Keychain, libsecret on Linux — the bridge never touches it directly). Log in once; every call silent-auths on the **same AI Pro quota** you already pay for. | Uses your existing **Codex login** — ChatGPT account or API key. Run `codex login` once; verify with `codex_status`. | Uses your existing **Copilot login** — run `copilot` then `/login` once (OS credential store), or set `COPILOT_GITHUB_TOKEN`/`GH_TOKEN`/`GITHUB_TOKEN`. Verify with `copilot_status`. | Uses your existing **Cursor login** — run `cursor-agent login` once (OS credential store), or set `CURSOR_API_KEY`. Verify with `cursor_status`. |
 
 <a id="security"></a>
@@ -699,13 +699,14 @@ known-good `agy` version.
 Yes. Pass `model` to `antigravity_ask`/`antigravity_continue` (or per task in `agent_swarm`) — it maps
 to agy's `--model`, taking any slug from `agy models` (e.g. `"gemini-3.1-pro-high"`,
 `"claude-sonnet-4-6"`). Omit it to use the `"model"` field in agy's `settings.json`, which
-defaults to **`gemini-3.5-flash-high`** — speed-optimized for cheap tool-calling.
+defaults to **`gemini-3.6-flash-high`** as of agy 1.1.6 — speed-optimized for cheap tool-calling.
 
 **agy 1.1.5 renamed every model**, replacing the old human labels (`"Gemini 3.1 Pro (High)"`) with
-stable slugs (`gemini-3.1-pro-high`) — the old form is no longer accepted, so pass slugs. The full
-list as of 1.1.5: `gemini-3.5-flash-low|medium|high`, `gemini-3.1-pro-low|high`, `claude-sonnet-4-6`,
-`claude-opus-4-6-thinking`, `gpt-oss-120b-medium`. Note the slug bakes in the reasoning effort, which
-is why the flash and pro models appear once per level.
+stable slugs (`gemini-3.1-pro-high`) — the old form is no longer accepted, so pass slugs. **agy 1.1.6
+then added the `gemini-3.6-flash` family and moved the default to it.** The full list as of 1.1.6:
+`gemini-3.6-flash-low|medium|high`, `gemini-3.5-flash-low|medium|high`, `gemini-3.1-pro-low|high`,
+`claude-sonnet-4-6`, `claude-opus-4-6-thinking`, `gpt-oss-120b-medium`. Note the slug bakes in the
+reasoning effort, which is why the flash and pro models appear once per level.
 
 agy 1.0.5 added `--model`, but through ~1.0.14 switching to a different model in `-p` **hung** the
 call, so earlier bridge versions stayed single-model. **Re-verified on agy 1.0.16 that the hang is
@@ -758,6 +759,15 @@ at 3 workers). That's the supported way to run many calls at once, across any ba
 
 ## Status & caveats
 
+- ✅ **Re-verified on agy 1.1.6 — no code change needed.** 1.1.6 added the `gemini-3.6-flash` family
+  to `agy models` and moved the `settings.json` default to **Gemini 3.6 Flash (High)**; the default
+  path and `--model gemini-3.6-flash-high` both round-tripped clean, and the JSONL + SQLite read paths
+  still match agy's unchanged conversation schema. Its one bridge-adjacent fix — print mode now
+  surfacing the real conversation-creation error instead of a misleading "no active conversation" —
+  only improves the diagnostic the bridge already reads on failure. Everything else (Markdown custom
+  agents, `/copy` and `/codesearch` polish, background-task hardening) is interactive-TUI or
+  client-side work that doesn't reach the bridge. Docs-only: the model list and default examples now
+  name the 1.1.6 slugs, and the guard test advertises `gemini-3.6-flash-high` against the live list.
 - ⚠️ **Verified on agy 1.1.5 — it renamed every model, so old `model` values now fail.** 1.1.5
   replaced agy's human-readable model labels with stable slugs, and `agy models` reports only those:
   `"Gemini 3.1 Pro (High)"` is now `gemini-3.1-pro-high`, and the Claude entries are
