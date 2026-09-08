@@ -1516,7 +1516,11 @@ caller might copy becomes a guaranteed rejected call.
 
 - **BREAKING:** `antigravity_ask_stream` (superseded by watch mode).
 
-[Unreleased]: https://github.com/SinanTufekci/agent-intern/compare/v0.28.0...HEAD
+[Unreleased]: https://github.com/SinanTufekci/agent-intern/compare/v0.30.0...HEAD
+[0.30.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.29.1...v0.30.0
+[0.29.1]: https://github.com/SinanTufekci/agent-intern/compare/v0.29.0...v0.29.1
+[0.29.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.28.1...v0.29.0
+[0.28.1]: https://github.com/SinanTufekci/agent-intern/compare/v0.28.0...v0.28.1
 [0.28.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.27.0...v0.28.0
 [0.27.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.25.1...v0.26.0
