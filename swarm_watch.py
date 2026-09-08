@@ -295,6 +295,7 @@ header{display:flex;align-items:center;gap:9px;padding:7px 11px;background:#0d0f
 .bk.copilot{color:#0a0c10;background:#c3a6ff}
 .bk.cursor{color:#0a0c10;background:#7ad9a8}
 .bk.grok{color:#0a0c10;background:#f58a8a}
+.bk.opencode{color:#0a0c10;background:#8fd4e8}
 .prompt{color:#e9eef3;font-weight:600;flex:1;min-width:0;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;word-break:break-word}
 .st{color:var(--dim);font-size:10.5px;flex:none;font-variant-numeric:tabular-nums;margin-top:1px}
 .pop{color:var(--green);opacity:.55;flex:none;font-size:11px;margin-top:1px}
@@ -322,7 +323,7 @@ header{display:flex;align-items:center;gap:9px;padding:7px 11px;background:#0d0f
 <script>
 const SYM={narration:"▸",command:"$",result:"✓",done:"✓",error:"✗"};
 // Backends that get their own badge; anything else (incl. antigravity) shows "agy".
-const BACKEND_BADGES=["codex","copilot","cursor","grok"];
+const BACKEND_BADGES=["codex","copilot","cursor","grok","opencode"];
 const FR="⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";let fi=0;
 let started=null,sel=-1,nWork=0,timeout=0,statuses={};
 const $=id=>document.getElementById(id);
@@ -421,7 +422,7 @@ header{display:flex;align-items:center;gap:8px;padding:9px 14px;background:#0d0f
 .name{color:var(--green);font-weight:700;text-shadow:0 0 10px rgba(63,223,127,.4)}
 .repo{color:#0a0c10;background:var(--green);border-radius:4px;padding:0 6px;font-size:10px;font-weight:700}
 .bk{border-radius:4px;padding:0 6px;font-size:9.5px;font-weight:700;letter-spacing:.3px;color:#0a0c10}
-.bk.antigravity{background:#f5b94a}.bk.codex{background:#7c9cff}.bk.copilot{background:#c3a6ff}.bk.cursor{background:#7ad9a8}.bk.grok{background:#f58a8a}
+.bk.antigravity{background:#f5b94a}.bk.codex{background:#7c9cff}.bk.copilot{background:#c3a6ff}.bk.cursor{background:#7ad9a8}.bk.grok{background:#f58a8a}.bk.opencode{background:#8fd4e8}
 .pill{margin-left:auto;display:flex;align-items:center;gap:7px;font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
 .dot{width:8px;height:8px;border-radius:50%;flex:none;display:none}
 .dot.done{background:var(--cyan);box-shadow:0 0 7px var(--cyan);animation:pop .45s ease}
@@ -491,7 +492,7 @@ header{display:flex;align-items:center;gap:8px;padding:9px 14px;background:#0d0f
 <script>
 const SYM={narration:"▸",command:"$",result:"✓"};
 // Backends that get their own badge; anything else (incl. antigravity) shows "agy".
-const BACKEND_BADGES=["codex","copilot","cursor","grok"];
+const BACKEND_BADGES=["codex","copilot","cursor","grok","opencode"];
 const IDX=parseInt(new URLSearchParams(location.search).get("i")||"0",10);
 const K=encodeURIComponent(new URLSearchParams(location.search).get("k")||"");
 let started=null,seen=0,fin=false,follow=true,timeout=0,traceEl=null,traceBody=null;

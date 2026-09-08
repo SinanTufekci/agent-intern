@@ -865,10 +865,13 @@ _BACKEND_ALIASES = {
     "grok": "grok",
     "grok-build": "grok",
     "xai": "grok",
+    "opencode": "opencode",
+    "oc": "opencode",
+    "sst": "opencode",
 }
 
 # Backends the swarm can dispatch to, in the order the error message lists them.
-_BACKEND_NAMES = ("antigravity", "codex", "copilot", "cursor", "grok")
+_BACKEND_NAMES = ("antigravity", "codex", "copilot", "cursor", "grok", "opencode")
 
 
 def _normalize_tasks(tasks) -> list[dict]:
@@ -880,8 +883,9 @@ def _normalize_tasks(tasks) -> list[dict]:
     plan mode to honour "read-only" with — it used to be silently ignored there, so
     an agy task could ask to be fenced and run unrestricted anyway. What each policy
     means still differs per backend: Codex's is an enforced OS sandbox, Grok's is on
-    Linux/macOS only, and Copilot's, Cursor's and Antigravity's are agent-level. See
-    server.plan_from_sandbox for which policies agy can and cannot honour.
+    Linux/macOS only, and Copilot's, Cursor's, opencode's and Antigravity's are
+    agent-level. See server.plan_from_sandbox for which policies agy can and cannot
+    honour.
 
     Raises ValueError naming the offending index on bad input.
     """
@@ -929,6 +933,12 @@ def _normalize_tasks(tasks) -> list[dict]:
             sandbox = t.get("sandbox") or grok_bridge.DEFAULT_SANDBOX
             grok_bridge.validate_sandbox(sandbox)  # fail fast on a bad policy
             model = grok_bridge.validate_model(t.get("model") or None)  # fail fast on a typo
+        elif backend == "opencode":
+            import opencode_bridge
+
+            sandbox = t.get("sandbox") or opencode_bridge.DEFAULT_SANDBOX
+            opencode_bridge.validate_sandbox(sandbox)  # fail fast on a bad policy
+            model = opencode_bridge.validate_model(t.get("model") or None)  # fail fast on a typo
         else:  # antigravity
             import server
 
@@ -1232,6 +1242,97 @@ def _run_grok_worker_watched(index, prompt, workspace, sandbox, model, timeout_s
         )
 
 
+def _opencode_timeout(timeout_s: int) -> int:
+    """The swarm's per-worker budget, raised to opencode's own default if lower.
+
+    The swarm shares one `timeout_s` across every backend and defaults it to 180s,
+    which is right for codex/copilot/cursor and WRONG for opencode: its free hosted
+    models are queue-scheduled and were measured at 152-428s for one-word answers,
+    so roughly half of them would be killed mid-answer and reported as a broken
+    worker rather than a slow one. Raising (never lowering) to the same 300s the
+    opencode_* tools use keeps a mixed swarm honest; a paid model just finishes
+    early and never notices the larger budget.
+    """
+    import opencode_bridge
+
+    return max(timeout_s, opencode_bridge.DEFAULT_TIMEOUT_S)
+
+
+def _run_opencode_worker(index, prompt, workspace, sandbox, model, timeout_s) -> WorkerResult:
+    # NOTE: no HOME/XDG isolation here, for the same reason as the grok workers.
+    # opencode mints a fresh session per headless run, and its credentials live
+    # under the same data dir a relocation would hide (issue #2's failure mode).
+    import opencode_bridge
+
+    timeout_s = _opencode_timeout(timeout_s)
+    start = time.time()
+    try:
+        os.makedirs(workspace, exist_ok=True)
+        ans = opencode_bridge.run_opencode(
+            prompt, workspace, sandbox, model, False, timeout_s, pin=False
+        )
+        return WorkerResult(
+            index,
+            True,
+            answer=ans,
+            elapsed=round(time.time() - start, 1),
+            workspace=workspace,
+            backend="opencode",
+        )
+    except Exception as e:  # noqa: BLE001 — error isolation: one worker must not sink the swarm
+        return WorkerResult(
+            index,
+            False,
+            error=str(e),
+            elapsed=round(time.time() - start, 1),
+            workspace=workspace,
+            backend="opencode",
+        )
+
+
+def _run_opencode_worker_watched(
+    index, prompt, workspace, sandbox, model, timeout_s
+) -> WorkerResult:
+    import opencode_bridge
+    import server
+    import swarm_watch
+
+    timeout_s = _opencode_timeout(timeout_s)  # see _opencode_timeout
+    start = time.time()
+    swarm_watch.worker_update(index, status="working", started=start)
+
+    def on_event(ev: dict) -> None:
+        lines = server._opencode_event_to_watch_lines(ev)
+        if lines:
+            t = round(time.time() - start, 1)
+            swarm_watch.worker_append(index, [{"kind": k, "text": x, "t": t} for k, x in lines])
+
+    try:
+        os.makedirs(workspace, exist_ok=True)
+        ans = opencode_bridge.run_opencode_streaming(
+            prompt, workspace, sandbox, model, False, timeout_s, on_event, pin=False
+        )
+        swarm_watch.worker_finish(index, "done", ans, time.time() - start)
+        return WorkerResult(
+            index,
+            True,
+            answer=ans,
+            elapsed=round(time.time() - start, 1),
+            workspace=workspace,
+            backend="opencode",
+        )
+    except Exception as e:  # noqa: BLE001
+        swarm_watch.worker_finish(index, "error", str(e), time.time() - start)
+        return WorkerResult(
+            index,
+            False,
+            error=str(e),
+            elapsed=round(time.time() - start, 1),
+            workspace=workspace,
+            backend="opencode",
+        )
+
+
 def swarm_agents(
     tasks,
     max_concurrency: int = DEFAULT_MAX_CONCURRENCY,
@@ -1269,6 +1370,9 @@ def swarm_agents(
             return fn(i, t["prompt"], t["workspace"], t["sandbox"], t["model"], timeout_s)
         if t["backend"] == "grok":
             fn = _run_grok_worker_watched if watch else _run_grok_worker
+            return fn(i, t["prompt"], t["workspace"], t["sandbox"], t["model"], timeout_s)
+        if t["backend"] == "opencode":
+            fn = _run_opencode_worker_watched if watch else _run_opencode_worker
             return fn(i, t["prompt"], t["workspace"], t["sandbox"], t["model"], timeout_s)
         fn = _run_text_worker_watched if watch else _run_text_worker
         return fn(i, t["prompt"], t["workspace"], t["model"], timeout_s, t["plan"])

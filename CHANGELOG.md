@@ -10,6 +10,87 @@ summary.
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-09-08
+
+### Added
+
+- **A seventh backend, and the first one that needs no subscription: opencode.** `opencode_ask`,
+  `opencode_continue` and `opencode_status`, plus `agent_swarm` and watch-mode support (21 tools ->
+  24). [opencode](https://opencode.ai/) is SST's open-source terminal coding agent; `opencode run
+  --format json` runs a prompt non-interactively and writes NDJSON events to stdout, so the answer is
+  read straight from the stream like Codex's and Cursor's.
+
+  What makes it worth its own slot is not another model family — it is that **it answers with zero
+  credentials configured.** opencode ships free hosted models under its own provider
+  (`opencode/*-free`), so for the first time in this project a backend's *answer path* could be
+  verified without holding a subscription. Every claim in the bridge is therefore observed on
+  opencode 1.18.29 rather than inferred: the round-trip, the session id resume, the per-directory
+  `-c` scoping (the same `-c` from a different directory starts a fresh session, not a resume), the
+  `Session not found` failure, the unknown-model error envelope, and the `opencode models` /
+  `providers list` output the status view parses. Grok and Kimi remain
+  [unverified](https://github.com/SinanTufekci/agent-intern#experimental-backends); this one is not.
+
+  Where the flags could not be observed they were **read off opencode's own source** rather than its
+  docs: it ships as a compiled Bun binary whose bundle still embeds the JS, so the `run` command's
+  argv parser, its event writer and its permission resolution were read from the implementation and
+  then confirmed by executing them. That is how the prompt turned out to be POSITIONAL (and joined
+  with `j["--"]`, which is why the bridge passes it after a `--` separator, so a prompt starting with
+  `-` can never be parsed as a flag).
+
+- **A `sandbox` that is agent-enforced but, unlike grok's, identical on every platform.** opencode's
+  permission set is a config value, not a CLI flag, so the bridge sets `OPENCODE_PERMISSION` per run.
+  Two facts read off the bundle and then confirmed live make that a real gate rather than a
+  suggestion: in headless `run` a permission that would prompt is **auto-rejected**
+  (`if (auto) reply("once") else { println("...auto-rejecting"); reply("reject") }`), so "ask" means
+  "deny" and no call can wedge on an invisible dialog; and the config policy is merged **last** into
+  every built-in agent (`merge(defaults, agent_specific, fromConfig(config.permission))`), so the
+  bridge's policy overrides the agent's own rules. The second point is what rules out the obvious
+  shortcut: opencode's `plan` agent is described as read-only but leaves `bash` **allowed**, so
+  `--agent plan` would have been a fence in name only.
+
+  `read-only` (the default) denies `edit`, `bash`, `task`, `external_directory`, `webfetch` and
+  `websearch` and keeps the read/search tools with `.env` denied; `workspace-write` keeps opencode's
+  own defaults inside the run directory and hard-denies `external_directory`, so leaving the
+  workspace is refused rather than asked; `danger-full-access` is opencode's own `--auto`. One
+  footgun is deliberately designed around: opencode **silently ignores** an `OPENCODE_PERMISSION`
+  value it cannot parse (a debug-level warning, then no restrictions at all), so the policy is built
+  as a dict and `json.dumps`-ed, never hand-formatted, and a test asserts the round-trip.
+
+  Both modes were then A/B'd live with one prompt ("create written.txt containing HELLO") against the
+  same free model: under `workspace-write` it answered `DONE` in 428 s and the file was there; under
+  `read-only` it wrote nothing at all, spending the whole 630 s budget retrying tools it had been
+  denied. That second outcome is also why both fenced modes deny opencode's `doom_loop` retry guard —
+  its default would already be rejected in headless mode, but a user config that allowed it could
+  otherwise turn a fenced run into an unbounded loop.
+
+### Fixed
+
+- **`agent_swarm` would have reported opencode workers as broken when they were merely slow.** The
+  swarm shares one `timeout_s` across every backend and defaults it to 180 s — correct for
+  Codex/Copilot/Cursor, and wrong for a backend whose free models were measured end-to-end at 152,
+  161, 163, 166, 214, 260 and 428 seconds. Roughly half of those would have been killed mid-answer,
+  and the swarm would have blamed the worker. An opencode worker is now given at least the same
+  300 s its own tools use; the budget is only ever raised, never lowered, so an explicit generous
+  `timeout_s` still wins and a paid model just finishes early. The timeout message names the cause
+  and the fix now, instead of reporting a bare elapsed number.
+
+- **A headless-timeout hang on Windows, found by building this backend and reproduced with a
+  stopwatch.** `opencode` on `PATH` is npm's `opencode.CMD` shim, so the real `opencode.exe` is a
+  *grandchild* of the bridge's process. `subprocess.run(timeout=...)` kills only the direct child and
+  then — on its Windows branch — calls `communicate()` again, re-reading a pipe the surviving
+  grandchild still holds open. Measured: a 270 s timeout returned after **396 s**, and only because
+  the orphan was killed by hand; otherwise the call never comes back and the orphan keeps burning
+  quota.
+
+  That matters more here than it would elsewhere, because opencode's free models are queue-scheduled
+  and genuinely slow (**152 s, 214 s and 260 s** measured for one-word answers), so the timeout is a
+  path users take rather than a theoretical edge. The opencode bridge therefore runs its blocking
+  path through the same `Popen` machinery as watch mode — one implementation, one output format, no
+  `subprocess.run` timeout anywhere — and kills the whole process tree (`taskkill /T` on Windows, the
+  process group elsewhere) before returning. `timeout_s` also defaults to **300** here rather than
+  the usual 180. Two tests pin it: one asserts the timeout kills the tree, and one fails the build if
+  the blocking path ever reaches for `subprocess.run` again.
+
 ## [0.29.1] - 2026-09-03
 
 ### Fixed

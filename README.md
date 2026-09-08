@@ -1,10 +1,10 @@
 <div align="center">
 
-# Claude Code × Antigravity + Codex + Copilot + Cursor + Grok + Kimi — MCP Bridge
+# Claude Code × Antigravity + Codex + Copilot + Cursor + opencode + Grok + Kimi — MCP Bridge
 
 <img src="assets/bridge-animation.svg" width="100%" alt="Claude Code bridging Google Antigravity, OpenAI Codex, GitHub Copilot, and Cursor" />
 
-**Drive six external coding CLIs — Google's [Antigravity](https://antigravity.google/) (Gemini 3.8 Flash), [OpenAI Codex](https://developers.openai.com/codex/), the [GitHub Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli), [Cursor](https://cursor.com/cli), and the two experimental newcomers [Grok Build](https://docs.x.ai/build/overview) and [Kimi Code](https://github.com/MoonshotAI/kimi-code) — as sub-agents inside [Claude Code](https://claude.com/claude-code). Text answers, image generation, real repo work, and parallel swarms, on quota you already pay for.**
+**Drive seven external coding CLIs — Google's [Antigravity](https://antigravity.google/) (Gemini 3.8 Flash), [OpenAI Codex](https://developers.openai.com/codex/), the [GitHub Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli), [Cursor](https://cursor.com/cli), [opencode](https://opencode.ai/), and the two experimental newcomers [Grok Build](https://docs.x.ai/build/overview) and [Kimi Code](https://github.com/MoonshotAI/kimi-code) — as sub-agents inside [Claude Code](https://claude.com/claude-code). Text answers, image generation, real repo work, and parallel swarms, on quota you already pay for — or, with opencode's free models, on no quota at all.**
 
 [![CI](https://github.com/SinanTufekci/agent-intern/actions/workflows/ci.yml/badge.svg)](https://github.com/SinanTufekci/agent-intern/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/agent-intern?logo=pypi&logoColor=white&color=2ea44f)](https://pypi.org/project/agent-intern/)
@@ -17,6 +17,7 @@
 [![codex 0.149.1 verified](https://img.shields.io/badge/codex--cli-0.149.1%20verified-2ea44f)](https://developers.openai.com/codex/)
 [![copilot 1.0.80 verified](https://img.shields.io/badge/copilot--cli-1.0.80%20verified-2ea44f)](https://docs.github.com/en/copilot/how-tos/copilot-cli)
 [![cursor 2026.07.23 verified](https://img.shields.io/badge/cursor--agent-2026.07.23%20verified-2ea44f)](https://cursor.com/cli)
+[![opencode 1.18.29 verified](https://img.shields.io/badge/opencode-1.18.29%20verified-2ea44f)](https://opencode.ai/)
 [![grok 1.0.3 unverified](https://img.shields.io/badge/grok--build-1.0.3%20UNVERIFIED-orange)](#experimental-backends)
 [![kimi 0.29.1 unverified](https://img.shields.io/badge/kimi--code-0.29.1%20UNVERIFIED-orange)](#experimental-backends)
 [![platform](https://img.shields.io/badge/platform-Windows%20·%20macOS%20·%20Linux-lightgrey)](#requirements)
@@ -26,11 +27,13 @@
 
 ---
 
-One MCP server, **six backends** — four verified, two experimental. It exposes Google Antigravity,
-OpenAI Codex, the GitHub Copilot CLI, Cursor, and now xAI's Grok Build and Moonshot's Kimi Code to
-Claude Code as clean MCP tools so you can delegate work to a different model family mid-task — without
-leaving your terminal, and on the subscriptions you already have. Each backend is independent: install
-one, or all six.
+One MCP server, **seven backends** — five verified, two experimental. It exposes Google Antigravity,
+OpenAI Codex, the GitHub Copilot CLI, Cursor, opencode, and xAI's Grok Build and Moonshot's Kimi Code
+to Claude Code as clean MCP tools so you can delegate work to a different model family mid-task —
+without leaving your terminal, and on the subscriptions you already have. Each backend is
+independent: install one, or all seven. **opencode needs no subscription at all** — its free hosted
+models answer with zero credentials, so it is the one backend you can try on a machine that has never
+logged in to anything.
 
 - **🛰️ Antigravity (`agy`, Gemini 3.8 Flash High).** Fast, cheap tool-calling — and the **only**
   backend with an image model. Its headless print mode (`agy -p`) historically had a **stdout bug**:
@@ -50,6 +53,14 @@ one, or all six.
   like Codex/Copilot (`--output-format text` prints just the answer), an **agent-enforced** sandbox
   (read-only via `--mode ask`), and a deterministic resume mechanism (the bridge mints each chat's id
   itself via `create-chat`). No image model.
+- **🧩 opencode (`opencode run`, SST).** The one backend with **no subscription requirement**: its
+  own `opencode/*-free` models answer with **zero credentials configured** (add a key for
+  Claude/GPT-class models). Stdout-native (`--format json` NDJSON events, which double as the watch
+  stream), with `-s` resume off the session id every event carries. Its `sandbox` is an
+  **`OPENCODE_PERMISSION` policy** that opencode merges *last*, so it overrides even the agent's own
+  rules — agent-enforced rather than an OS jail, but it behaves identically on Windows, macOS and
+  Linux. In headless mode a permission that would prompt is **auto-rejected**, never hung. No image
+  model. ⚠️ The free models are slow — a one-word answer took **152–260 s** in testing.
 - **🧪 Grok Build (`grok -p`, xAI) — EXPERIMENTAL.** xAI's terminal coding agent, and the only backend
   besides Codex with a **real OS sandbox** — though only on Linux/macOS. Stdout-native
   (`--output-format json` returns the answer *and* the session id), with `-r` resume, `streaming-json`
@@ -84,8 +95,10 @@ no watch or swarm support yet — see [Experimental backends](#experimental-back
 > write/shell tools unavailable) — best-effort like Copilot, **not** an OS sandbox. `grok -p` runs
 > headless with `--always-approve`; its `sandbox` maps to a **real OS profile (Landlock/Seatbelt)** —
 > but **only on Linux and macOS**, and on Windows grok silently continues *without enforcement*, so
-> read-only there rests on an agent-enforced tool allowlist. `kimi -p` has **no sandbox at all** and
-> auto-executes every tool, like agy. In all six cases
+> read-only there rests on an agent-enforced tool allowlist. `opencode run` maps its `sandbox` to an
+> **`OPENCODE_PERMISSION` policy** — agent-enforced like Copilot's and Cursor's, but the *same on
+> every platform*, and a rule that would prompt is auto-rejected rather than left hanging. `kimi -p`
+> has **no sandbox at all** and auto-executes every tool, like agy. In all seven cases
 > the `workspace` argument is a *starting context*, **not** a security boundary. Only use these with **trusted prompts on trusted
 > content**; for real isolation, run the bridge inside a container or VM. **[Full details →](#security)**
 
@@ -100,22 +113,23 @@ no watch or swarm support yet — see [Experimental backends](#experimental-back
 | 🐝 **Parallel fan-out** | Run N tasks at once, mixing Gemini and Codex workers in a single swarm. |
 | 📁 **Cross-repo reads** | Point a worker at another project directory and let it read/answer there. |
 | 🔌 **Zero new auth** | Piggybacks the logins you already did — no keys for the bridge to manage. |
+| 🆓 **No subscription needed** | opencode's free `opencode/*` models answer with **zero credentials** — a backend that works before you pay for anything. |
 
 ## The backends at a glance
 
 The bridge normalizes every CLI into the same shape, but they differ where it matters. Pick per task.
-The four verified backends first; the [two experimental ones](#experimental-backends) follow.
+The five verified backends first; the [two experimental ones](#experimental-backends) follow.
 
-| | 🛰️ **Antigravity** (`agy`) | 🤖 **Codex** (`codex exec`) | 🐙 **Copilot** (`copilot -p`) | ✳️ **Cursor** (`cursor-agent -p`) |
-|---|---|---|---|---|
-| **Model** | Selectable via `model` (agy's `--model`); Gemini 3.8 Flash (High) default (see [Model & auth](#model--auth)) | Selectable via `model` (codex's `-m`) | Selectable via `model` (`--model`) | Selectable via `model` (`--model`), validated against `cursor-agent models` |
-| **Best at** | Fast, cheap tool-calling; quick answers | Heavier reasoning; real code/repo work | Agentic coding; real code/repo work | Agentic coding; wide model menu (GPT/Claude/Grok/Composer) |
-| **Image generation** | ✅ `antigravity_image` (+ `antigravity_image_swarm`) | ❌ no image model | ❌ no image model | ❌ no image model |
-| **Sandbox** | ❌ no real boundary (`--sandbox` blocks only shell); ⚠️ opt-in `plan=True` blocks writes/shell, agent-enforced | ✅ real, enforced: `read-only` / `workspace-write` / `danger-full-access` | ⚠️ best-effort: tool/path permissions (`read-only` denies write/shell) — **not** an OS sandbox | ⚠️ agent-enforced: mode/force (`read-only` = `--mode ask`, write/shell tools unavailable) — **not** an OS sandbox |
-| **How the answer is read** | `--output-format json` on agy 1.1.8+ (`stream-json` when watching); else stdout, else scraped from `transcript.jsonl` | Written to a file via `-o/--output-last-message` | stdout (`-s` silent mode) | stdout (`--output-format text`) |
-| **Continue mechanism** | Pins the workspace's conversation id (`--conversation`) | Resumes the session id (`codex exec resume <id>`) | Resumes a self-set session UUID (`--session-id`) | Mints a chat id (`create-chat`) and resumes it (`--resume <id>`) |
-| **Auth** | OS credential store (AI Pro session) | `codex login` (ChatGPT account or API key) | OS credential store (`copilot login`) or a GitHub token env | `cursor-agent login` (OS credential store) or `CURSOR_API_KEY` |
-| **In a swarm** | Runs with an isolated `HOME` to avoid state races | Fresh one-shot — needs no isolation | Fresh one-shot — needs no isolation | Fresh one-shot — needs no isolation |
+| | 🛰️ **Antigravity** (`agy`) | 🤖 **Codex** (`codex exec`) | 🐙 **Copilot** (`copilot -p`) | ✳️ **Cursor** (`cursor-agent -p`) | 🧩 **opencode** (`opencode run`) |
+|---|---|---|---|---|---|
+| **Model** | Selectable via `model` (agy's `--model`); Gemini 3.8 Flash (High) default (see [Model & auth](#model--auth)) | Selectable via `model` (codex's `-m`) | Selectable via `model` (`--model`) | Selectable via `model` (`--model`), validated against `cursor-agent models` | Selectable via `model` (`-m`, `"provider/model"`), validated against `opencode models`; **free `opencode/*` ids need no account** |
+| **Best at** | Fast, cheap tool-calling; quick answers | Heavier reasoning; real code/repo work | Agentic coding; real code/repo work | Agentic coding; wide model menu (GPT/Claude/Grok/Composer) | Working with **no subscription**; any provider you do have. Free models are slow (**152–260 s** measured) |
+| **Image generation** | ✅ `antigravity_image` (+ `antigravity_image_swarm`) | ❌ no image model | ❌ no image model | ❌ no image model | ❌ no image model |
+| **Sandbox** | ❌ no real boundary (`--sandbox` blocks only shell); ⚠️ opt-in `plan=True` blocks writes/shell, agent-enforced | ✅ real, enforced: `read-only` / `workspace-write` / `danger-full-access` | ⚠️ best-effort: tool/path permissions (`read-only` denies write/shell) — **not** an OS sandbox | ⚠️ agent-enforced: mode/force (`read-only` = `--mode ask`, write/shell tools unavailable) — **not** an OS sandbox | ⚠️ agent-enforced: an `OPENCODE_PERMISSION` policy that wins over the agent's own rules; **identical on every OS**; a would-be prompt is auto-rejected — **not** an OS sandbox |
+| **How the answer is read** | `--output-format json` on agy 1.1.8+ (`stream-json` when watching); else stdout, else scraped from `transcript.jsonl` | Written to a file via `-o/--output-last-message` | stdout (`-s` silent mode) | stdout (`--output-format text`) | `--format json` NDJSON events (the same stream watch mode renders) |
+| **Continue mechanism** | Pins the workspace's conversation id (`--conversation`) | Resumes the session id (`codex exec resume <id>`) | Resumes a self-set session UUID (`--session-id`) | Mints a chat id (`create-chat`) and resumes it (`--resume <id>`) | Pins the session id every event carries and resumes it (`-s <id>`); falls back to opencode's per-directory `-c` |
+| **Auth** | OS credential store (AI Pro session) | `codex login` (ChatGPT account or API key) | OS credential store (`copilot login`) or a GitHub token env | `cursor-agent login` (OS credential store) or `CURSOR_API_KEY` | **None required** — free `opencode/*` models answer with 0 credentials; `opencode auth login` (or a provider env var) unlocks the rest |
+| **In a swarm** | Runs with an isolated `HOME` to avoid state races | Fresh one-shot — needs no isolation | Fresh one-shot — needs no isolation | Fresh one-shot — needs no isolation | Fresh one-shot — needs no isolation |
 
 <a id="experimental-backends"></a>
 
@@ -174,7 +188,7 @@ from *"the CLI changed"*. Partial reports are welcome; so is a plain "it didn't 
 
 ## How it works
 
-All six backends run **headless** and one-shot per call; the bridge's job is to get a clean answer
+All seven backends run **headless** and one-shot per call; the bridge's job is to get a clean answer
 out of each and hand it to Claude Code as a plain string.
 
 ```mermaid
@@ -246,9 +260,12 @@ itself md5 of the workspace path).
   and run `copilot` then `/login` once (or set a `COPILOT_GITHUB_TOKEN`/`GH_TOKEN` env var).
 - **Cursor:** install `cursor-agent` (`curl https://cursor.com/install -fsSL | bash`) and run
   `cursor-agent login` once (or set a `CURSOR_API_KEY` env var).
+- **opencode:** install `opencode` (`npm i -g opencode-ai`). **That's it** — its free `opencode/*`
+  models answer with no account. Run `opencode auth login` only if you want to point it at your own
+  Anthropic/OpenAI/… key.
 
-You don't need all six — the tools for a missing CLI simply report "not found" via their `*_status`
-tool.
+You don't need all seven — the tools for a missing CLI simply report "not found" via their `*_status`
+tool. If you have no subscriptions at all, start with opencode.
 
 ### Recommended — no clone, you control updates
 
@@ -380,6 +397,14 @@ do the same.
 | `cursor_continue(prompt, workspace?, sandbox?="read-only", timeout_s?=180, watch?=false)` | Continue the Cursor chat **rooted at `workspace`** — resumes the exact chat id the bridge minted (`create-chat` + `--resume`), falling back to the newest on-disk chat for that cwd after a restart. `watch=true` opens the live view. |
 | `cursor_status()` | Setup diagnostics: **the bridge's own version + whether a newer release is available**, plus cursor version and login status (`cursor-agent status`). Spends no quota. |
 
+### 🧩 opencode
+
+| Tool | Purpose |
+|---|---|
+| `opencode_ask(prompt, workspace?, sandbox?="read-only", model?, timeout_s?=300, watch?=false)` | Start a **new** opencode session. `sandbox` maps to an `OPENCODE_PERMISSION` policy (**agent-enforced**, but the same on every OS — see [opencode bridge](#opencode-bridge)); `model` selects the model (`-m`, `"provider/model"`, validated against `opencode models`). `watch=true` opens the live view, streaming opencode's steps from its `--format json` event stream. Note the **300 s** default timeout — the free models are slow. |
+| `opencode_continue(prompt, workspace?, sandbox?="read-only", timeout_s?=300, watch?=false)` | Continue the opencode session **rooted at `workspace`** — resumes the exact session id (`-s`), falling back to opencode's own "most recent session for this directory" (`-c`) after a restart. Sessions really are per directory, so pass the same `workspace` you asked in. `sandbox` applies here too. `watch=true` opens the live view. |
+| `opencode_status()` | Setup diagnostics: **the bridge's own version + whether a newer release is available**, plus opencode version, how many provider credentials are configured (0 is fine — the free models still answer), the model list, and the data dir. Spends no quota. |
+
 ### 🧪 Grok Build *(experimental — [unverified](#experimental-backends))*
 
 | Tool | Purpose |
@@ -400,11 +425,11 @@ do the same.
 
 | Tool | Purpose |
 |---|---|
-| `agent_swarm(tasks, max_concurrency?=4, timeout_s?=180, watch?=false)` | Run **several tasks in parallel across five backends** — each task names its `backend` (`antigravity`, `codex`, `copilot`, `cursor`, or `grok`) plus a `prompt` (an optional `model` and `sandbox` for any backend — on Antigravity `sandbox: "read-only"` means **plan mode**). Every answer comes back in one block; `watch=true` opens the live dashboard ([Swarm](#swarm)). Kimi is not available here — see [Experimental backends](#experimental-backends). |
+| `agent_swarm(tasks, max_concurrency?=4, timeout_s?=180, watch?=false)` | Run **several tasks in parallel across six backends** — each task names its `backend` (`antigravity`, `codex`, `copilot`, `cursor`, `opencode`, or `grok`) plus a `prompt` (an optional `model` and `sandbox` for any backend — on Antigravity `sandbox: "read-only"` means **plan mode**). Every answer comes back in one block; `watch=true` opens the live dashboard ([Swarm](#swarm)). Kimi is not available here — see [Experimental backends](#experimental-backends). |
 
 `workspace` defaults to the MCP server's current working directory. Point it at a real project dir
 for context-aware answers — every backend gives the model access to files under that root (Codex,
-Copilot, and Cursor honoring their `sandbox`).
+Copilot, Cursor, and opencode honoring their `sandbox`).
 
 **`sandbox` now applies to Antigravity too.** It used to be silently ignored there, so an agy task
 written as `{"backend": "agy", "sandbox": "read-only"}` ran completely unrestricted while reading as
@@ -543,6 +568,103 @@ set `CURSOR_API_KEY` for headless use. Check with `cursor_status`. If `cursor-ag
 > unavailable), not an OS sandbox — safer than agy, weaker than Codex's `read-only`. Only use it with
 > **trusted prompts on trusted content**.
 
+<a id="opencode-bridge"></a>
+
+## 🧩 opencode bridge — the one you can try without a subscription
+
+[opencode](https://opencode.ai/) (SST's open-source terminal coding agent, `npm i -g opencode-ai`) is
+stdout-native like Codex/Copilot/Cursor: `opencode run --format json "<prompt>"` runs a prompt
+non-interactively and writes **NDJSON events** to stdout. Three things make it worth a slot of its own:
+
+- **It answers with no account.** `opencode models` lists free hosted ids under opencode's own
+  provider (`opencode/nemotron-3.5-lightning-free`, `opencode/mimo-v2.5-free`, …) that work with
+  **`0 credentials`** configured. Every claim in this section was verified on **opencode 1.18.29 /
+  Windows** against those models — this is the first backend here whose *answer path* could be proven
+  without a paid plan. Add your own key (`opencode auth login`, or `ANTHROPIC_API_KEY` /
+  `OPENAI_API_KEY` …) and the same tools drive Claude- and GPT-class models.
+- **One stream serves both modes.** `--format json` is already incremental, so the plain call and the
+  [watch view](#watch-mode) run the *identical* argv — there is no second output format to drift out
+  of sync (grok needs `streaming-json` for this).
+- **Its permission model is a real knob.** See below.
+
+**Reading the answer.** Each line is one event — `{"type": "...", "timestamp": ..., "sessionID": ...}`
+— and the bridge concatenates the completed `text` parts. An `{"type":"error"}` event carries
+opencode's own message and is surfaced verbatim.
+
+**Continue.** Every event carries the `sessionID`, so the bridge pins it to the workspace and resumes
+that exact session with `-s <id>`. If that in-memory pin is gone (server restarted), it falls back to
+opencode's own `-c`, which resolves to *the most recent session for the run directory* — verified
+live: the same `-c` from a **different** directory starts a fresh session rather than resuming.
+A stale id fails loudly (`Error: Session not found`, exit 1) instead of silently starting over.
+
+**Model.** `-m provider/model`, validated against `opencode models` (which answers with no
+credentials, so validation is free). This one is worth the up-front check: an unknown id comes back
+from opencode as a bare `"Unexpected server error. Check server logs for details."`, which tells you
+nothing.
+
+**Sandbox — `OPENCODE_PERMISSION`, not a flag.** opencode's permission set is a config value, and the
+bridge sets it per run via the `OPENCODE_PERMISSION` env var. Two facts (read off opencode's own
+bundled source, then confirmed by running it) make that a genuine boundary rather than a suggestion:
+
+1. **In headless `run`, a permission that would prompt is auto-rejected** — `if (auto) reply("once")
+   else { println("...auto-rejecting"); reply("reject") }`. So "ask" means "deny" here, and the bridge
+   can never wedge waiting on a prompt nobody can see.
+2. **The config policy is merged *last* into every built-in agent** —
+   `permission: merge(defaults, agent_specific, fromConfig(config.permission))` — so the bridge's
+   policy overrides the agent's own rules. That matters: opencode's nominally read-only `plan` agent
+   still leaves `bash` **allowed**, so `--agent plan` alone would not be a read-only mode.
+
+- **`read-only`** (default) — denies `edit`, `bash`, `task` (no subagent gets a fresh unrestricted
+  turn), `external_directory`, `webfetch` and `websearch`; keeps `read`/`glob`/`grep`/`list`, with
+  `.env` files denied outright.
+- **`workspace-write`** — leaves opencode's own defaults for `edit`/`bash` (already rooted at the run
+  directory) and hard-denies `external_directory`, so reaching outside the workspace is *refused*
+  rather than merely asked.
+- **`danger-full-access`** — opencode's `--auto` ("auto-approve permissions that are not explicitly
+  denied (dangerous!)" — their words), no policy at all. Avoid.
+
+**The A/B test that backs this.** The same prompt — *"create written.txt containing HELLO"* — was run
+against the same free model in both fenced modes. Under `workspace-write` it answered `DONE` in 428 s
+and `written.txt` was there. Under `read-only` it never wrote anything: it spent the entire 630 s
+budget retrying tools it had been denied, and the directory was still empty at the end. Same prompt,
+same model, opposite outcomes — the policy is doing the work, not the model's goodwill.
+
+⚠️ A malformed `OPENCODE_PERMISSION` is **silently ignored** (opencode logs a debug warning and
+carries on with no restrictions), which is exactly the sort of failure that looks like it worked. The
+bridge therefore builds the policy as a dict and `json.dumps` it — never by hand — and a test asserts
+the round-trip.
+
+**Two footguns this bridge already absorbed.**
+
+- **stdin must be closed.** With a non-TTY stdin, opencode reads it *to EOF* and appends it to the
+  prompt (`process.stdin.isTTY ? undefined : await Bun.stdin.text()`). An MCP server's child gets a
+  pipe, not a TTY, so anything short of `DEVNULL` hangs forever. Every call passes it.
+- **A timeout has to kill the whole tree.** On Windows `opencode` on `PATH` is npm's `opencode.CMD`
+  shim, so the real `opencode.exe` is a *grandchild*; killing only the direct child leaves it alive
+  holding the stdout pipe. Measured before the fix: a 270 s timeout returned at **396 s**, and only
+  because the orphan was killed by hand. The bridge runs the blocking path through `Popen` (never
+  `subprocess.run(timeout=…)`, whose Windows branch re-reads that very pipe) and kills the tree with
+  `taskkill /T`.
+
+**Slowness is normal.** The free models are queue-scheduled: measured **152 s**, **214 s** and **260 s**
+for one-word answers. That is why `timeout_s` defaults to **300** here rather than the usual 180 —
+don't mistake a slow free model for a hang, and prefer a configured paid model for real work. One
+observed corollary: a weak free model asked under `read-only` to do something that *needs* a write
+can spend the **whole** timeout retrying tools it will never be given (it wrote nothing, which is the
+point — it just took the full budget to give up). Both fenced modes therefore also deny opencode's
+`doom_loop` retry guard, whose default would already be rejected in headless mode, so that a user
+config which allowed it can't turn a fenced run into an unbounded loop.
+
+**Auth.** None needed for the free models. `opencode auth login` (also spelled `opencode providers`)
+stores credentials in `~/.local/share/opencode/auth.json` — the XDG layout, on Windows too. Set
+**`OPENCODE_BIN`** if `opencode` isn't reliably on `PATH`.
+
+> [!WARNING]
+> `opencode run` runs the model as an **autonomous agent**. Its `sandbox` is **agent-enforced**, not an
+> OS boundary — a tool call is refused by opencode, not by the kernel — but unlike grok's OS sandbox it
+> behaves the same on Windows, macOS and Linux. For a hard boundary, use `codex_ask`. Only use it with
+> **trusted prompts on trusted content**.
+
 <a id="grok-bridge"></a>
 
 ## 🧪 Grok Build bridge — a real sandbox, on two of three platforms
@@ -640,19 +762,21 @@ which no one has confirmed. They'll follow a successful verification report.
 
 Pass **`watch=true`** to **any single-prompt tool** — `antigravity_ask`, `antigravity_continue`,
 `antigravity_image`, `codex_ask`, `codex_continue`, `copilot_ask`, `copilot_continue`, `cursor_ask`,
-`cursor_continue`, `grok_ask`, or `grok_continue` — to **watch
+`cursor_continue`, `opencode_ask`, `opencode_continue`, `grok_ask`, or `grok_continue` — to **watch
 the agent work live in a little chat-style browser window** called **Agent Intern**. The agent
 still runs headless; alongside it the bridge serves a tiny page on `127.0.0.1` and opens it in a
 small, chromeless app window that renders the exchange as a **conversation**: your prompt shows as a
 chat bubble, the agent's live steps stream in a collapsible "thinking" trace — its planner narration
 (▸), the **real commands** it runs (`$`), and completions (✓), read live (from agy's
 `--output-format stream-json` on 1.1.8+ — its transcript on older agy — or codex's / copilot's JSON
-event stream, or cursor's / grok's streaming-json) — and the final
+event stream, cursor's / grok's streaming-json, or opencode's `--format json` events, which are the
+very same stream its non-watched calls read) — and the final
 answer arrives as a Markdown card (and, for
 `antigravity_image` with `watch=true`, the generated image shown inline). A **`*_continue`** run
 opens with the **prior turns of the conversation shown as history**, so it reads as one ongoing
 thread rather than a blank new window. (A watched `cursor_continue` is the exception — Cursor stores
-its transcript in an opaque SQLite blob, so its window opens without visible prior-turn history.)
+its transcript in an opaque SQLite blob, so its window opens without visible prior-turn history; a
+watched `grok_continue` or `opencode_continue` opens without history for the same reason.)
 
 <div align="center">
 <table>
@@ -714,9 +838,9 @@ its transcript in an opaque SQLite blob, so its window opens without visible pri
 `agent_swarm` fans a list of **tasks** out to workers that run **truly
 concurrently** (capped at `max_concurrency`, default 4), then returns every
 worker's result in one block. Each task names its own `backend`, so a **single
-swarm can mix Antigravity (Gemini), Codex, Copilot, and Cursor** workers — hand the
-reasoning-heavy jobs to Codex, Copilot, or Cursor and the quick ones to Gemini, all at
-once. Good for independent sub-tasks: summarise N files, ask the same question
+swarm can mix Antigravity (Gemini), Codex, Copilot, Cursor, opencode and Grok**
+workers — hand the reasoning-heavy jobs to Codex, Copilot, or Cursor, the quick ones to
+Gemini, and the ones you'd rather not spend a paid quota on to opencode, all at once. Good for independent sub-tasks: summarise N files, ask the same question
 about N repos, fix N bugs. (`antigravity_image_swarm` stays separate — it
 generates N images, and only agy has an image model.)
 
@@ -731,6 +855,9 @@ agent_swarm(tasks=[
    "model": "auto", "workspace": "./repo"},
   {"backend": "grok", "prompt": "List the public exports of src/index.ts.",
    "sandbox": "read-only", "model": "grok-4.5", "workspace": "./repo"},
+  {"backend": "opencode", "prompt": "What does src/config.ts read from the env?",
+   "sandbox": "read-only", "model": "opencode/nemotron-3.5-lightning-free",
+   "workspace": "./repo"},
 ])
 ```
 
@@ -746,17 +873,24 @@ concurrent runs sharing one state dir would race. The swarm sidesteps this: each
 **agy** worker runs with its **own isolated `HOME`/`USERPROFILE`**, so agy's
 `brain/`, `cache/`, and `last_conversations.json` never collide — no lock needed.
 Auth still works because agy reads it from the **OS credential store**, not from
-`~/.gemini` (verified on agy 1.0.9). **Codex**, **Copilot**, and **Cursor** workers need no such
-isolation — each is a fresh one-shot (`codex exec` with its own `-o` file; `copilot
--p` with its own self-set session id; `cursor-agent -p` with its own minted chat id). Each worker's `cwd` is its real `workspace`,
+`~/.gemini` (verified on agy 1.0.9). **Codex**, **Copilot**, **Cursor**, **Grok** and **opencode**
+workers need no such isolation — each is a fresh one-shot (`codex exec` with its own `-o` file;
+`copilot -p` with its own self-set session id; `cursor-agent -p` with its own minted chat id;
+`opencode run` with a fresh session per run, and never pinned). Each worker's `cwd` is its real `workspace`,
 so file access is unchanged. Measured ~**2.8× speedup at 3 agy workers** (the AI Pro
 backend does not serialize per-account); higher `max_concurrency` trades
 quota/rate-limit pressure for wall-clock.
 
-- **Per-task fields** — `backend` (`antigravity`/`codex`/`copilot`/`cursor`/`grok`) and `prompt`
-  are required; `workspace` defaults to the server cwd; `sandbox` and `model` apply
-  to **Codex, Copilot, and Cursor** (ignored for Antigravity). Swarm workers are
+- **Per-task fields** — `backend` (`antigravity`/`codex`/`copilot`/`cursor`/`opencode`/`grok`, with
+  `oc` as an alias for opencode) and `prompt` are required; `workspace` defaults to the server cwd;
+  `sandbox` and `model` apply to **Codex, Copilot, Cursor, opencode and Grok** (on Antigravity
+  `sandbox: "read-only"` means plan mode). Swarm workers are
   **one-shot** — there is no `*_continue` for a swarm worker's session.
+- **Per-backend timeout floor** — `timeout_s` is shared by every worker and
+  defaults to 180 s, which is right for Codex/Copilot/Cursor and wrong for
+  opencode, whose free models were measured at **152–428 s**. An opencode worker is
+  therefore given **at least 300 s** whatever you pass; the budget is only raised,
+  never lowered, and a paid model simply finishes early.
 - **Error isolation** — a worker that fails is reported in place; the others still
   return.
 - **`watch=true`** — opens a thin live **Agent Swarm** dashboard (one row per
@@ -767,23 +901,24 @@ quota/rate-limit pressure for wall-clock.
 > A swarm launches **N unsandboxed agents at once** — N× the prompt-injection
 > "lethal trifecta" surface of a single call (see [Security](#security)). Only use
 > it with **trusted prompts on trusted content**. Codex workers honor their
-> enforced `sandbox`; Copilot and Cursor workers honor their best-effort `sandbox`;
+> enforced `sandbox`; Copilot, Cursor and opencode workers honor their best-effort `sandbox`;
 > Antigravity workers have no real boundary.
 
 ## Model & auth
 
-| | 🛰️ **Antigravity** | 🤖 **Codex** | 🐙 **Copilot** | ✳️ **Cursor** |
-|---|---|---|---|---|
-| **Model** | **Selectable** via the `model` argument (agy's `--model`, e.g. `"gemini-3.1-pro-high"`, `"claude-sonnet-4-6"`); omit to use the `"model"` field in agy's `settings.json` (**`gemini-3.8-flash-high`** by default as of 1.1.25). **agy 1.1.5 replaced the old human labels with these slugs** — the old `"Gemini 3.1 Pro (High)"` form no longer works. Switching model in `-p` used to hang (through ~1.0.14) but is **fixed as of 1.0.16**. An unknown model was silently ignored through 1.1.1 and hard-fails in `-p` as of **1.1.2**; either way the bridge validates it against `agy models` and rejects a typo up front. Flash High is speed-optimized for cheap tool-calling; pick a bigger model for heavier work. | **Selectable** via the `model` argument (codex's `-m`). codex does not hang on a switch, so model choice is a first-class knob. | **Selectable** via the `model` argument (`--model`, e.g. `gpt-5.3-codex`, `claude-sonnet-4.6`, `auto`); omit for your account default. An unavailable model errors immediately. | **Selectable** via the `model` argument (`--model`, e.g. `gpt-5.2`, `claude-4-sonnet-thinking`, `auto`, or parameterized ids like `claude-opus-4-8[context=1m]`); a wide GPT/Claude/Grok/Composer menu, validated against `cursor-agent models` (a typo is rejected up front). Omit for your Cursor account default. |
-| **Auth** | Piggybacks whatever credential store `agy` uses on your OS (Windows Credential Manager, macOS Keychain, libsecret on Linux — the bridge never touches it directly). Log in once; every call silent-auths on the **same AI Pro quota** you already pay for. | Uses your existing **Codex login** — ChatGPT account or API key. Run `codex login` once; verify with `codex_status`. | Uses your existing **Copilot login** — run `copilot` then `/login` once (OS credential store), or set `COPILOT_GITHUB_TOKEN`/`GH_TOKEN`/`GITHUB_TOKEN`. Verify with `copilot_status`. | Uses your existing **Cursor login** — run `cursor-agent login` once (OS credential store), or set `CURSOR_API_KEY`. Verify with `cursor_status`. |
+| | 🛰️ **Antigravity** | 🤖 **Codex** | 🐙 **Copilot** | ✳️ **Cursor** | 🧩 **opencode** |
+|---|---|---|---|---|---|
+| **Model** | **Selectable** via the `model` argument (agy's `--model`, e.g. `"gemini-3.1-pro-high"`, `"claude-sonnet-4-6"`); omit to use the `"model"` field in agy's `settings.json` (**`gemini-3.8-flash-high`** by default as of 1.1.25). **agy 1.1.5 replaced the old human labels with these slugs** — the old `"Gemini 3.1 Pro (High)"` form no longer works. Switching model in `-p` used to hang (through ~1.0.14) but is **fixed as of 1.0.16**. An unknown model was silently ignored through 1.1.1 and hard-fails in `-p` as of **1.1.2**; either way the bridge validates it against `agy models` and rejects a typo up front. Flash High is speed-optimized for cheap tool-calling; pick a bigger model for heavier work. | **Selectable** via the `model` argument (codex's `-m`). codex does not hang on a switch, so model choice is a first-class knob. | **Selectable** via the `model` argument (`--model`, e.g. `gpt-5.3-codex`, `claude-sonnet-4.6`, `auto`); omit for your account default. An unavailable model errors immediately. | **Selectable** via the `model` argument (`--model`, e.g. `gpt-5.2`, `claude-4-sonnet-thinking`, `auto`, or parameterized ids like `claude-opus-4-8[context=1m]`); a wide GPT/Claude/Grok/Composer menu, validated against `cursor-agent models` (a typo is rejected up front). Omit for your Cursor account default. | **Selectable** via the `model` argument (`-m`, always `"provider/model"` — e.g. `opencode/nemotron-3.5-lightning-free`, `anthropic/claude-sonnet-4-6`), validated against `opencode models` (a typo is rejected up front, which matters because opencode's own error for an unknown id is an unhelpful "Unexpected server error"). Omit for opencode's configured default. The `opencode/*-free` ids need **no account**, and are slow. |
+| **Auth** | Piggybacks whatever credential store `agy` uses on your OS (Windows Credential Manager, macOS Keychain, libsecret on Linux — the bridge never touches it directly). Log in once; every call silent-auths on the **same AI Pro quota** you already pay for. | Uses your existing **Codex login** — ChatGPT account or API key. Run `codex login` once; verify with `codex_status`. | Uses your existing **Copilot login** — run `copilot` then `/login` once (OS credential store), or set `COPILOT_GITHUB_TOKEN`/`GH_TOKEN`/`GITHUB_TOKEN`. Verify with `copilot_status`. | Uses your existing **Cursor login** — run `cursor-agent login` once (OS credential store), or set `CURSOR_API_KEY`. Verify with `cursor_status`. | **None required.** The free `opencode/*` models answer with `0 credentials`. For anything better, `opencode auth login` (stored in `~/.local/share/opencode/auth.json`) or a provider env var such as `ANTHROPIC_API_KEY`. Verify with `opencode_status`. |
 
 <a id="security"></a>
 
 ## ⚠️ Security
 
-All six backends run the model as an **autonomous agent**. The difference is whether you get a real
-boundary: Codex enforces one everywhere and Grok on Linux/macOS only; Copilot and Cursor offer
-best-effort ones; Antigravity and Kimi offer none.
+All seven backends run the model as an **autonomous agent**. The difference is whether you get a real
+boundary: Codex enforces one everywhere and Grok on Linux/macOS only; Copilot, Cursor and opencode
+offer best-effort, agent-enforced ones (opencode's is the only one that behaves identically on every
+platform); Antigravity and Kimi offer none.
 
 ### Antigravity — no usable boundary
 
@@ -909,6 +1044,27 @@ that MCP meta-tools remain available under an allowlist regardless.
 ⚠️ This backend is [unverified](#experimental-backends) — including these sandbox claims, which could
 not be exercised, because grok checks **auth before it validates `--sandbox`**.
 
+### opencode — agent-enforced, but the same everywhere
+
+`opencode run` maps its `sandbox` to an `OPENCODE_PERMISSION` policy. It is agent-enforced like
+Copilot's and Cursor's, with two properties that make it the strongest of that tier:
+
+- **A rule that would prompt is auto-rejected in headless mode**, so "ask" is effectively "deny" and
+  no call can hang on an invisible approval dialog.
+- **The policy is merged last**, overriding each agent's own rules — including opencode's `plan`
+  agent, which despite the name leaves `bash` allowed.
+
+Modes:
+
+- **`read-only`** (default) — `edit`, `bash`, `task`, `external_directory`, `webfetch`, `websearch`
+  denied; read/search tools kept; `.env` files denied.
+- **`workspace-write`** — edits and shell inside the run directory; `external_directory` denied.
+- **`danger-full-access`** — `--auto`, no policy. Avoid.
+
+Unlike Grok's, none of this depends on the OS — the same policy applies on Windows, macOS and Linux.
+Unlike Codex's, none of it is a kernel boundary: it is opencode refusing its own tool calls. A
+malformed policy is silently ignored by opencode, so the bridge always serializes it with `json.dumps`.
+
 ### Kimi — no boundary at all
 
 `kimi -p` has **no sandbox and no `sandbox` argument**. Print mode auto-executes every tool call with
@@ -921,7 +1077,8 @@ Assume every `kimi_ask` runs arbitrary code with your privileges.
 - The `workspace` argument is only a *starting context*, **not a security boundary** — Antigravity and
   Kimi can and do act outside it; Codex is bounded by its enforced `sandbox`; Grok by its OS profile
   on Linux/macOS and by a tool allowlist elsewhere; Copilot by its best-effort tool/path permissions;
-  Cursor by its agent-enforced mode/force.
+  Cursor by its agent-enforced mode/force; opencode by a permission policy that denies leaving the
+  run directory.
 - An Antigravity or Kimi call effectively runs **arbitrary code with your user privileges**. A Copilot
   or Cursor call does too outside its best-effort denials; a Grok call does on Windows outside its
   allowlist; a Codex call does unless you keep it at `read-only`.
@@ -945,11 +1102,12 @@ staying within them.
 </details>
 
 <details>
-<summary><b>Do I need all six CLIs?</b></summary>
+<summary><b>Do I need all seven CLIs?</b></summary>
 
 No. Each backend is independent — install only the CLI(s) you want. The tools for a missing backend
 report "not found" via their `*_status` tool (`antigravity_status` / `codex_status` /
-`copilot_status` / `cursor_status` / `grok_status` / `kimi_status`) and never crash the server.
+`copilot_status` / `cursor_status` / `opencode_status` / `grok_status` / `kimi_status`) and never
+crash the server. If you hold no subscriptions at all, opencode is the one that still answers.
 </details>
 
 <details>
@@ -1099,6 +1257,22 @@ running **serialized** in your real HOME — correct, but without the speedup. W
 
 ## Status & caveats
 
+- 🆓 **opencode is the first backend verified end-to-end without a subscription.** Its free hosted
+  models answer with `0 credentials`, so the answer path, the session-id resume, the per-directory
+  `-c` scoping and the failure envelopes were all *observed* on opencode 1.18.29 rather than taken
+  from docs — and the flags that couldn't be observed were read off opencode's own bundled source
+  instead of guessed. Two caveats worth knowing before you reach for it: the free models are **slow**
+  (152–260 s for a one-word answer, hence the 300 s default timeout), and its `sandbox` is
+  **agent-enforced** — real, portable across OSes, and still not the kernel boundary Codex gives you.
+  [Full detail →](#opencode-bridge)
+- 🐛 **A headless timeout could hang the call on Windows — found while building the opencode bridge,
+  and fixed there.** `opencode` on `PATH` is npm's `opencode.CMD` shim, so the real `opencode.exe` is
+  a *grandchild*: `subprocess.run(timeout=...)` kills the shim, then its Windows branch re-reads a
+  pipe the surviving grandchild still holds. Measured: a **270 s timeout returned after 396 s**, and
+  only because the orphan was killed by hand. The opencode bridge now runs its blocking path through
+  `Popen` and kills the whole tree (`taskkill /T`); re-measured, a 630 s timeout returns at **630.1 s**
+  with no orphan left behind. The other npm-shim backends share the shape of this bug and have not
+  been re-measured — worth knowing if you ever see a `*_ask` outlive its own timeout.
 - 🧪 **Grok Build and Kimi Code ship UNVERIFIED — help wanted.** Two new backends, neither ever
   exercised against an authenticated account, because I have neither subscription. This is a
   deliberate trade: shipping them unverified is the only way anyone *can* verify them, and the parts
@@ -1491,6 +1665,7 @@ running **serialized** in your real HOME — correct, but without the speedup. W
 - **For the Codex tools:** [`codex`](https://developers.openai.com/codex/) on `PATH` and logged in (`codex login`) — verified on **codex-cli 0.149.1** (note its [Windows sandbox caveat](#security))
 - **For the Copilot tools:** [`copilot`](https://docs.github.com/en/copilot/how-tos/copilot-cli) on `PATH` and logged in (`copilot` → `/login`, or a `COPILOT_GITHUB_TOKEN`/`GH_TOKEN` env) — verified on **copilot 1.0.80**
 - **For the Cursor tools:** [`cursor-agent`](https://cursor.com/cli) on `PATH` and logged in (`cursor-agent login`, or a `CURSOR_API_KEY` env) — verified on **cursor-agent 2026.07.23**
+- **For the opencode tools:** [`opencode`](https://opencode.ai/) on `PATH` (`npm i -g opencode-ai`) — **no login needed** for its free `opencode/*` models; `opencode auth login` (or a provider env var) for everything else — verified end-to-end on **opencode 1.18.29**
 - **For the Grok tools (experimental):** [`grok`](https://docs.x.ai/build/overview) on `PATH` and logged in (`grok login`, or an `XAI_API_KEY` env) plus a SuperGrok / X Premium+ subscription — flag surface verified on **grok 1.0.3**, [answer path unverified](#experimental-backends)
 - **For the Kimi tools (experimental):** [`kimi`](https://github.com/MoonshotAI/kimi-code) on `PATH` and logged in (`kimi login`, or an API key in `~/.kimi-code/config.toml`) — flag surface verified on **kimi 0.29.1**, [answer path unverified](#experimental-backends)
 
@@ -1504,14 +1679,15 @@ Each backend is independent — install only the CLI(s) you plan to use; the oth
 > **`COPILOT_BIN`** if `copilot` isn't (the winget install lands under
 > `%LOCALAPPDATA%\Microsoft\WinGet\Packages\GitHub.Copilot_*\copilot.exe`). Finally, set
 > **`CURSOR_BIN`** if `cursor-agent` isn't reliably on `PATH` (the installer drops a `cursor-agent.CMD`
-> shim a bare name can't launch on Windows). **`GROK_BIN`** and **`KIMI_BIN`** do the same for the two
-> experimental backends — though the Grok bridge already falls back to the installer's own
+> shim a bare name can't launch on Windows), and **`OPENCODE_BIN`** if `opencode` isn't (npm drops an
+> `opencode.CMD` shim with exactly the same problem). **`GROK_BIN`** and **`KIMI_BIN`** do the same for
+> the two experimental backends — though the Grok bridge already falls back to the installer's own
 > `~/.grok/bin` on a `PATH` miss, which matters because that installer appends to the user PATH and
 > the change never reaches an already-running server.
 
 The bridge uses only cross-platform Python (`Path.home()`, `subprocess`) and reads paths under
-`~/.gemini/antigravity-cli/`, `~/.codex/`, `~/.copilot/`, `~/.cursor/`, `~/.grok/`, and
-`~/.kimi-code/`, which the CLIs write the same way on every OS. **Developed and verified on Windows; macOS and Linux should work unmodified
+`~/.gemini/antigravity-cli/`, `~/.codex/`, `~/.copilot/`, `~/.cursor/`, `~/.grok/`, `~/.kimi-code/`,
+and `~/.local/share/opencode/`, which the CLIs write the same way on every OS. **Developed and verified on Windows; macOS and Linux should work unmodified
 provided the CLIs run there.** If you test it on those platforms, please open an issue / PR to confirm.
 
 ## 🌐 Community & Acknowledgments

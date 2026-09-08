@@ -471,6 +471,7 @@ import copilot_bridge
 import cursor_bridge
 import grok_bridge
 import kimi_bridge
+import opencode_bridge
 
 # Server-level instructions. The MCP client sends these to its model on connect
 # (Claude Code surfaces them as an "MCP Server Instructions" block), so EVERY
@@ -481,11 +482,12 @@ import kimi_bridge
 # value content here is what a model can't infer from tool schemas alone —
 # proactive triggers, which backend to pick, and the workspace footgun.
 SERVER_INSTRUCTIONS = """\
-This server bridges six external coding CLIs — Antigravity (Gemini), OpenAI \
-Codex, GitHub Copilot, Cursor, and the two EXPERIMENTAL ones, Grok Build (xAI) \
-and Kimi Code (Moonshot) — into your session as sub-agents that run on the \
-USER'S OWN quota. Delegating here spends that quota instead of your tokens, gets \
-a second model-family opinion, or generates images.
+This server bridges seven external coding CLIs — Antigravity (Gemini), OpenAI \
+Codex, GitHub Copilot, Cursor, opencode (any model, incl. FREE ones), and the \
+two EXPERIMENTAL ones, Grok Build (xAI) and Kimi Code (Moonshot) — into your \
+session as sub-agents that run on the USER'S OWN quota. Delegating here spends \
+that quota instead of your tokens, gets a second model-family opinion, or \
+generates images.
 
 Reach for these tools when:
 - the user wants an IMAGE — antigravity_image is your only image generator \
@@ -524,6 +526,12 @@ ask mode), not an OS boundary.
 - grok_* (Grok Build, xAI — EXPERIMENTAL, never live-verified) — needs SuperGrok \
 / X Premium+ or XAI_API_KEY. Real OS sandbox, but on LINUX/macOS ONLY: on Windows \
 it silently does not enforce, so read-only there rests on a tool allowlist.
+- opencode_* (opencode, SST) — the ONLY backend that needs no subscription: its \
+free `opencode/*` models answer with zero credentials, so reach for it when the \
+user has no other plan, when you want a model family none of the others cover, \
+or to spare a paid quota. Add a key for Claude/GPT-class models. Sandbox is \
+agent-enforced (a permission policy), not an OS boundary, but it behaves the \
+same on every platform. Free models are SLOW — allow minutes, not seconds.
 - kimi_* (Kimi Code, Moonshot — EXPERIMENTAL, never live-verified) — Kimi K2 \
 family; like antigravity it has NO sandbox and auto-executes tools, so trusted \
 prompts only. Needs `kimi login` or an API key.
@@ -545,7 +553,8 @@ upgrade command the row names. The startup notice for this only reaches the \
 host's logs, so relaying it is the one way they hear about it.
 
 Security: they all run as autonomous agents. Codex's sandbox is the only hard \
-boundary everywhere; grok's is a real one too, but only on Linux/macOS. Use only \
+boundary everywhere; grok's is a real one too, but only on Linux/macOS; \
+opencode's is agent-enforced, but behaves the same on every platform. Use only \
 with trusted prompts on trusted content."""
 
 mcp = FastMCP("agent-intern", instructions=SERVER_INSTRUCTIONS)
@@ -554,7 +563,7 @@ mcp = FastMCP("agent-intern", instructions=SERVER_INSTRUCTIONS)
 # installed package metadata, which goes stale on editable installs). Keep in
 # sync with pyproject.toml's version. Compared at startup against the latest
 # tag on GitHub so a long-lived clone learns when to `git pull`.
-__version__ = "0.29.1"
+__version__ = "0.30.0"
 
 # Logs go to stderr (stdout is the MCP protocol channel). Quiet by default;
 # set AGY_BRIDGE_DEBUG=1 for per-call diagnostics. See _configure_logging.
@@ -3565,7 +3574,7 @@ def _broadcast_workspaces(workspaces: Optional[list], n: int):
 
 @mcp.tool(
     annotations={
-        "title": "Agent swarm (mixed Antigravity + Codex + Copilot + Cursor, parallel)",
+        "title": "Agent swarm (mixed Antigravity + Codex + Copilot + Cursor + …, parallel)",
         "readOnlyHint": False,
         "idempotentHint": False,
         "openWorldHint": True,
@@ -3580,10 +3589,10 @@ def agent_swarm(
     """Run SEVERAL tasks IN PARALLEL across ALL backends in a single swarm.
 
     Each task is its own worker and names the backend to run on, so one swarm can
-    mix Antigravity (Gemini), Codex, Copilot, Cursor, and Grok workers — they run
-    truly concurrently (capped at `max_concurrency`) and every answer comes back in
-    one labelled block. A worker that fails is reported in place; the others still
-    return.
+    mix Antigravity (Gemini), Codex, Copilot, Cursor, Grok and opencode workers —
+    they run truly concurrently (capped at `max_concurrency`) and every answer comes
+    back in one labelled block. A worker that fails is reported in place; the others
+    still return.
 
     SECURITY: this launches N unsandboxed agents at once — N times the
     prompt-injection surface of a single call (see the module SECURITY note). Only
@@ -3592,15 +3601,18 @@ def agent_swarm(
     Args:
         tasks: One object per parallel worker:
                - backend: "antigravity" (alias "agy"/"gemini"), "codex",
-                          "copilot" (alias "gh"/"github"), "cursor", or "grok"
-                          (alias "xai"; EXPERIMENTAL — see grok_ask) (required)
+                          "copilot" (alias "gh"/"github"), "cursor", "opencode"
+                          (alias "oc" — the one backend that needs no
+                          subscription; see opencode_ask), or "grok" (alias
+                          "xai"; EXPERIMENTAL — see grok_ask) (required)
                - prompt:  the question or instruction (required)
                - workspace: working dir for that worker (default: server cwd)
                - sandbox: "read-only" (default), "workspace-write", or
                           "danger-full-access". Codex's is an enforced OS sandbox
                           everywhere; Grok's is enforced on Linux/macOS only;
-                          Copilot's and Cursor's are agent/tool-level, not OS
-                          boundaries — see copilot_ask / cursor_ask / grok_ask.
+                          Copilot's, Cursor's and opencode's are agent/tool-level,
+                          not OS boundaries — see copilot_ask / cursor_ask /
+                          grok_ask / opencode_ask.
                           ANTIGRAVITY is the odd one: "read-only" maps to agy's
                           plan mode (it investigates and writes a plan instead of
                           editing files or running commands — see antigravity_ask's
@@ -3612,13 +3624,19 @@ def agent_swarm(
                           long-standing default, unlike every other backend here,
                           so fence it explicitly if you want it fenced.
                - model:   optional model override for ANY backend — Codex's `-m`,
-                          Copilot's/Cursor's `--model`, Grok's `-m`, or
-                          Antigravity's `--model` (an agy slug like
-                          "claude-sonnet-4-6"; validated against each backend's
-                          model list). Omit for each backend's default.
+                          Copilot's/Cursor's `--model`, Grok's/opencode's `-m`
+                          (opencode wants "provider/model"), or Antigravity's
+                          `--model` (an agy slug like "claude-sonnet-4-6";
+                          validated against each backend's model list). Omit for
+                          each backend's default.
         max_concurrency: Max workers running at once (default 4). Higher = faster
                          but more quota/rate-limit pressure and more agents at once.
-        timeout_s: Per-worker timeout in seconds. Default 180.
+        timeout_s: Per-worker timeout in seconds. Default 180. An opencode
+                   worker is given at least 300s regardless — its free models are
+                   queue-scheduled and were measured at 152-428s, so the shared
+                   default would kill about half of them mid-answer and report a
+                   slow worker as a broken one. The budget is only ever raised,
+                   never lowered.
         watch: If true, open the live "Agent Swarm" dashboard window (one row per
                worker, with a backend badge; click a row for its full step log).
     """
@@ -4723,6 +4741,267 @@ def kimi_status() -> str:
     rows = [_bridge_version_status()] + kimi_bridge.status_rows()
     width = max(len(label) for label, _, _ in rows)
     lines = ["kimi bridge status  (EXPERIMENTAL — community-verified only)"]
+    for label, ok, detail in rows:
+        mark = "ok" if ok else "!!"
+        lines.append(f"  {label.ljust(width)}  [{mark}] {detail}")
+    lines.append("Overall: " + ("OK" if all(ok for _, ok, _ in rows) else "PROBLEMS FOUND"))
+    return "\n".join(lines)
+
+
+# ============================================================ opencode tools
+# LIVE-VERIFIED, unlike grok/kimi — opencode's free `opencode/*` models answer with
+# no credentials at all, so the whole path (answer, resume, permission policy,
+# event stream) was exercised end-to-end rather than inferred. See
+# opencode_bridge's module docstring.
+def _opencode_tool_line(part: dict) -> str:
+    """A short, human-readable line for one opencode `tool_use` event part.
+
+    The part is opencode's tool part: `{tool: "<name>", state: {status, input, …}}`,
+    whose state schema (read off opencode's bundle) carries `input` on every status,
+    a human `title` when completed, and `error` when it failed. Prefer a
+    command/path-like input field, then that title, then the bare tool name —
+    mirroring _grok_tool_line.
+    """
+    state = part.get("state") if isinstance(part.get("state"), dict) else {}
+    tool = part.get("tool") if isinstance(part.get("tool"), str) else ""
+    raw = state.get("input")
+    if isinstance(raw, dict):
+        for f in ("command", "filePath", "file_path", "path", "pattern", "query", "url"):
+            v = raw.get(f)
+            if isinstance(v, str) and v.strip():
+                line = v.strip().splitlines()[0]
+                return f"{tool}: {line}" if tool else line
+    title = state.get("title")
+    if isinstance(title, str) and title.strip():
+        return title.strip().splitlines()[0]
+    return tool.strip()
+
+
+def _opencode_event_to_watch_lines(ev: dict) -> list[tuple[str, str]]:
+    """Map one opencode `--format json` event to (kind, text) watch lines
+    (kind is 'narration' | 'command' | 'result'), mirroring
+    _grok_event_to_watch_lines. Returns [] for events not worth showing.
+    """
+    etype = ev.get("type")
+    part = ev.get("part") if isinstance(ev.get("part"), dict) else {}
+    if etype in ("text", "reasoning"):
+        text = part.get("text")
+        if isinstance(text, str) and text.strip():
+            return [("narration", text.strip().splitlines()[0][:200])]
+        return []
+    if etype == "tool_use":
+        # opencode emits tool_use only once the call has finished, so a single
+        # event carries both what ran and how it went.
+        line = _opencode_tool_line(part)
+        lines: list[tuple[str, str]] = []
+        if line:
+            lines.append(("command", line[:200]))
+        state = part.get("state") if isinstance(part.get("state"), dict) else {}
+        if state.get("status") == "error":
+            lines.append(("result", f"error: {state.get('error') or ''}"[:200]))
+        elif state.get("status") == "completed":
+            lines.append(("result", "done"))
+        return lines
+    if etype == "error":
+        err = ev.get("error")
+        msg = ""
+        if isinstance(err, dict):
+            data = err.get("data")
+            msg = str(data.get("message")) if isinstance(data, dict) and data.get("message") else ""
+            msg = msg or str(err.get("name") or "")
+        return [("result", f"error: {msg}"[:200])]
+    return []
+
+
+def _run_opencode_watched(
+    prompt: str,
+    workspace: str,
+    sandbox: str,
+    model: Optional[str],
+    continue_conv: bool,
+    timeout_s: int,
+) -> str:
+    """Like opencode_bridge.run_opencode, but stream its steps to the watch window.
+
+    opencode's one `--format json` stream is already incremental, so watch mode
+    reuses the very argv the plain path runs — there is no second output format to
+    drift (grok has to swap in `streaming-json`). Return value is identical to
+    opencode_ask.
+    """
+    start = time.time()
+    title = prompt.strip().splitlines()[0] if prompt.strip() else ""
+    if len(title) > 200:
+        title = title[:200].rsplit(" ", 1)[0] + "…"
+    history = opencode_bridge.read_history(workspace, continue_conv)
+    rid = _watch_begin(title, start, timeout_s, backend="opencode", prompt=prompt, history=history)
+    try:
+        port = _ensure_watch_server()
+        _open_watch_window(_watch_url(port, rid), rid)
+    except Exception:  # noqa: BLE001 — the viewer is best-effort, never fatal
+        pass
+
+    def on_event(ev: dict) -> None:
+        watch_lines = _opencode_event_to_watch_lines(ev)
+        if watch_lines:
+            t = round(time.time() - start, 1)
+            _watch_append(rid, [{"kind": k, "text": x, "t": t} for k, x in watch_lines])
+
+    try:
+        answer = opencode_bridge.run_opencode_streaming(
+            prompt,
+            workspace,
+            sandbox,
+            model,
+            continue_conv,
+            timeout_s,
+            on_event=on_event,
+        )
+    except Exception as e:  # noqa: BLE001 — show the failure in the window, then re-raise
+        _watch_finish(rid, "error", f"({e})"[:200], time.time() - start)
+        raise
+    _watch_finish(rid, "done", answer, time.time() - start)
+    return answer
+
+
+@mcp.tool(
+    annotations={
+        "title": "Ask opencode (new session)",
+        "readOnlyHint": False,  # opencode may edit files / run commands per sandbox
+        "idempotentHint": False,
+        "openWorldHint": True,  # talks to an external model provider
+    }
+)
+async def opencode_ask(
+    prompt: str,
+    workspace: Optional[str] = None,
+    sandbox: str = opencode_bridge.DEFAULT_SANDBOX,
+    model: Optional[str] = None,
+    timeout_s: int = 300,
+    watch: bool = False,
+    ctx: Optional[Context] = None,
+) -> str:
+    """Ask opencode (`opencode run`) a question or task in a NEW session.
+
+    The one backend here that needs NO subscription: opencode's own free hosted
+    models (`opencode/*-free`, see `opencode models`) answer with zero credentials
+    configured, so this works on a machine that has never logged in to anything.
+    Add a key with `opencode auth login` for Claude/GPT-class models. Returns the
+    agent's final message, reconstructed from opencode's `--format json` events.
+    Point `workspace` at a project dir for context-aware answers.
+
+    ⚠️ The free models are SLOW (queue-scheduled — a one-word answer has taken
+    minutes), which is why timeout_s defaults to 300 here. Prefer a configured
+    paid model for anything long, and don't mistake slowness for a hang.
+
+    Args:
+        prompt: Question or instruction for opencode.
+        workspace: Working root (`--dir`). Defaults to the server cwd.
+        sandbox: Permission policy, applied via opencode's OPENCODE_PERMISSION and
+                 enforced by the agent on every platform alike: "read-only"
+                 (default — no edit/bash/subagent/network tools, `.env` files
+                 denied), "workspace-write" (edit and shell inside the workspace;
+                 reaching outside it is denied), or "danger-full-access"
+                 (opencode's own `--auto`, no policy — avoid).
+                 ⚠️ Agent-enforced, NOT an OS boundary: a determined tool call is
+                 refused by opencode, not by the kernel. For a hard boundary, use
+                 codex.
+        model: Optional model id (`-m`, "provider/model" — e.g.
+               "opencode/nemotron-3.5-lightning-free"); validated against
+               `opencode models` and rejected on a typo. Omit for opencode's
+               configured default.
+        timeout_s: Max seconds to wait for opencode to complete. Default 300.
+        watch: If true, open a live "watch" view streaming opencode's steps from
+               the same `--format json` event stream. Same final text is returned.
+               Best-effort. Default false.
+    """
+    ws = opencode_bridge.normalize_workspace(workspace)
+    opencode_bridge.validate_sandbox(sandbox)  # fail fast — a bad mode must not run wide open
+    model = opencode_bridge.validate_model(model)  # fail fast on a typo (opencode models)
+    if watch:
+        return await asyncio.to_thread(
+            _run_opencode_watched, prompt, ws, sandbox, model, False, timeout_s
+        )
+    return await _run_with_progress(
+        opencode_bridge.run_opencode,
+        (prompt, ws, sandbox, model, False, timeout_s),
+        ctx,
+        timeout_s,
+        label="opencode",
+    )
+
+
+@mcp.tool(
+    annotations={
+        "title": "Continue opencode session",
+        "readOnlyHint": False,
+        "idempotentHint": False,
+        "openWorldHint": True,
+    }
+)
+async def opencode_continue(
+    prompt: str,
+    workspace: Optional[str] = None,
+    sandbox: str = opencode_bridge.DEFAULT_SANDBOX,
+    timeout_s: int = 300,
+    watch: bool = False,
+    ctx: Optional[Context] = None,
+) -> str:
+    """Continue the opencode session rooted at this workspace.
+
+    Resumes the exact session id opencode reported on the last opencode_ask in this
+    workspace (`-s <id>`), falling back to opencode's own "most recent session for
+    this directory" (`-c`) when that in-memory pin is gone — so it still works after
+    a server restart. Session scoping is per directory (verified live: the same
+    `-c` from a different directory starts a fresh session), so pass the same
+    `workspace` you asked in. The permission policy applies per invocation, so
+    `sandbox` takes effect here too: analyze read-only with opencode_ask, then
+    continue with "workspace-write" to apply the fix.
+
+    Args:
+        prompt: Follow-up message for the existing session.
+        workspace: Working root used by the prior session. Defaults to the server cwd.
+        sandbox: Permission policy for THIS turn (default "read-only"). Same values
+                 and caveats as opencode_ask.
+        timeout_s: Max seconds to wait for opencode to complete. Default 300.
+        watch: If true, open the live "watch" view streaming opencode's steps
+               (same viewer as opencode_ask). Default false.
+    """
+    ws = opencode_bridge.normalize_workspace(workspace)
+    opencode_bridge.validate_sandbox(sandbox)
+    if watch:
+        return await asyncio.to_thread(
+            _run_opencode_watched, prompt, ws, sandbox, None, True, timeout_s
+        )
+    return await _run_with_progress(
+        opencode_bridge.run_opencode,
+        (prompt, ws, sandbox, None, True, timeout_s),
+        ctx,
+        timeout_s,
+        label="opencode",
+    )
+
+
+@mcp.tool(
+    annotations={
+        "title": "opencode bridge diagnostics",
+        "readOnlyHint": True,  # only runs `opencode --version`/`models`/`providers list`
+        "idempotentHint": True,
+        "openWorldHint": False,
+    }
+)
+def opencode_status() -> str:
+    """Report diagnostics for the opencode bridge setup (spends no quota).
+
+    Reports the bridge's own version and any newer release (same update notice
+    antigravity_status shows), then checks whether `opencode` is found (and its
+    version), how many provider credentials are configured, which model ids are
+    available, and where opencode keeps its data. "0 credentials" is NOT a failure
+    here — opencode's free `opencode/*` models still answer — so that row stays ok
+    as long as models are listed.
+    """
+    rows = [_bridge_version_status()] + opencode_bridge.status_rows()
+    width = max(len(label) for label, _, _ in rows)
+    lines = ["opencode bridge status"]
     for label, ok, detail in rows:
         mark = "ok" if ok else "!!"
         lines.append(f"  {label.ljust(width)}  [{mark}] {detail}")
