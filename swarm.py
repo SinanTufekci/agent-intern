@@ -55,6 +55,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Union
 
+import proc_tree
+
 DEFAULT_MAX_CONCURRENCY = 4
 _REAL_SETTINGS = Path.home() / ".gemini" / "antigravity-cli" / "settings.json"
 
@@ -160,11 +162,10 @@ def _probe_isolated_auth() -> Optional[bool]:
         return None
     home = _make_isolated_home()
     try:
-        proc = subprocess.run(
+        proc = proc_tree.run_captured(
             [server.AGY_BIN, "--print-timeout", "20s", "-p", "/usage"],
             env=_env_for_home(home),
             stdin=subprocess.DEVNULL,
-            capture_output=True,
             **_TEXT,
             timeout=25,
             **server._spawn_kwargs(),
@@ -388,12 +389,11 @@ def _run_text_worker(index, prompt, workspace, model, timeout_s, plan=False) -> 
         if model:
             args += ["--model", model]
         args += ["-p", prompt]
-        proc = subprocess.run(
+        proc = proc_tree.run_captured(
             args,
             cwd=workspace,
             stdin=subprocess.DEVNULL,
             env=_env_for_home(home),
-            capture_output=True,
             **_TEXT,
             timeout=timeout_s + 30,
             **server._spawn_kwargs(),
@@ -520,7 +520,7 @@ def _run_text_worker_watched(
         hard = start + timeout_s + 30
         while proc.poll() is None:
             if time.time() > hard:
-                proc.kill()
+                proc_tree.kill_tree(proc)  # the grandchild must die too — see proc_tree
                 raise RuntimeError("timeout")
             feed.pump()
             swarm_watch.worker_update(index, elapsed=round(time.time() - start, 1))
@@ -657,12 +657,11 @@ def _run_image_worker(index, prompt, target, workspace, timeout_s) -> WorkerResu
         os.makedirs(workspace, exist_ok=True)
         wrapped = server._wrap_image_prompt(prompt, target)
         args = server._agy_base_args(timeout_s) + ["-p", wrapped]
-        proc = subprocess.run(
+        proc = proc_tree.run_captured(
             args,
             cwd=workspace,
             stdin=subprocess.DEVNULL,
             env=_env_for_home(home),
-            capture_output=True,
             **_TEXT,
             timeout=timeout_s + 30,
             **server._spawn_kwargs(),
@@ -756,7 +755,7 @@ def _run_image_worker_watched(index, prompt, target, workspace, timeout_s) -> Wo
         hard = start + timeout_s + 30
         while proc.poll() is None:
             if time.time() > hard:
-                proc.kill()
+                proc_tree.kill_tree(proc)  # the grandchild must die too — see proc_tree
                 raise RuntimeError("timeout")
             feed.pump()
             swarm_watch.worker_update(index, elapsed=round(time.time() - start, 1))

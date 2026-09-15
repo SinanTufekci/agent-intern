@@ -245,7 +245,7 @@ def test_create_chat_parses_uuid(monkeypatch):
         stdout = f"{SAMPLE_CID}\n"
         stderr = ""
 
-    monkeypatch.setattr(cursor_bridge.subprocess, "run", lambda *a, **k: P())
+    monkeypatch.setattr(cursor_bridge.proc_tree, "run_captured", lambda *a, **k: P())
     assert cursor_bridge.create_chat("C:\\ws") == SAMPLE_CID
 
 
@@ -255,7 +255,7 @@ def test_create_chat_raises_without_id(monkeypatch):
         stdout = "no id here"
         stderr = ""
 
-    monkeypatch.setattr(cursor_bridge.subprocess, "run", lambda *a, **k: P())
+    monkeypatch.setattr(cursor_bridge.proc_tree, "run_captured", lambda *a, **k: P())
     with pytest.raises(RuntimeError):
         cursor_bridge.create_chat("C:\\ws")
 
@@ -280,7 +280,7 @@ def test_list_models_parses_ids(monkeypatch):
         stdout = _MODELS_OUT
         stderr = ""
 
-    monkeypatch.setattr(cursor_bridge.subprocess, "run", lambda *a, **k: P())
+    monkeypatch.setattr(cursor_bridge.proc_tree, "run_captured", lambda *a, **k: P())
     ids = cursor_bridge.list_models()
     assert "auto" in ids and "gpt-5.2" in ids and "sonnet-4-thinking" in ids
     assert "Available" not in ids  # header line skipped (no ' - ')
@@ -422,7 +422,7 @@ def test_auth_status_logged_in(monkeypatch):
         stdout = "✓ Logged in as me@example.com\n"
         stderr = ""
 
-    monkeypatch.setattr(cursor_bridge.subprocess, "run", lambda *a, **k: P())
+    monkeypatch.setattr(cursor_bridge.proc_tree, "run_captured", lambda *a, **k: P())
     ok, detail = cursor_bridge.auth_status()
     assert ok is True
     assert "Logged in as me@example.com" in detail
@@ -435,7 +435,7 @@ def test_auth_status_not_logged_in(monkeypatch):
         stdout = "Not authenticated. Run cursor-agent login.\n"
         stderr = ""
 
-    monkeypatch.setattr(cursor_bridge.subprocess, "run", lambda *a, **k: P())
+    monkeypatch.setattr(cursor_bridge.proc_tree, "run_captured", lambda *a, **k: P())
     ok, _ = cursor_bridge.auth_status()
     assert ok is False
 

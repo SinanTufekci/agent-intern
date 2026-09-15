@@ -548,13 +548,15 @@ def test_streaming_survives_a_broken_on_event(tmp_path, monkeypatch):
 
 
 def test_list_models_parses_live_output(monkeypatch):
-    monkeypatch.setattr(subprocess, "run", _fake_run(MODELS_OUT))
+    monkeypatch.setattr(opencode_bridge.proc_tree, "run_captured", _fake_run(MODELS_OUT))
     assert opencode_bridge.list_models()[0] == "opencode/big-pickle"
     assert "opencode/nemotron-3.5-lightning-free" in opencode_bridge.list_models()
 
 
 def test_list_models_skips_lines_without_a_provider(monkeypatch):
-    monkeypatch.setattr(subprocess, "run", _fake_run("\nheader\nopencode/x\n"))
+    monkeypatch.setattr(
+        opencode_bridge.proc_tree, "run_captured", _fake_run("\nheader\nopencode/x\n")
+    )
     assert opencode_bridge.list_models() == ["opencode/x"]
 
 
@@ -562,7 +564,7 @@ def test_list_models_empty_when_unrunnable(monkeypatch):
     def boom(*a, **k):
         raise OSError("nope")
 
-    monkeypatch.setattr(subprocess, "run", boom)
+    monkeypatch.setattr(opencode_bridge.proc_tree, "run_captured", boom)
     assert opencode_bridge.list_models() == []
 
 
@@ -570,27 +572,29 @@ def test_list_models_does_not_cache_a_failure(monkeypatch):
     def boom(*a, **k):
         raise OSError("nope")
 
-    monkeypatch.setattr(subprocess, "run", boom)
+    monkeypatch.setattr(opencode_bridge.proc_tree, "run_captured", boom)
     assert opencode_bridge.list_models() == []
-    monkeypatch.setattr(subprocess, "run", _fake_run(MODELS_OUT))
+    monkeypatch.setattr(opencode_bridge.proc_tree, "run_captured", _fake_run(MODELS_OUT))
     assert opencode_bridge.list_models()
 
 
 def test_list_models_caches(monkeypatch):
     calls = []
-    monkeypatch.setattr(subprocess, "run", _fake_run(MODELS_OUT, seen=calls))
+    monkeypatch.setattr(
+        opencode_bridge.proc_tree, "run_captured", _fake_run(MODELS_OUT, seen=calls)
+    )
     opencode_bridge.list_models()
     opencode_bridge.list_models()
     assert len(calls) == 1
 
 
 def test_validate_model_accepts_known(monkeypatch):
-    monkeypatch.setattr(subprocess, "run", _fake_run(MODELS_OUT))
+    monkeypatch.setattr(opencode_bridge.proc_tree, "run_captured", _fake_run(MODELS_OUT))
     assert opencode_bridge.validate_model("opencode/big-pickle") == "opencode/big-pickle"
 
 
 def test_validate_model_rejects_unknown(monkeypatch):
-    monkeypatch.setattr(subprocess, "run", _fake_run(MODELS_OUT))
+    monkeypatch.setattr(opencode_bridge.proc_tree, "run_captured", _fake_run(MODELS_OUT))
     with pytest.raises(ValueError, match="unknown opencode model"):
         opencode_bridge.validate_model("opencode/nope")
 
@@ -601,7 +605,7 @@ def test_validate_model_none_passthrough():
 
 
 def test_validate_model_lenient_when_list_unavailable(monkeypatch):
-    monkeypatch.setattr(subprocess, "run", _fake_run(""))
+    monkeypatch.setattr(opencode_bridge.proc_tree, "run_captured", _fake_run(""))
     assert opencode_bridge.validate_model("whatever/x") == "whatever/x"
 
 
@@ -616,20 +620,22 @@ PROVIDERS_OUT_EMPTY = (
 
 
 def test_auth_status_no_credentials_is_ok_when_models_exist(monkeypatch):
-    monkeypatch.setattr(subprocess, "run", _fake_run(PROVIDERS_OUT_EMPTY + MODELS_OUT))
+    monkeypatch.setattr(
+        opencode_bridge.proc_tree, "run_captured", _fake_run(PROVIDERS_OUT_EMPTY + MODELS_OUT)
+    )
     ok, detail = opencode_bridge.auth_status()
     assert ok is True
     assert "0 credentials" in detail
 
 
 def test_auth_status_no_credentials_and_no_models_is_a_problem(monkeypatch):
-    monkeypatch.setattr(subprocess, "run", _fake_run(PROVIDERS_OUT_EMPTY))
+    monkeypatch.setattr(opencode_bridge.proc_tree, "run_captured", _fake_run(PROVIDERS_OUT_EMPTY))
     ok, _ = opencode_bridge.auth_status()
     assert ok is False
 
 
 def test_auth_status_reports_configured_credentials(monkeypatch):
-    monkeypatch.setattr(subprocess, "run", _fake_run("└  2 credentials\n"))
+    monkeypatch.setattr(opencode_bridge.proc_tree, "run_captured", _fake_run("└  2 credentials\n"))
     ok, detail = opencode_bridge.auth_status()
     assert ok is True
     assert "2 credentials" in detail
@@ -639,14 +645,14 @@ def test_auth_status_handles_unrunnable(monkeypatch):
     def boom(*a, **k):
         raise OSError("nope")
 
-    monkeypatch.setattr(subprocess, "run", boom)
+    monkeypatch.setattr(opencode_bridge.proc_tree, "run_captured", boom)
     ok, detail = opencode_bridge.auth_status()
     assert ok is False
     assert "providers list" in detail
 
 
 def test_opencode_version_first_line(monkeypatch):
-    monkeypatch.setattr(subprocess, "run", _fake_run("1.18.29\n"))
+    monkeypatch.setattr(opencode_bridge.proc_tree, "run_captured", _fake_run("1.18.29\n"))
     assert opencode_bridge.opencode_version() == "1.18.29"
 
 
@@ -654,12 +660,14 @@ def test_opencode_version_none_when_missing(monkeypatch):
     def boom(*a, **k):
         raise OSError("nope")
 
-    monkeypatch.setattr(subprocess, "run", boom)
+    monkeypatch.setattr(opencode_bridge.proc_tree, "run_captured", boom)
     assert opencode_bridge.opencode_version() is None
 
 
 def test_status_rows_shape(monkeypatch):
-    monkeypatch.setattr(subprocess, "run", _fake_run("1.18.29\n" + MODELS_OUT))
+    monkeypatch.setattr(
+        opencode_bridge.proc_tree, "run_captured", _fake_run("1.18.29\n" + MODELS_OUT)
+    )
     rows = opencode_bridge.status_rows()
     assert all(len(r) == 3 and isinstance(r[1], bool) for r in rows)
     assert rows[0][0] == "opencode CLI"
@@ -669,7 +677,7 @@ def test_status_rows_flags_missing_cli(monkeypatch):
     def boom(*a, **k):
         raise OSError("nope")
 
-    monkeypatch.setattr(subprocess, "run", boom)
+    monkeypatch.setattr(opencode_bridge.proc_tree, "run_captured", boom)
     rows = opencode_bridge.status_rows()
     assert rows[0][1] is False
     assert "OPENCODE_BIN" in rows[0][2]

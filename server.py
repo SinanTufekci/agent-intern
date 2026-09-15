@@ -472,6 +472,7 @@ import cursor_bridge
 import grok_bridge
 import kimi_bridge
 import opencode_bridge
+import proc_tree
 
 # Server-level instructions. The MCP client sends these to its model on connect
 # (Claude Code surfaces them as an "MCP Server Instructions" block), so EVERY
@@ -867,10 +868,9 @@ def _pump_pipe(stream, on_line) -> "tuple[threading.Thread, list]":
 def _get_agy_version() -> Optional[str]:
     """Return `agy --version` output, or None if agy can't be run."""
     try:
-        proc = subprocess.run(
+        proc = proc_tree.run_captured(
             [AGY_BIN, "--version"],
             stdin=subprocess.DEVNULL,
-            capture_output=True,
             **_TEXT,
             timeout=15,
             **_spawn_kwargs(),
@@ -1681,10 +1681,9 @@ def _read_agy_usage() -> Optional[str]:
     long-running ask.
     """
     try:
-        proc = subprocess.run(
+        proc = proc_tree.run_captured(
             [AGY_BIN, "--print-timeout", "20s", "-p", "/usage"],
             stdin=subprocess.DEVNULL,
-            capture_output=True,
             **_TEXT,
             timeout=25,
             **_spawn_kwargs(),
@@ -1891,10 +1890,9 @@ def list_agy_models() -> list[str]:
             return _AGY_MODELS_CACHE
         names: list[str] = []
         try:
-            proc = subprocess.run(
+            proc = proc_tree.run_captured(
                 [AGY_BIN, "models"],
                 stdin=subprocess.DEVNULL,
-                capture_output=True,
                 **_TEXT,
                 timeout=20,
                 **_spawn_kwargs(),
@@ -2087,11 +2085,10 @@ def _run_agy(
             timeout_s,
             len(prompt),
         )
-        proc = subprocess.run(
+        proc = proc_tree.run_captured(
             args,
             cwd=workspace,
             stdin=subprocess.DEVNULL,
-            capture_output=True,
             **_TEXT,
             timeout=timeout_s + 30,
             **_spawn_kwargs(),  # keep agy's TTY writes out of the host terminal
@@ -3130,7 +3127,7 @@ def _run_agy_watched(
         hard_deadline = start + timeout_s + 30
         while proc.poll() is None:
             if time.time() > hard_deadline:
-                proc.kill()
+                proc_tree.kill_tree(proc)  # the grandchild must die too — see proc_tree
                 _watch_finish(rid, "error", "(timed out)", time.time() - start)
                 raise RuntimeError(f"agy timed out after {timeout_s + 30}s (watched)")
             if feed is not None:
@@ -3270,7 +3267,7 @@ def _run_agy_image_watched(
         hard_deadline = start + timeout_s + 30
         while proc.poll() is None:
             if time.time() > hard_deadline:
-                proc.kill()
+                proc_tree.kill_tree(proc)  # the grandchild must die too — see proc_tree
                 _watch_finish(rid, "error", "(timed out)", time.time() - start)
                 raise RuntimeError(f"agy timed out after {timeout_s + 30}s (image/watch)")
             if feed is not None:

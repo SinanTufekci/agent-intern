@@ -10,6 +10,48 @@ summary.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Every backend's timeout was a suggestion, not a deadline — reported from the outside in
+  [#4](https://github.com/SinanTufekci/agent-intern/issues/4) by
+  [@david-aicoach](https://github.com/david-aicoach).** A bridged CLI does its real work one or two
+  process generations below the PID we hold (an npm `.CMD` shim on Windows, a node entrypoint
+  exec'ing a compiled binary on POSIX, plus whatever the agent's own shell tool spawns). Killing only
+  the top PID does not stop the work, it orphans it — and the two platforms then fail differently:
+  on POSIX the call returns on schedule while the real worker keeps running and burning quota, and on
+  Windows the call never returns at all, because the orphan still holds our stdout pipe and
+  `subprocess.run(timeout=...)` re-reads it after killing. The reporter caught the POSIX half live: a
+  single `codex_ask` left a `zsh -c` wrapper, the node `codex` entrypoint and the compiled
+  `aarch64-apple-darwin` binary all alive well past `timeout_s`, needing a manual `kill -9` on all
+  three.
+
+  **This project had already diagnosed this bug and then failed to generalise the fix.** 0.30.0 found
+  it while building the opencode bridge, measured it with a stopwatch (a 270 s timeout returning at
+  396 s), wrote `_kill_tree` and pinned it with tests — for that one bridge, because that is where it
+  showed up. The other seven spawn paths kept the broken shape, and the suite stayed green the whole
+  time. So the fix here is not a new idea; it is the 0.30.0 idea, finally applied everywhere:
+
+  - New `proc_tree.py` holds the one implementation — `kill_tree()` (`taskkill /F /T` on Windows, the
+    `start_new_session` process group elsewhere, then a plain kill that can be trusted to have run)
+    and `run_captured()`, a drop-in for `subprocess.run(capture_output=True, timeout=...)` that reaps
+    the tree *before* reading the pipes. That ordering is the fix, not a detail of it: reading first
+    is the read that never returns.
+  - **27** call sites across `codex`, `copilot`, `cursor`, `grok`, `kimi`, `opencode`, `server` and
+    `swarm` now go through it — the ask paths, the watch/streaming paths, and the `--version` /
+    `models` / `status` / `/usage` probes, which are real CLI invocations too. `opencode_bridge`'s own
+    `_kill_tree` became a thin delegation, so there is one copy rather than two drifting ones.
+  - The bare `proc.wait()` that followed each `proc.kill()` is now bounded: a survivor costs the
+    caller 15 s, never their whole session.
+
+  Three source-level guards keep it fixed, because the original miss was not a coding error but an
+  un-enforced invariant: no module may call `subprocess.run(timeout=...)`, none may call `proc.kill()`
+  directly, and every `run_captured` call must pass its bridge's `**_spawn_kwargs()` — without
+  `start_new_session` the POSIX `killpg` would signal *our own* process group and take out the server.
+  Alongside them, a live regression test reproduces the reported shape with real processes: a child
+  that spawns a grandchild outliving the deadline, asserting the grandchild is dead rather than merely
+  disowned. `test_proc_tree.py` was also added to the CI matrix's explicit file list — CI names its
+  test files one by one, so a new file is otherwise silently never run.
+
 ## [0.30.0] - 2026-09-08
 
 ### Added

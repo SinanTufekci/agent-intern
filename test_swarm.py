@@ -483,7 +483,7 @@ def test_run_text_worker_exit0_without_transcript_surfaces_stderr(monkeypatch, t
         stdout = ""
         stderr = denial
 
-    monkeypatch.setattr(swarm.subprocess, "run", lambda *a, **k: _Done())
+    monkeypatch.setattr(swarm.proc_tree, "run_captured", lambda *a, **k: _Done())
     # Fresh isolated HOME has no conversation, so _only_conv stays None and the
     # read loop runs to its deadline. Jump time.time() past the 5s deadline at once.
     times = iter([0.0] + [1e9 * i for i in range(1, 50)])
@@ -556,21 +556,25 @@ def test_probe_skipped_where_home_cannot_hide_auth(monkeypatch):
     # Windows' credential store is HOME-independent, so the probe would burn
     # seconds per process on a question that cannot fail there.
     monkeypatch.setattr(swarm, "_credential_store_follows_home", lambda: False)
-    monkeypatch.setattr(swarm.subprocess, "run", lambda *a, **k: pytest.fail("must not spawn"))
+    monkeypatch.setattr(
+        swarm.proc_tree, "run_captured", lambda *a, **k: pytest.fail("must not spawn")
+    )
     assert swarm._probe_isolated_auth() is None
 
 
 def test_probe_none_when_agy_cannot_answer_usage(monkeypatch):
     monkeypatch.setattr(swarm, "_credential_store_follows_home", lambda: True)
     monkeypatch.setattr(server, "supports_print_usage", lambda: False)
-    monkeypatch.setattr(swarm.subprocess, "run", lambda *a, **k: pytest.fail("must not spawn"))
+    monkeypatch.setattr(
+        swarm.proc_tree, "run_captured", lambda *a, **k: pytest.fail("must not spawn")
+    )
     assert swarm._probe_isolated_auth() is None
 
 
 def _probe_env(monkeypatch, result):
     monkeypatch.setattr(swarm, "_credential_store_follows_home", lambda: True)
     monkeypatch.setattr(server, "supports_print_usage", lambda: True)
-    monkeypatch.setattr(swarm.subprocess, "run", result)
+    monkeypatch.setattr(swarm.proc_tree, "run_captured", result)
 
 
 def test_probe_true_on_a_real_quota_table(monkeypatch):
@@ -637,7 +641,7 @@ def test_text_worker_retries_serialized_after_an_auth_failure(monkeypatch, tmp_p
         stdout = ""
         stderr = _AUTH_FAILURE_TEXT
 
-    monkeypatch.setattr(swarm.subprocess, "run", lambda *a, **k: _Failed())
+    monkeypatch.setattr(swarm.proc_tree, "run_captured", lambda *a, **k: _Failed())
     monkeypatch.setattr(server, "_run_agy", lambda *a, **k: "recovered")
     res = swarm._run_text_worker(0, "hi", str(tmp_path), None, 10)
     assert res.ok and res.answer == "recovered"
@@ -660,7 +664,7 @@ def test_text_worker_plan_reaches_the_isolated_argv(monkeypatch, tmp_path):
         seen["args"] = args
         return _Failed()
 
-    monkeypatch.setattr(swarm.subprocess, "run", fake_run)
+    monkeypatch.setattr(swarm.proc_tree, "run_captured", fake_run)
     monkeypatch.setattr(server, "_AGY_SLASH_GATE", True)  # the shield plan mode replaces
     swarm._run_text_worker(0, "review this", str(tmp_path), None, 10, True)
     argv = seen["args"]
@@ -677,7 +681,7 @@ def test_text_worker_without_plan_keeps_the_slash_shield(monkeypatch, tmp_path):
         stderr = "boom"
 
     monkeypatch.setattr(
-        swarm.subprocess, "run", lambda args, **k: (seen.update(args=args), _Failed())[1]
+        swarm.proc_tree, "run_captured", lambda args, **k: (seen.update(args=args), _Failed())[1]
     )
     monkeypatch.setattr(server, "_AGY_SLASH_GATE", True)
     swarm._run_text_worker(0, "hi", str(tmp_path), None, 10)
@@ -704,7 +708,7 @@ def test_text_worker_does_not_retry_other_failures(monkeypatch, tmp_path):
         stdout = ""
         stderr = "agy exited 1: quota exhausted"
 
-    monkeypatch.setattr(swarm.subprocess, "run", lambda *a, **k: _Failed())
+    monkeypatch.setattr(swarm.proc_tree, "run_captured", lambda *a, **k: _Failed())
     monkeypatch.setattr(server, "_run_agy", lambda *a, **k: pytest.fail("must not retry"))
     res = swarm._run_text_worker(0, "hi", str(tmp_path), None, 10)
     assert res.ok is False and "quota exhausted" in res.error
@@ -718,7 +722,7 @@ def test_image_worker_auth_failure_retries_serialized(monkeypatch, tmp_path):
         stderr = _AUTH_FAILURE_TEXT
 
     target = str(tmp_path / "out.png")
-    monkeypatch.setattr(swarm.subprocess, "run", lambda *a, **k: _Failed())
+    monkeypatch.setattr(swarm.proc_tree, "run_captured", lambda *a, **k: _Failed())
     monkeypatch.setattr(server, "_run_agy", lambda *a, **k: "")
     monkeypatch.setattr(server, "_finalize_image", lambda t, txt, start: (target, "png", 123))
     res = swarm._run_image_worker(0, "draw", target, str(tmp_path), 10)

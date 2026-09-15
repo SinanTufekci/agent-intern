@@ -71,6 +71,8 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
+import proc_tree
+
 # The copilot executable. Defaults to "copilot" (resolved via PATH); set
 # COPILOT_BIN to an explicit path when copilot isn't reliably on PATH — e.g. on
 # Windows the winget install drops it under
@@ -364,11 +366,10 @@ def run_copilot(
     session_id = _resolve_session(workspace, continue_conv)
     args = build_args(prompt, workspace, sandbox, model, session_id)
 
-    proc = subprocess.run(
+    proc = proc_tree.run_captured(
         args,
         cwd=workspace,
         stdin=subprocess.DEVNULL,
-        capture_output=True,
         **_TEXT,
         timeout=timeout_s + 30,
         **_spawn_kwargs(),
@@ -486,8 +487,11 @@ def run_copilot_streaming(
         proc.wait(timeout=timeout_s + 30)
     except subprocess.TimeoutExpired:
         timed_out = True
-        proc.kill()
-        proc.wait()
+        proc_tree.kill_tree(proc)  # the grandchild must die too — see proc_tree
+        try:
+            proc.wait(timeout=proc_tree.REAP_GRACE_S)
+        except subprocess.TimeoutExpired:
+            pass  # reaped or not, the caller's deadline stays real
     # Short grace to flush buffered lines; don't block on a lingering child (the
     # answer was reconstructed from the stream's assistant message during the run).
     ot.join(timeout=1)
@@ -515,10 +519,9 @@ def run_copilot_streaming(
 def copilot_version() -> Optional[str]:
     """`copilot --version` first line, or None if copilot can't be run."""
     try:
-        proc = subprocess.run(
+        proc = proc_tree.run_captured(
             [COPILOT_BIN, "--version"],
             stdin=subprocess.DEVNULL,
-            capture_output=True,
             **_TEXT,
             timeout=15,
             **_spawn_kwargs(),

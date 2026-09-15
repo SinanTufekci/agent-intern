@@ -458,7 +458,7 @@ def test_run_codex_flags_policy_blocked_commands(tmp_path, monkeypatch):
     -o file, and not a word about it in the answer.
     """
     monkeypatch.setattr(codex_bridge, "SESSIONS_DIR", tmp_path / "sessions")
-    monkeypatch.setattr(codex_bridge.subprocess, "run", _fake_run("1.2.0", TWO_BLOCKED))
+    monkeypatch.setattr(codex_bridge.proc_tree, "run_captured", _fake_run("1.2.0", TWO_BLOCKED))
     out = codex_bridge.run_codex("p", str(tmp_path), "read-only", None, False, 30, pin=False)
     assert out.startswith("1.2.0")  # the answer is still returned, not swallowed
     assert "WARNING" in out
@@ -469,7 +469,9 @@ def test_run_codex_flags_policy_blocked_commands(tmp_path, monkeypatch):
 def test_run_codex_stays_quiet_without_refusals(tmp_path, monkeypatch):
     """A clean run must not grow a warning — this fires often enough to matter."""
     monkeypatch.setattr(codex_bridge, "SESSIONS_DIR", tmp_path / "sessions")
-    monkeypatch.setattr(codex_bridge.subprocess, "run", _fake_run("0.27.0", "some ordinary log"))
+    monkeypatch.setattr(
+        codex_bridge.proc_tree, "run_captured", _fake_run("0.27.0", "some ordinary log")
+    )
     out = codex_bridge.run_codex("p", str(tmp_path), "read-only", None, False, 30, pin=False)
     assert out == "0.27.0"
 
@@ -479,6 +481,8 @@ def test_run_codex_appends_rather_than_raises(tmp_path, monkeypatch):
     is supposed to be blocked, and that run's answer is perfectly good.
     """
     monkeypatch.setattr(codex_bridge, "SESSIONS_DIR", tmp_path / "sessions")
-    monkeypatch.setattr(codex_bridge.subprocess, "run", _fake_run("the real answer", _BLOCKED_LINE))
+    monkeypatch.setattr(
+        codex_bridge.proc_tree, "run_captured", _fake_run("the real answer", _BLOCKED_LINE)
+    )
     out = codex_bridge.run_codex("p", str(tmp_path), "read-only", None, False, 30, pin=False)
     assert out.startswith("the real answer")

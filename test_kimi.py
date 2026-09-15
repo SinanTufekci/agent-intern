@@ -114,7 +114,7 @@ def test_build_args_continue_and_model_together():
 
 def test_run_kimi_returns_stdout_answer(tmp_path, monkeypatch):
     rec = {}
-    monkeypatch.setattr(kimi_bridge.subprocess, "run", _fake_run(rec, stdout="PONG\n"))
+    monkeypatch.setattr(kimi_bridge.proc_tree, "run_captured", _fake_run(rec, stdout="PONG\n"))
     out = kimi_bridge.run_kimi("hi", str(tmp_path))
     assert out == "PONG"
     assert rec["kwargs"].get("cwd") == str(tmp_path)  # runs rooted at the workspace
@@ -125,15 +125,15 @@ def test_run_kimi_returns_stdout_answer(tmp_path, monkeypatch):
 
 def test_run_kimi_continue_passes_dash_c(tmp_path, monkeypatch):
     rec = {}
-    monkeypatch.setattr(kimi_bridge.subprocess, "run", _fake_run(rec, stdout="ok"))
+    monkeypatch.setattr(kimi_bridge.proc_tree, "run_captured", _fake_run(rec, stdout="ok"))
     kimi_bridge.run_kimi("hi", str(tmp_path), continue_conv=True)
     assert "-c" in rec["argv"]
 
 
 def test_run_kimi_raises_on_nonzero_with_stderr(tmp_path, monkeypatch):
     monkeypatch.setattr(
-        kimi_bridge.subprocess,
-        "run",
+        kimi_bridge.proc_tree,
+        "run_captured",
         _fake_run(returncode=1, stderr="failed to run prompt: No model configured"),
     )
     with pytest.raises(RuntimeError, match="No model configured"):
@@ -141,7 +141,9 @@ def test_run_kimi_raises_on_nonzero_with_stderr(tmp_path, monkeypatch):
 
 
 def test_run_kimi_raises_on_empty_stdout(tmp_path, monkeypatch):
-    monkeypatch.setattr(kimi_bridge.subprocess, "run", _fake_run(returncode=0, stdout="   "))
+    monkeypatch.setattr(
+        kimi_bridge.proc_tree, "run_captured", _fake_run(returncode=0, stdout="   ")
+    )
     with pytest.raises(RuntimeError, match="no output"):
         kimi_bridge.run_kimi("hi", str(tmp_path))
 
@@ -152,7 +154,7 @@ def test_run_kimi_raises_on_empty_stdout(tmp_path, monkeypatch):
 
 
 def test_kimi_version_first_line(monkeypatch):
-    monkeypatch.setattr(kimi_bridge.subprocess, "run", _fake_run(stdout="0.29.1\n"))
+    monkeypatch.setattr(kimi_bridge.proc_tree, "run_captured", _fake_run(stdout="0.29.1\n"))
     assert kimi_bridge.kimi_version() == "0.29.1"
 
 
@@ -160,13 +162,15 @@ def test_kimi_version_none_on_error(monkeypatch):
     def boom(*a, **k):
         raise OSError("not found")
 
-    monkeypatch.setattr(kimi_bridge.subprocess, "run", boom)
+    monkeypatch.setattr(kimi_bridge.proc_tree, "run_captured", boom)
     assert kimi_bridge.kimi_version() is None
 
 
 def test_auth_status_no_providers_is_not_ok(monkeypatch):
     # Verified unauthed on 0.29.1: `kimi provider list` -> "No providers configured."
-    monkeypatch.setattr(kimi_bridge.subprocess, "run", _fake_run(stdout="No providers configured."))
+    monkeypatch.setattr(
+        kimi_bridge.proc_tree, "run_captured", _fake_run(stdout="No providers configured.")
+    )
     ok, detail = kimi_bridge.auth_status()
     assert ok is False
     assert "no providers" in detail.lower()
@@ -174,7 +178,7 @@ def test_auth_status_no_providers_is_not_ok(monkeypatch):
 
 def test_auth_status_configured_is_ok(monkeypatch):
     monkeypatch.setattr(
-        kimi_bridge.subprocess, "run", _fake_run(stdout="kimi (managed) — 3 models")
+        kimi_bridge.proc_tree, "run_captured", _fake_run(stdout="kimi (managed) — 3 models")
     )
     ok, detail = kimi_bridge.auth_status()
     assert ok is True
@@ -185,7 +189,7 @@ def test_auth_status_error_is_not_ok(monkeypatch):
     def boom(*a, **k):
         raise OSError()
 
-    monkeypatch.setattr(kimi_bridge.subprocess, "run", boom)
+    monkeypatch.setattr(kimi_bridge.proc_tree, "run_captured", boom)
     ok, _ = kimi_bridge.auth_status()
     assert ok is False
 

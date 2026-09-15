@@ -256,7 +256,7 @@ def test_resume_flags_continue_falls_back_to_dash_c():
 def test_run_grok_returns_answer_and_pins(tmp_path, monkeypatch):
     ws = str(tmp_path)
     out = json.dumps({"text": "42", "sessionId": SAMPLE_SID})
-    monkeypatch.setattr(grok_bridge.subprocess, "run", lambda *a, **k: _P(stdout=out))
+    monkeypatch.setattr(grok_bridge.proc_tree, "run_captured", lambda *a, **k: _P(stdout=out))
     assert grok_bridge.run_grok("q", ws) == "42"
     assert grok_bridge.get_pinned(ws) == SAMPLE_SID
 
@@ -264,7 +264,7 @@ def test_run_grok_returns_answer_and_pins(tmp_path, monkeypatch):
 def test_run_grok_pin_false_does_not_pin(tmp_path, monkeypatch):
     ws = str(tmp_path)
     out = json.dumps({"text": "42", "sessionId": SAMPLE_SID})
-    monkeypatch.setattr(grok_bridge.subprocess, "run", lambda *a, **k: _P(stdout=out))
+    monkeypatch.setattr(grok_bridge.proc_tree, "run_captured", lambda *a, **k: _P(stdout=out))
     grok_bridge.run_grok("q", ws, pin=False)
     assert grok_bridge.get_pinned(ws) is None  # swarm workers are one-shot
 
@@ -273,21 +273,23 @@ def test_run_grok_continue_does_not_repin(tmp_path, monkeypatch):
     ws = str(tmp_path)
     grok_bridge._pin(ws, SAMPLE_SID)
     out = json.dumps({"text": "ok", "sessionId": "aaaaaaaa-0000-4000-8000-000000000000"})
-    monkeypatch.setattr(grok_bridge.subprocess, "run", lambda *a, **k: _P(stdout=out))
+    monkeypatch.setattr(grok_bridge.proc_tree, "run_captured", lambda *a, **k: _P(stdout=out))
     grok_bridge.run_grok("q", ws, continue_conv=True)
     assert grok_bridge.get_pinned(ws) == SAMPLE_SID
 
 
 def test_run_grok_error_exit_prefers_grok_message(tmp_path, monkeypatch):
     out = json.dumps({"type": "error", "message": "Not signed in."})
-    monkeypatch.setattr(grok_bridge.subprocess, "run", lambda *a, **k: _P(stdout=out, returncode=1))
+    monkeypatch.setattr(
+        grok_bridge.proc_tree, "run_captured", lambda *a, **k: _P(stdout=out, returncode=1)
+    )
     with pytest.raises(RuntimeError, match="Not signed in"):
         grok_bridge.run_grok("q", str(tmp_path))
 
 
 def test_run_grok_error_exit_without_json_falls_back(tmp_path, monkeypatch):
     monkeypatch.setattr(
-        grok_bridge.subprocess, "run", lambda *a, **k: _P(stderr="segfault", returncode=139)
+        grok_bridge.proc_tree, "run_captured", lambda *a, **k: _P(stderr="segfault", returncode=139)
     )
     with pytest.raises(RuntimeError, match="139"):
         grok_bridge.run_grok("q", str(tmp_path))
@@ -307,7 +309,7 @@ def test_run_grok_passes_resume_id_when_continuing(tmp_path, monkeypatch):
         seen["args"] = args
         return _P(stdout=json.dumps({"text": "ok"}))
 
-    monkeypatch.setattr(grok_bridge.subprocess, "run", fake_run)
+    monkeypatch.setattr(grok_bridge.proc_tree, "run_captured", fake_run)
     grok_bridge.run_grok("q", ws, continue_conv=True)
     assert seen["args"][seen["args"].index("-r") + 1] == SAMPLE_SID
 
@@ -349,14 +351,14 @@ def test_answer_from_event_ignores_unknown_types():
 
 def test_list_models_parses_live_logged_out_format(monkeypatch):
     monkeypatch.setattr(
-        grok_bridge.subprocess, "run", lambda *a, **k: _P(stdout=MODELS_OUT_LOGGED_OUT)
+        grok_bridge.proc_tree, "run_captured", lambda *a, **k: _P(stdout=MODELS_OUT_LOGGED_OUT)
     )
     assert grok_bridge.list_models() == ["grok-4.5"]
 
 
 def test_list_models_handles_multiple_entries(monkeypatch):
     out = "Available models:\n  * grok-4.5 (default)\n  * grok-5-mini\n  * grok-code-2\n"
-    monkeypatch.setattr(grok_bridge.subprocess, "run", lambda *a, **k: _P(stdout=out))
+    monkeypatch.setattr(grok_bridge.proc_tree, "run_captured", lambda *a, **k: _P(stdout=out))
     assert grok_bridge.list_models() == ["grok-4.5", "grok-5-mini", "grok-code-2"]
 
 
@@ -364,7 +366,7 @@ def test_list_models_empty_when_unrunnable(monkeypatch):
     def boom(*a, **k):
         raise OSError("not found")
 
-    monkeypatch.setattr(grok_bridge.subprocess, "run", boom)
+    monkeypatch.setattr(grok_bridge.proc_tree, "run_captured", boom)
     assert grok_bridge.list_models() == []
     assert grok_bridge._MODELS_CACHE is None  # transient failure is not cached
 
@@ -376,7 +378,7 @@ def test_list_models_caches(monkeypatch):
         calls.append(1)
         return _P(stdout=MODELS_OUT_LOGGED_OUT)
 
-    monkeypatch.setattr(grok_bridge.subprocess, "run", fake)
+    monkeypatch.setattr(grok_bridge.proc_tree, "run_captured", fake)
     grok_bridge.list_models()
     grok_bridge.list_models()
     assert len(calls) == 1
@@ -406,7 +408,7 @@ def test_validate_model_lenient_when_list_unavailable(monkeypatch):
 def test_auth_status_detects_logged_out(monkeypatch):
     monkeypatch.delenv("XAI_API_KEY", raising=False)
     monkeypatch.setattr(
-        grok_bridge.subprocess, "run", lambda *a, **k: _P(stdout=MODELS_OUT_LOGGED_OUT)
+        grok_bridge.proc_tree, "run_captured", lambda *a, **k: _P(stdout=MODELS_OUT_LOGGED_OUT)
     )
     ok, detail = grok_bridge.auth_status()
     assert ok is False
@@ -416,7 +418,7 @@ def test_auth_status_detects_logged_out(monkeypatch):
 def test_auth_status_api_key_counts_as_authenticated(monkeypatch):
     monkeypatch.setenv("XAI_API_KEY", "xai-test")
     monkeypatch.setattr(
-        grok_bridge.subprocess, "run", lambda *a, **k: _P(stdout=MODELS_OUT_LOGGED_OUT)
+        grok_bridge.proc_tree, "run_captured", lambda *a, **k: _P(stdout=MODELS_OUT_LOGGED_OUT)
     )
     ok, detail = grok_bridge.auth_status()
     assert ok is True
@@ -425,7 +427,7 @@ def test_auth_status_api_key_counts_as_authenticated(monkeypatch):
 
 def test_auth_status_detects_logged_in(monkeypatch):
     out = "Default model: grok-4.5\n\nAvailable models:\n  * grok-4.5 (default)\n"
-    monkeypatch.setattr(grok_bridge.subprocess, "run", lambda *a, **k: _P(stdout=out))
+    monkeypatch.setattr(grok_bridge.proc_tree, "run_captured", lambda *a, **k: _P(stdout=out))
     ok, detail = grok_bridge.auth_status()
     assert ok is True
     assert "grok-4.5" in detail
@@ -435,7 +437,7 @@ def test_auth_status_handles_unrunnable(monkeypatch):
     def boom(*a, **k):
         raise OSError("nope")
 
-    monkeypatch.setattr(grok_bridge.subprocess, "run", boom)
+    monkeypatch.setattr(grok_bridge.proc_tree, "run_captured", boom)
     ok, detail = grok_bridge.auth_status()
     assert ok is False
     assert "could not run" in detail
@@ -448,7 +450,9 @@ def test_auth_status_handles_unrunnable(monkeypatch):
 
 def test_grok_version_first_line(monkeypatch):
     monkeypatch.setattr(
-        grok_bridge.subprocess, "run", lambda *a, **k: _P(stdout="grok 1.0.3 (1a29d5bc12)\nx\n")
+        grok_bridge.proc_tree,
+        "run_captured",
+        lambda *a, **k: _P(stdout="grok 1.0.3 (1a29d5bc12)\nx\n"),
     )
     assert grok_bridge.grok_version() == "grok 1.0.3 (1a29d5bc12)"
 
@@ -457,7 +461,7 @@ def test_grok_version_none_when_missing(monkeypatch):
     def boom(*a, **k):
         raise FileNotFoundError
 
-    monkeypatch.setattr(grok_bridge.subprocess, "run", boom)
+    monkeypatch.setattr(grok_bridge.proc_tree, "run_captured", boom)
     assert grok_bridge.grok_version() is None
 
 

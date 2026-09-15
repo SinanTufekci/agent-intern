@@ -63,6 +63,8 @@ import time
 from pathlib import Path
 from typing import Optional
 
+import proc_tree
+
 # The codex executable. Defaults to "codex" (resolved via PATH); set CODEX_BIN to
 # an explicit path when codex isn't reliably on PATH — e.g. on Windows, where the
 # native installer drops it at
@@ -424,11 +426,10 @@ def run_codex(
     before = _rollout_names() if (not continue_conv and pin) else set()
     try:
         args = build_args(prompt, workspace, sandbox, model, resume_session, out_path)
-        proc = subprocess.run(
+        proc = proc_tree.run_captured(
             args,
             cwd=workspace,
             stdin=subprocess.DEVNULL,
-            capture_output=True,
             **_TEXT,
             timeout=timeout_s + 30,
             **_spawn_kwargs(),
@@ -545,8 +546,11 @@ def run_codex_streaming(
             proc.wait(timeout=timeout_s + 30)
         except subprocess.TimeoutExpired:
             timed_out = True
-            proc.kill()
-            proc.wait()
+            proc_tree.kill_tree(proc)  # the grandchild must die too — see proc_tree
+            try:
+                proc.wait(timeout=proc_tree.REAP_GRACE_S)
+            except subprocess.TimeoutExpired:
+                pass  # reaped or not, the caller's deadline stays real
         # Let the readers flush buffered lines, but don't block on a child still
         # holding the pipe open — the answer comes from the -o file regardless. A short
         # grace keeps the "done" transition snappy once codex has exited.
@@ -585,10 +589,9 @@ def run_codex_streaming(
 def codex_version() -> Optional[str]:
     """`codex --version` text (single line), or None if codex can't be run."""
     try:
-        proc = subprocess.run(
+        proc = proc_tree.run_captured(
             [CODEX_BIN, "--version"],
             stdin=subprocess.DEVNULL,
-            capture_output=True,
             **_TEXT,
             timeout=15,
             **_spawn_kwargs(),
@@ -606,10 +609,9 @@ def codex_login_status() -> tuple[bool, str]:
     codex's own first line (e.g. "Logged in using ChatGPT"), ANSI-stripped.
     """
     try:
-        proc = subprocess.run(
+        proc = proc_tree.run_captured(
             [CODEX_BIN, "login", "status"],
             stdin=subprocess.DEVNULL,
-            capture_output=True,
             **_TEXT,
             timeout=15,
             **_spawn_kwargs(),

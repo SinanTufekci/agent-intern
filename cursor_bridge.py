@@ -79,6 +79,8 @@ import threading
 from pathlib import Path
 from typing import Optional
 
+import proc_tree
+
 # The cursor-agent executable. On Windows the installer drops a `cursor-agent.CMD`
 # shim (PowerShell -> cursor-agent.ps1); a bare "cursor-agent" name can't be run
 # by CreateProcess, so we resolve it via shutil.which (which honors PATHEXT and
@@ -189,11 +191,10 @@ def create_chat(workspace: str) -> str:
     `-p --resume <id>` from that cwd, so we run create-chat with cwd=workspace for
     good measure and let the subsequent ask create the workspace's chat dir.
     """
-    proc = subprocess.run(
+    proc = proc_tree.run_captured(
         [CURSOR_BIN, "create-chat"],
         cwd=workspace,
         stdin=subprocess.DEVNULL,
-        capture_output=True,
         timeout=30,
         **_TEXT,
         **_spawn_kwargs(),
@@ -317,10 +318,9 @@ def list_models() -> list[str]:
     if _MODELS_CACHE is not None:
         return _MODELS_CACHE
     try:
-        proc = subprocess.run(
+        proc = proc_tree.run_captured(
             [CURSOR_BIN, "models"],
             stdin=subprocess.DEVNULL,
-            capture_output=True,
             timeout=20,
             **_TEXT,
             **_spawn_kwargs(),
@@ -431,11 +431,10 @@ def run_cursor(
     chat_id = _resolve_session(workspace, continue_conv)
     args = build_args(prompt, workspace, sandbox, model, chat_id)
 
-    proc = subprocess.run(
+    proc = proc_tree.run_captured(
         args,
         cwd=workspace,
         stdin=subprocess.DEVNULL,
-        capture_output=True,
         timeout=timeout_s + 30,
         **_TEXT,
         **_spawn_kwargs(),
@@ -550,8 +549,11 @@ def run_cursor_streaming(
         proc.wait(timeout=timeout_s + 30)
     except subprocess.TimeoutExpired:
         timed_out = True
-        proc.kill()
-        proc.wait()
+        proc_tree.kill_tree(proc)  # the grandchild must die too — see proc_tree
+        try:
+            proc.wait(timeout=proc_tree.REAP_GRACE_S)
+        except subprocess.TimeoutExpired:
+            pass  # reaped or not, the caller's deadline stays real
     ot.join(timeout=1)
     et.join(timeout=1)
 
@@ -579,10 +581,9 @@ def run_cursor_streaming(
 def cursor_version() -> Optional[str]:
     """`cursor-agent --version` first line, or None if cursor can't be run."""
     try:
-        proc = subprocess.run(
+        proc = proc_tree.run_captured(
             [CURSOR_BIN, "--version"],
             stdin=subprocess.DEVNULL,
-            capture_output=True,
             timeout=15,
             **_TEXT,
             **_spawn_kwargs(),
@@ -602,10 +603,9 @@ def auth_status() -> tuple[bool, str]:
     command can't run.
     """
     try:
-        proc = subprocess.run(
+        proc = proc_tree.run_captured(
             [CURSOR_BIN, "status"],
             stdin=subprocess.DEVNULL,
-            capture_output=True,
             timeout=20,
             **_TEXT,
             **_spawn_kwargs(),

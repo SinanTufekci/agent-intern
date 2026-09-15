@@ -58,6 +58,8 @@ import subprocess
 from pathlib import Path
 from typing import Optional
 
+import proc_tree
+
 # The kimi executable. npm installs a `kimi.ps1`/`kimi.cmd` shim on Windows that
 # CreateProcess can't launch by bare name, so resolve via shutil.which (honors
 # PATHEXT, returns the full shim path). Set KIMI_BIN to an explicit path to
@@ -160,11 +162,10 @@ def run_kimi(
     os.makedirs(workspace, exist_ok=True)  # kimi's cwd must exist
     args = build_args(prompt, workspace, model, continue_conv)
 
-    proc = subprocess.run(
+    proc = proc_tree.run_captured(
         args,
         cwd=workspace,
         stdin=subprocess.DEVNULL,
-        capture_output=True,
         text=True,
         timeout=timeout_s + 30,
         **_TEXT,
@@ -191,10 +192,9 @@ def run_kimi(
 def kimi_version() -> Optional[str]:
     """`kimi --version` first line (e.g. "0.29.1"), or None if kimi can't be run."""
     try:
-        proc = subprocess.run(
+        proc = proc_tree.run_captured(
             [KIMI_BIN, "--version"],
             stdin=subprocess.DEVNULL,
-            capture_output=True,
             text=True,
             timeout=15,
             **_TEXT,
@@ -215,10 +215,9 @@ def auth_status() -> tuple[bool, str]:
     (with a login hint) when no provider is configured or the command can't run.
     """
     try:
-        proc = subprocess.run(
+        proc = proc_tree.run_captured(
             [KIMI_BIN, "provider", "list"],
             stdin=subprocess.DEVNULL,
-            capture_output=True,
             text=True,
             timeout=20,
             **_TEXT,

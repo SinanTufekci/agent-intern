@@ -979,7 +979,7 @@ def test_list_agy_models_parses_and_caches(monkeypatch):
         calls["n"] += 1
         return subprocess.CompletedProcess(args, 0, stdout="A\n B \n\nC\n", stderr="")
 
-    monkeypatch.setattr(server.subprocess, "run", fake_run)
+    monkeypatch.setattr(server.proc_tree, "run_captured", fake_run)
     assert server.list_agy_models() == ["A", "B", "C"]
     # second call is served from the process cache (no second subprocess)
     assert server.list_agy_models() == ["A", "B", "C"]
@@ -1024,7 +1024,7 @@ def test_validate_model_accepts_slug_from_tab_separated_list(monkeypatch):
             args, 0, stdout="gemini-3.6-flash-high\tGemini 3.6 Flash (High)\n", stderr=""
         )
 
-    monkeypatch.setattr(server.subprocess, "run", fake_run)
+    monkeypatch.setattr(server.proc_tree, "run_captured", fake_run)
     assert server.validate_model("gemini-3.6-flash-high") == "gemini-3.6-flash-high"
 
 
@@ -1034,7 +1034,7 @@ def test_list_agy_models_empty_on_subprocess_error(monkeypatch):
     def boom(args, **kwargs):
         raise OSError("agy not found")
 
-    monkeypatch.setattr(server.subprocess, "run", boom)
+    monkeypatch.setattr(server.proc_tree, "run_captured", boom)
     assert server.list_agy_models() == []
 
 
@@ -1236,7 +1236,7 @@ def test_run_agy_polls_until_resolve_succeeds(monkeypatch):
             raise RuntimeError("not ready")
         return "answer"
 
-    monkeypatch.setattr(server.subprocess, "run", _ok_proc)
+    monkeypatch.setattr(server.proc_tree, "run_captured", _ok_proc)
     monkeypatch.setattr(server.time, "sleep", lambda *a, **k: None)
     monkeypatch.setattr(server, "_resolve_and_read", flaky)
     monkeypatch.setattr(server, "_RESPONSE_POLL_DEADLINE_S", 5.0)
@@ -1250,7 +1250,7 @@ def test_run_agy_reraises_after_poll_deadline(monkeypatch):
     def always_fail(pinned, ws, start):
         raise RuntimeError("No conversation found after agy run")
 
-    monkeypatch.setattr(server.subprocess, "run", _ok_proc)
+    monkeypatch.setattr(server.proc_tree, "run_captured", _ok_proc)
     monkeypatch.setattr(server.time, "sleep", lambda *a, **k: None)
     monkeypatch.setattr(server, "_resolve_and_read", always_fail)
     monkeypatch.setattr(server, "_RESPONSE_POLL_DEADLINE_S", 0.0)
@@ -1287,7 +1287,7 @@ def fake_agy(monkeypatch, brain_dir, last_conv_file):
             args, cap["returncode"], stdout=cap["stdout"], stderr=cap["stderr"]
         )
 
-    monkeypatch.setattr(server.subprocess, "run", fake_run)
+    monkeypatch.setattr(server.proc_tree, "run_captured", fake_run)
     monkeypatch.setattr(server.time, "sleep", lambda *a, **k: None)
     monkeypatch.setattr(server, "_RESPONSE_POLL_DEADLINE_S", 0.0)
     monkeypatch.setattr(server, "_AGY_JSON_SUPPORT", False)
@@ -2633,7 +2633,7 @@ def test_read_agy_usage_argv_keeps_agy_slash_expansion(monkeypatch):
         seen["args"] = args
         return subprocess.CompletedProcess(args, 0, stdout=_USAGE_TSV, stderr="")
 
-    monkeypatch.setattr(server.subprocess, "run", fake_run)
+    monkeypatch.setattr(server.proc_tree, "run_captured", fake_run)
     assert server._read_agy_usage() == _USAGE_TSV
     assert "--disable-slash-commands" not in seen["args"]
     assert "--dangerously-skip-permissions" not in seen["args"]
@@ -2641,7 +2641,9 @@ def test_read_agy_usage_argv_keeps_agy_slash_expansion(monkeypatch):
 
 
 def test_read_agy_usage_none_on_failure(monkeypatch):
-    monkeypatch.setattr(server.subprocess, "run", lambda *a, **k: (_ for _ in ()).throw(OSError()))
+    monkeypatch.setattr(
+        server.proc_tree, "run_captured", lambda *a, **k: (_ for _ in ()).throw(OSError())
+    )
     assert server._read_agy_usage() is None
 
 

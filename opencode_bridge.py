@@ -86,11 +86,12 @@ import json
 import os
 import re
 import shutil
-import signal
 import subprocess
 import threading
 from pathlib import Path
 from typing import Optional
+
+import proc_tree
 
 # The opencode executable. npm installs an `opencode.cmd`/`.ps1` shim on Windows
 # that CreateProcess can't launch by bare name, so resolve via shutil.which (honors
@@ -191,11 +192,9 @@ _WORKSPACE_WRITE_PERMISSION = {
 # <path>/auth.json", so a plain substring search matches the wrong line.
 _CREDENTIAL_COUNT_RE = re.compile(r"(\d+)\s+credentials?\b", re.IGNORECASE)
 
-# Signal used to take out a POSIX process group in _kill_tree. SIGKILL is the
-# intent and always exists where that branch runs; the getattr keeps the constant
-# importable on Windows (which has no SIGKILL) so the branch stays unit-testable
-# there rather than only on the platforms that execute it.
-_KILL_SIGNAL = getattr(signal, "SIGKILL", signal.SIGTERM)
+# Re-exported so this module's own tests keep naming it. The definition (and the
+# note on why it is a getattr) lives in proc_tree.
+_KILL_SIGNAL = proc_tree.KILL_SIGNAL
 
 # Cached model-id list from `opencode models` (populated once on first validation;
 # a transient failure is not cached).
@@ -223,41 +222,15 @@ def _spawn_kwargs() -> dict:
 def _kill_tree(proc: subprocess.Popen) -> None:
     """Kill the launched process AND everything it spawned.
 
-    ⚠️ This is not belt-and-braces, it is the fix for an observed hang. On Windows
-    `opencode` on PATH is npm's `opencode.CMD` shim, so CreateProcess runs cmd.exe
-    and the real `opencode.exe` is a GRANDchild. Killing only the direct child
-    leaves that grandchild alive holding the write end of our stdout pipe — measured
-    live: a 270s timeout took 396s to return, and only because the orphan was killed
-    by hand; it would otherwise have blocked forever. (This is also why the blocking
-    path below does not use `subprocess.run(timeout=...)`: its Windows branch calls
-    communicate() again after killing, which is exactly the read that never ends.)
-
-    `taskkill /T` walks the tree on Windows. POSIX has no shim layer (npm links the
-    binary directly, so there is no grandchild by construction) but opencode's own
-    `bash` tool can still leave children behind, so the process group created by
-    _spawn_kwargs()'s start_new_session is signalled there. Both paths finish with a
-    plain kill, which is the only one that can be trusted to have run.
+    This bridge found the bug (Windows npm `.CMD` shim -> the real `opencode.exe`
+    is a grandchild; a 270 s timeout measured returning after 396 s), so the
+    implementation used to live here. It is now shared: issue #4 showed the other
+    seven spawn paths had the identical defect, and one copy is the only way that
+    stays fixed. The reasoning, both failure modes and the measurements are in
+    proc_tree's module docstring; this name stays so the tests that monkeypatch it
+    keep working.
     """
-    if os.name == "nt":
-        try:
-            subprocess.run(
-                ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
-                stdin=subprocess.DEVNULL,
-                capture_output=True,
-                timeout=15,
-                **_spawn_kwargs(),
-            )
-        except (OSError, subprocess.SubprocessError):
-            pass  # fall through to the plain kill below
-    else:
-        try:
-            os.killpg(os.getpgid(proc.pid), _KILL_SIGNAL)
-        except (OSError, AttributeError):
-            pass  # already reaped, or no process groups here
-    try:
-        proc.kill()
-    except OSError:
-        pass
+    proc_tree.kill_tree(proc)
 
 
 def _permission_policy(sandbox: str) -> Optional[dict]:
@@ -368,10 +341,9 @@ def list_models() -> list[str]:
     if _MODELS_CACHE is not None:
         return _MODELS_CACHE
     try:
-        proc = subprocess.run(
+        proc = proc_tree.run_captured(
             [OPENCODE_BIN, "models"],
             stdin=subprocess.DEVNULL,
-            capture_output=True,
             timeout=30,
             env=_env(),
             **_TEXT,
@@ -650,10 +622,9 @@ def _run_impl(
 def opencode_version() -> Optional[str]:
     """`opencode --version` first line (e.g. "1.18.29"), or None if it can't run."""
     try:
-        proc = subprocess.run(
+        proc = proc_tree.run_captured(
             [OPENCODE_BIN, "--version"],
             stdin=subprocess.DEVNULL,
-            capture_output=True,
             timeout=20,
             env=_env(),
             **_TEXT,
@@ -678,10 +649,9 @@ def auth_status() -> tuple[bool, str]:
     opencode can't run at all.
     """
     try:
-        proc = subprocess.run(
+        proc = proc_tree.run_captured(
             [OPENCODE_BIN, "providers", "list"],
             stdin=subprocess.DEVNULL,
-            capture_output=True,
             timeout=30,
             env=_env(),
             **_TEXT,
