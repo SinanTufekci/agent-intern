@@ -10,6 +10,8 @@ summary.
 
 ## [Unreleased]
 
+## [0.30.1] - 2026-09-15
+
 ### Fixed
 
 - **Every backend's timeout was a suggestion, not a deadline — reported from the outside in
@@ -1558,7 +1560,8 @@ caller might copy becomes a guaranteed rejected call.
 
 - **BREAKING:** `antigravity_ask_stream` (superseded by watch mode).
 
-[Unreleased]: https://github.com/SinanTufekci/agent-intern/compare/v0.30.0...HEAD
+[Unreleased]: https://github.com/SinanTufekci/agent-intern/compare/v0.30.1...HEAD
+[0.30.1]: https://github.com/SinanTufekci/agent-intern/compare/v0.30.0...v0.30.1
 [0.30.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.29.1...v0.30.0
 [0.29.1]: https://github.com/SinanTufekci/agent-intern/compare/v0.29.0...v0.29.1
 [0.29.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.28.1...v0.29.0
