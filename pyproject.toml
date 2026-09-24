@@ -65,6 +65,7 @@ py-modules = [
     "server",
     "swarm",
     "swarm_watch",
+    "watch_ui",
     "proc_tree",
     "codex_bridge",
     "copilot_bridge",
@@ -83,6 +84,7 @@ target-version = "py310"
 select = ["E", "F", "W", "I", "B"]
 
 [tool.ruff.lint.per-file-ignores]
-# swarm_watch.py is mostly one embedded HTML/CSS/JS page; its long style/script
-# lines are an asset, not code to hard-wrap.
+# swarm_watch.py and watch_ui.py are mostly embedded HTML/CSS/JS; their long
+# style/script lines are an asset, not code to hard-wrap.
 "swarm_watch.py" = ["E501"]
+"watch_ui.py" = ["E501"]

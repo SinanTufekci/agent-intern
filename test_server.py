@@ -2506,6 +2506,34 @@ def test_watch_html_bad_size_falls_back_to_default(monkeypatch):
     assert "window.resizeTo(600,820)" in html
 
 
+def test_both_chat_windows_render_through_the_shared_core():
+    """The single-run viewer and the swarm's per-worker window used to carry two
+    hand-synced copies of the same page, so a fix to one skipped the other. Both
+    are now built from watch_ui; this keeps a third copy from growing back."""
+    import swarm_watch
+    import watch_ui
+
+    for html in (server._watch_html(), swarm_watch._WORKER_HTML):
+        assert watch_ui.CSS in html and watch_ui.BODY in html and watch_ui.JS in html
+        assert html.count("function md(") == 1
+
+
+def test_every_watch_backend_has_a_logo_that_cannot_run_anything():
+    """A backend without an entry falls back to a monogram tile, which works but
+    looks broken next to the others. The logos are third-party SVG, so also pin
+    that none carries script, an event handler or an external reference."""
+    import watch_ui
+
+    backends = {"agy", "codex", "copilot", "cursor", "grok", "opencode", "muse"}
+    assert set(watch_ui._LOGO_SVG) == backends | {"claude"}
+    for svg in watch_ui._LOGO_SVG.values():
+        low = svg.lower()
+        assert "<script" not in low and "foreignobject" not in low
+        assert not re.search(r"\son\w+\s*=", low)
+        assert "http" not in low.replace('xmlns="http://www.w3.org/2000/svg"', "")
+    assert "__LOGOS__" not in watch_ui.BASE_JS
+
+
 def test_watch_begin_gives_each_run_a_clean_image():
     rid = server._watch_begin("t", 1.0)
     assert server._watch_snapshot(rid)["image"] == ""  # fresh run: no image

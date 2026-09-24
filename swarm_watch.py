@@ -26,6 +26,7 @@ from typing import Optional
 
 import proc_tree
 import server
+import watch_ui
 from server import (
     _chromium_app_browsers,
     _detect_image_format,
@@ -238,9 +239,8 @@ def open_window(n_workers: int) -> None:
     Reuses an already-open dashboard (detected via recent /events polls) so repeated
     swarm runs don't pile up browser windows; the open page rebuilds itself for the
     new run. Set AGY_WATCH_ALWAYS_NEW=1 to force a fresh window each time."""
-    # Fixed, narrow window; panes flex to fill it, so they spread out with few
-    # workers and shrink as more are added.
-    w, h, x, y = 440, 660, 40, 60
+    # Fixed, narrow window, tall enough for five worker cards; more scroll.
+    w, h, x, y = 440, 720, 40, 60
     _GEO.update(x=x, y=y, w=w, h=h)
     url = f"http://127.0.0.1:{_port()}/?k={server._WATCH_TOKEN}"
     if _dashboard_is_live() and not _env_truthy("AGY_WATCH_ALWAYS_NEW"):
@@ -258,95 +258,110 @@ def open_worker_window(index: int) -> None:
 
 
 # ------------------------------------------------------------------- dashboard page
-# Thin vertical list: each row = repo + prompt + a SHORT snippet of the latest op
-# + a per-worker time bar. A row is selectable (↑/↓), openable (click or Enter),
-# and opens that agent's detail window (full steps) beside the dashboard.
-_HTML = """<!doctype html><html lang="en" translate="no"><head><meta charset="utf-8">
+# One card per worker: backend avatar + prompt + status chip, then its latest step
+# and a time bar. A card is selectable (↑/↓), openable (click or Enter), and opens
+# that agent's detail window beside the dashboard. The header counts workers by
+# state; its clock stops once every worker has finished. Built on watch_ui's base
+# styles and helpers so it matches the chat windows.
+_HTML = (
+    """<!doctype html><html lang="en" translate="no"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Agent Swarm</title><style>
-:root{--bg:#0a0c10;--fg:#d6d6d6;--dim:#6a7480;--green:#3fdf7f;--cyan:#5cd6e6;--red:#ff6b6b;--bd:#191c22}
-*{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg)}
-body{color:var(--fg);font:12px/1.5 ui-monospace,"Cascadia Mono",Consolas,monospace;display:flex;flex-direction:column;height:100vh}
-::-webkit-scrollbar{width:9px}::-webkit-scrollbar-thumb{background:#23262d;border-radius:6px}
-header{display:flex;align-items:center;gap:9px;padding:7px 11px;background:#0d0f14;border-bottom:1px solid var(--bd);flex:none;font-size:11px}
-.name{color:var(--green);font-weight:700;text-shadow:0 0 9px rgba(63,223,127,.45)}
-.clock{color:#566;font-variant-numeric:tabular-nums}
-#tot{margin-left:auto;color:#7c8896;font-variant-numeric:tabular-nums}
-.gbar{height:2px;background:#11141a;flex:none}
-.gfill{height:100%;width:0;background:linear-gradient(90deg,var(--green),var(--cyan));box-shadow:0 0 8px rgba(92,214,230,.5);transition:width .5s ease}
-.grid{display:flex;flex-direction:column;flex:1;overflow:auto}
-.pane{position:relative;flex:1 1 0;min-height:54px;padding:9px 12px 12px;border-bottom:1px solid var(--bd);cursor:pointer;user-select:none;display:flex;flex-direction:column;justify-content:center;gap:5px;overflow:hidden;transition:background .15s ease,opacity .3s ease}
-.pane:hover{background:#12151c}
-.pane.sel{background:#141923;box-shadow:inset 2px 0 0 var(--cyan)}
-.pane.done,.pane.error{opacity:.82}
-.pane.done:hover,.pane.error:hover,.pane.sel{opacity:1}
-.r1{display:flex;align-items:flex-start;gap:7px}
-.r1 .dot{margin-top:5px}
-.dot{width:7px;height:7px;border-radius:50%;flex:none;transition:background .25s ease}
-.queued .dot{background:#556}
-.working .dot{background:var(--green);box-shadow:0 0 8px var(--green);animation:pulse 1s infinite}
-.done .dot{background:var(--cyan);box-shadow:0 0 7px var(--cyan);animation:pop .45s ease}
-.error .dot{background:var(--red);box-shadow:0 0 8px var(--red);animation:pop .45s ease}
-@keyframes pulse{50%{opacity:.3}}
-@keyframes pop{0%{transform:scale(.2)}55%{transform:scale(1.5)}100%{transform:scale(1)}}
-.repo{color:#0a0c10;background:var(--green);border-radius:4px;padding:0 5px;font-size:9.5px;font-weight:700;flex:none;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px}
-.bk{border-radius:4px;padding:0 5px;font-size:9px;font-weight:700;flex:none;margin-top:1px;letter-spacing:.3px}
-.bk.codex{color:#0a0c10;background:#7c9cff}
-.bk.antigravity{color:#0a0c10;background:#f5b94a}
-.bk.copilot{color:#0a0c10;background:#c3a6ff}
-.bk.cursor{color:#0a0c10;background:#7ad9a8}
-.bk.grok{color:#0a0c10;background:#f58a8a}
-.bk.muse{color:#0a0c10;background:#f0a6e6}
-.bk.opencode{color:#0a0c10;background:#8fd4e8}
-.prompt{color:#e9eef3;font-weight:600;flex:1;min-width:0;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;word-break:break-word}
-.st{color:var(--dim);font-size:10.5px;flex:none;font-variant-numeric:tabular-nums;margin-top:1px}
-.pop{color:var(--green);opacity:.55;flex:none;font-size:11px;margin-top:1px}
-.pane:hover .pop{opacity:1;text-shadow:0 0 7px var(--green)}
-.sub{display:flex;gap:6px;align-items:baseline;padding-left:14px;color:var(--dim);font-size:11px}
-.sub .sym{flex:none;width:9px}
-.sub .txt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.sub.command .sym,.sub.command .txt{color:#cdd3d9}.sub.command .sym{color:var(--green)}
-.sub.narration .sym,.sub.narration .txt{color:var(--cyan)}
-.sub.done .sym,.sub.done .txt{color:var(--cyan)}
-.sub.error .sym,.sub.error .txt{color:#ffb3b3}
-.spin{color:var(--green);text-shadow:0 0 7px rgba(63,223,127,.6)}
-.rbar{position:absolute;left:0;right:0;bottom:0;height:2px;background:#11141a}
-.rfill{height:100%;width:0;transition:width .4s linear}
-.rfill.working{background:linear-gradient(90deg,rgba(63,223,127,.45),var(--green));background-size:200% 100%;animation:flow 1.1s linear infinite}
-.rfill.done{background:var(--cyan)}
-.rfill.error{background:var(--red)}
+<title>Agent Swarm</title><style>"""
+    + watch_ui.BASE_CSS
+    + r"""
+body{display:flex;flex-direction:column;height:100vh;overflow:hidden}
+header{flex:none;padding:12px 12px 11px;background:rgba(10,12,17,.84);border-bottom:1px solid var(--bd2)}
+.hrow{display:flex;align-items:center;gap:10px}
+.logo{flex:none;width:30px;height:30px;border-radius:9px;display:grid;place-items:center;color:#062011;background:linear-gradient(135deg,var(--green),var(--cyan));box-shadow:0 4px 16px rgba(63,223,127,.28)}
+.logo svg{width:15px;height:15px}
+.name{font-weight:650;font-size:14px}
+.subt{font-size:11.5px;color:var(--tx3)}
+.clock{margin-left:auto;display:flex;align-items:center;gap:6px;font-weight:600;font-size:12px;color:var(--tx2);font-variant-numeric:tabular-nums;background:var(--s2);border:1px solid var(--bd);border-radius:999px;padding:4px 11px 4px 9px;transition:all .3s}
+.clock svg{width:13px;height:13px}
+.clock.fin{color:#c3f3f9;background:rgba(92,214,230,.09);border-color:rgba(92,214,230,.32)}
+.clock.fin.bad{color:#ffc9c9;background:rgba(255,107,107,.1);border-color:rgba(255,107,107,.34)}
+.clock.lost{color:#ffe2ab;background:rgba(245,185,74,.1);border-color:rgba(245,185,74,.34)}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:11px}
+.stat{display:flex;align-items:baseline;gap:6px;background:var(--s1);border:1px solid var(--bd2);border-radius:9px;padding:4px 9px;transition:border-color .3s}
+.stat b{font-size:15px;line-height:1.3;font-weight:700;font-variant-numeric:tabular-nums;color:#3a414f;transition:color .3s}
+.stat span{font-size:10.5px;color:var(--tx3)}
+.stat.on.run{border-color:rgba(63,223,127,.28)}.stat.on.run b{color:var(--green)}
+.stat.on.q b{color:var(--tx)}
+.stat.on.ok{border-color:rgba(92,214,230,.26)}.stat.on.ok b{color:var(--cyan)}
+.stat.on.err{border-color:rgba(255,107,107,.3)}.stat.on.err b{color:var(--red)}
+.seg{display:flex;height:4px;border-radius:4px;background:var(--s3);overflow:hidden;margin-top:10px}
+.seg i{display:block;height:100%;width:0;transition:width .6s cubic-bezier(.2,.7,.2,1)}
+#gdone{background:linear-gradient(90deg,var(--green),var(--cyan))}#gerr{background:var(--red)}
+.list{flex:1;overflow:auto;padding:10px 12px 12px;display:flex;flex-direction:column;gap:8px}
+.card{position:relative;flex:none;background:var(--s1);border:1px solid var(--bd);border-radius:12px;padding:10px 12px 11px;cursor:pointer;user-select:none;transition:border-color .15s,background .15s,box-shadow .15s;animation:rise .35s ease both}
+.card:hover{background:var(--s2);border-color:#313949}
+.card.sel{border-color:rgba(92,214,230,.6);box-shadow:0 0 0 3px rgba(92,214,230,.13)}
+.card.error{border-color:rgba(255,107,107,.3)}
+.c1{display:flex;gap:10px;align-items:flex-start}
+.prompt{flex:1;min-width:0;font-weight:600;font-size:12.5px;line-height:1.4;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:break-word;margin-top:1px}
+.card.done .prompt,.card.error .prompt{color:var(--tx2)}
+.stc{flex:none;display:flex;align-items:center;gap:5px;font-weight:600;font-size:11px;line-height:1;padding:4px 8px;border-radius:999px;background:var(--s2);border:1px solid var(--bd);color:var(--tx3);font-variant-numeric:tabular-nums;white-space:nowrap}
+.stc svg{width:11px;height:11px;animation:pop .4s ease}.stc .ring{width:9px;height:9px;border-width:1.6px}
+.working .stc{color:#c3f7d8;background:rgba(63,223,127,.09);border-color:rgba(63,223,127,.3)}
+.done .stc{color:#c3f3f9;background:rgba(92,214,230,.08);border-color:rgba(92,214,230,.28)}
+.error .stc{color:#ffc9c9;background:rgba(255,107,107,.1);border-color:rgba(255,107,107,.32)}
+.c2{display:flex;align-items:center;gap:7px;margin:7px 0 0 36px;min-width:0;font-size:11.5px;color:var(--tx3)}
+.last{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.last.narration{color:var(--tx2)}
+.last.command{font:11px var(--mono);color:var(--tx)}.last.command b{color:var(--green);margin-right:6px}
+.last.done{color:#a7e9f2}.last.error{color:#ffb8b8}
+.cnt{flex:none;font-size:10.5px;font-variant-numeric:tabular-nums}
+.bar{height:3px;border-radius:3px;background:var(--s3);margin:9px 0 0 36px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;border-radius:3px;transition:width .5s linear}
+.bar i.working{background:linear-gradient(90deg,rgba(63,223,127,.45),var(--green));background-size:200% 100%;animation:flow 1.2s linear infinite}
+.bar i.working.warn{background:linear-gradient(90deg,rgba(245,185,74,.45),var(--amber));background-size:200% 100%}
+.bar i.done{background:var(--cyan)}.bar i.error{background:var(--red)}
 @keyframes flow{from{background-position:200% 0}to{background-position:0 0}}
-.foot{flex:none;padding:4px 11px;border-top:1px solid var(--bd);color:#3b414a;font-size:10px;background:#0d0f14;text-align:center}
+.foot{flex:none;display:flex;justify-content:center;align-items:center;gap:6px;padding:7px 11px;border-top:1px solid var(--bd2);color:var(--tx3);font-size:11px;background:rgba(10,12,17,.84)}
+.foot .sep{margin:0 4px;opacity:.5}
 </style></head><body>
-<header><span class="name">Agent Swarm</span><span class="clock" id="clock"></span><span id="tot"></span></header>
-<div class="gbar"><div class="gfill" id="gfill"></div></div>
-<div class="grid" id="grid"></div>
-<div class="foot">↑/↓ select · ↵ open · click a row for its full log</div>
-<script>
-const SYM={narration:"▸",command:"$",result:"✓",done:"✓",error:"✗"};
-// Backends that get their own badge; anything else (incl. antigravity) shows "agy".
-const BACKEND_BADGES=["codex","copilot","cursor","grok","opencode","muse"];
-const FR="⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";let fi=0;
-let started=null,sel=-1,nWork=0,timeout=0,statuses={};
-const $=id=>document.getElementById(id);
-const K=encodeURIComponent(new URLSearchParams(location.search).get("k")||"");
+<header>
+ <div class="hrow">
+  <div class="logo"><svg viewBox="0 0 16 16"><g fill="currentColor"><rect x="2" y="2" width="5" height="5" rx="1.5"/><rect x="9" y="2" width="5" height="5" rx="1.5"/><rect x="2" y="9" width="5" height="5" rx="1.5"/><rect x="9" y="9" width="5" height="5" rx="1.5" opacity=".55"/></g></svg></div>
+  <div><div class="name">Agent Swarm</div><div class="subt" id="subt">connecting…</div></div>
+  <div class="clock" id="clockw"><span id="clockic"></span><span id="clock">0s</span></div>
+ </div>
+ <div class="stats">
+  <div class="stat run" id="n_working"><b>0</b><span>running</span></div>
+  <div class="stat q" id="n_queued"><b>0</b><span>queued</span></div>
+  <div class="stat ok" id="n_done"><b>0</b><span>done</span></div>
+  <div class="stat err" id="n_error"><b>0</b><span>failed</span></div>
+ </div>
+ <div class="seg" id="seg"><i id="gdone"></i><i id="gerr"></i></div>
+</header>
+<div class="list" id="grid"></div>
+<div class="foot"><kbd>↑</kbd><kbd>↓</kbd> select<span class="sep">·</span><kbd>↵</kbd> open<span class="sep">·</span>or click a card for its full log</div>
+<script>"""
+    + watch_ui.BASE_JS
+    + r"""
+let started=null,sel=-1,nWork=0,timeout=0,statuses={},fails=0;
 function openWorker(i){fetch("/open?i="+i+"&k="+K,{cache:"no-store"}).catch(()=>{});}
-function esc(s){return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
-function cut(s,n){s=s||"";return s.length>n?s.slice(0,n)+"…":s;}
+function now(){return Date.now()/1000;}
+// A working worker's clock runs locally from its start time, so it moves between
+// the (coarse) moments its backend reports progress.
+function elapsedOf(w){return w.status==="working"&&w.started?Math.max(w.elapsed||0,now()-w.started):(w.elapsed||0);}
 function applySel(){for(let i=0;i<nWork;i++){const p=$("p"+i);if(p)p.classList.toggle("sel",i===sel);}}
+function setHtml(node,key,html){if(node.dataset.k!==key){node.dataset.k=key;node.innerHTML=html;}}
 function build(ws){
  const g=$("grid");g.innerHTML="";statuses={};
  ws.forEach(w=>{
-  const p=document.createElement("div");p.className="pane "+w.status;p.id="p"+w.index;
-  p.title="click to open this agent's full step log";p.onclick=()=>openWorker(w.index);
-  p.innerHTML="<div class='r1'><span class='dot'></span>"+
-   (w.backend?"<span class='bk "+w.backend+"' title='"+esc(w.backend)+"'>"+(BACKEND_BADGES.includes(w.backend)?w.backend:'agy')+"</span>":"")+
-   (w.repo?"<span class='repo' title='"+esc(w.repo)+"'>"+esc(w.repo)+"</span>":"")+
-   "<span class='prompt' title='"+esc(w.label)+"'>"+esc(w.label||("Worker "+w.index))+"</span>"+
-   "<span class='st' id='st"+w.index+"'></span><span class='pop'>↗</span></div>"+
-   "<div class='sub' id='sub"+w.index+"'></div>"+
-   "<div class='rbar'><div class='rfill' id='rf"+w.index+"'></div></div>";
-  g.appendChild(p);statuses[w.index]=w.status;
+  const c=el("div","card "+w.status);c.id="p"+w.index;c.style.animationDelay=(w.index*45)+"ms";
+  c.title="Open this agent's full log";c.onclick=()=>openWorker(w.index);
+  const r1=el("div","c1"),pr=el("div","prompt",w.label||("Worker "+w.index));pr.title=w.label||"";
+  const st=el("div","stc");st.id="st"+w.index;
+  r1.append(avatar(w.backend||"agy"),pr,st);
+  const r2=el("div","c2");
+  if(w.repo){const rp=el("span","repo",w.repo);rp.title=w.repo;r2.appendChild(rp);}
+  const last=el("span","last");last.id="sub"+w.index;
+  const cnt=el("span","cnt");cnt.id="cnt"+w.index;
+  r2.append(last,cnt);
+  const bar=el("div","bar"),fill=el("i");fill.id="rf"+w.index;bar.appendChild(fill);
+  c.append(r1,r2,bar);g.appendChild(c);statuses[w.index]=w.status;
  });
  if(sel>=ws.length)sel=ws.length-1;
  applySel();
@@ -357,284 +372,128 @@ document.addEventListener("keydown",e=>{
   e.preventDefault();
   sel=(sel<0)?0:sel+(e.key==="ArrowDown"?1:-1);
   if(sel<0)sel=0;if(sel>=nWork)sel=nWork-1;
-  applySel();const el=$("p"+sel);if(el)el.scrollIntoView({block:"nearest"});
+  applySel();const c=$("p"+sel);if(c)c.scrollIntoView({block:"nearest"});
  }else if(e.key==="Enter"&&sel>=0){openWorker(sel);}
 });
+// The step a card shows: the newest one, unless it is a bare "done" that only
+// closes the command before it (that command is the more useful line to show).
+function latestStep(evs){
+ for(let i=evs.length-1;i>=0;i--){
+  const e=evs[i];
+  if(e.kind!=="result")return e;
+  if(!/^(done|command finished)$/i.test(e.text||""))return {kind:"error",text:e.text};
+ }
+ return null;
+}
+function paintWorker(w){
+ const c=$("p"+w.index);if(!c)return;
+ if(statuses[w.index]!==w.status){statuses[w.index]=w.status;c.className="card "+w.status;applySel();}
+ const t=elapsedOf(w),budget=w.timeout||timeout;
+ const st=$("st"+w.index);
+ setHtml(st,w.status,({working:RING,done:IC.check,error:IC.x}[w.status]||IC.clock)+"<span></span>");
+ st.lastChild.textContent=w.status==="queued"?"Queued":fmtS(t);
+ let cls="",txt;
+ if(w.status==="done"||w.status==="error"){cls=w.status;txt=(w.answer||"").split("\n")[0]||(w.status==="done"?"Done":"Failed");}
+ else if(w.status==="working"){const e=latestStep(w.events);cls=e?e.kind:"narration";txt=e?e.text:"Starting…";}
+ else txt="Waiting for a free slot…";
+ const last=$("sub"+w.index);
+ if(last._k!==cls+"\n"+txt){
+  last._k=cls+"\n"+txt;last.className="last "+cls;last.textContent="";last.title=txt;
+  if(cls==="command")last.appendChild(el("b",null,"$"));
+  last.appendChild(document.createTextNode(txt));
+ }
+ const steps=w.events.filter(e=>e.kind!=="result").length;
+ $("cnt"+w.index).textContent=steps?steps+" step"+(steps===1?"":"s"):"";
+ const rf=$("rf"+w.index);
+ let frac=0;
+ if(w.status==="done"||w.status==="error")frac=1;
+ else if(w.status==="working")frac=budget>0?Math.min(t/budget,.98):0.06;
+ rf.className=w.status+(w.status==="working"&&frac>.75?" warn":"");
+ rf.style.width=(frac*100).toFixed(1)+"%";
+ rf.parentNode.title=w.status==="working"&&budget>0?fmtS(t)+" of the "+fmtS(budget)+" time budget":"";
+}
+function header(s){
+ const n={working:0,queued:0,done:0,error:0};
+ s.workers.forEach(w=>{if(w.status in n)n[w.status]++;});
+ for(const k in n){const b=$("n_"+k);b.classList.toggle("on",n[k]>0);b.firstChild.textContent=n[k];}
+ $("gdone").style.width=(nWork?n.done/nWork*100:0)+"%";
+ $("gerr").style.width=(nWork?n.error/nWork*100:0)+"%";
+ const fin=n.done+n.error,all=nWork>0&&fin===nWork;
+ // Once every worker has finished, the clock shows when the last one did.
+ let t=started?now()-started:0;
+ if(all){t=0;s.workers.forEach(w=>{if(w.started)t=Math.max(t,w.started+(w.elapsed||0)-started);});}
+ $("clockw").className="clock"+(all?" fin"+(n.error?" bad":""):"");
+ setHtml($("clockic"),all?(n.error?"x":"ok"):"clock",all?(n.error?IC.x:IC.check):IC.clock);
+ $("clock").textContent=t>0?fmtS(t).replace(/\.\ds$/,"s"):"0s";
+ const kinds=new Set(s.workers.map(w=>bkName(w.backend)));
+ $("subt").textContent=nWork+" agent"+(nWork===1?"":"s")+" · "+kinds.size+" backend"+(kinds.size===1?"":"s")+(all?" · finished":"");
+ document.title=(all?(n.error?"✗ ":"✓ "):"● ")+fin+"/"+nWork+" · Agent Swarm";
+}
 async function tick(){
- fi=(fi+1)%FR.length;
- try{
-  const s=await(await fetch("/events?k="+K,{cache:"no-store"})).json();
-  if(s.started!==started){started=s.started;nWork=s.workers.length;timeout=s.timeout||0;build(s.workers);}
-  s.workers.forEach(w=>{
-   const p=$("p"+w.index);
-   if(p&&statuses[w.index]!==w.status){statuses[w.index]=w.status;p.className="pane "+w.status;applySel();}
-   const st=$("st"+w.index);
-   if(st)st.textContent=w.status==="queued"?"queued":
-     (w.status==="working"?w.elapsed.toFixed(1)+"s":w.status+" "+w.elapsed.toFixed(1)+"s");
-   const sub=$("sub"+w.index);
-   if(sub){
-    const e=w.events.length?w.events[w.events.length-1]:null;
-    if(w.status==="working"){
-     sub.className="sub "+(e?e.kind:"");
-     sub.innerHTML="<span class='sym spin'>"+FR[fi]+"</span><span class='txt'>"+
-       esc(cut(e?e.text:"starting…",54))+"</span>";
-    }else if(w.status==="done"||w.status==="error"){
-     const k=w.status;sub.className="sub "+k;
-     sub.innerHTML="<span class='sym'>"+SYM[k]+"</span><span class='txt'>"+
-       esc(cut((w.answer||"").split("\\n")[0]||w.status,54))+"</span>";
-    }else if(e){
-     sub.className="sub "+e.kind;
-     sub.innerHTML="<span class='sym'>"+(SYM[e.kind]||"·")+"</span><span class='txt'>"+
-       esc(cut(e.text,54))+"</span>";
-    }else{sub.className="sub";sub.innerHTML="<span class='txt' style='opacity:.5'>queued…</span>";}
-   }
-   const rf=$("rf"+w.index);
-   if(rf){
-    let frac=0;
-    if(w.status==="done"||w.status==="error")frac=1;
-    else if(w.status==="working")frac=timeout>0?Math.min(w.elapsed/timeout,.98):0.06;
-    rf.className="rfill "+w.status;rf.style.width=Math.round(frac*100)+"%";
-   }
-  });
-  const done=s.workers.filter(w=>w.status==="done"||w.status==="error").length;
-  $("gfill").style.width=(nWork?Math.round(done/nWork*100):0)+"%";
-  $("tot").textContent=done+"/"+nWork+" done";
-  const el=started?(Date.now()/1000-started):0;
-  $("clock").textContent=el>0?el.toFixed(0)+"s":"";
- }catch(e){}
+ let s=null;
+ try{const r=await fetch("/events?k="+K,{cache:"no-store"});if(r.ok)s=await r.json();}catch(e){}
+ if(!s){
+  if(++fails>=3){
+   $("clockw").className="clock lost";setHtml($("clockic"),"lost",IC.warn);
+   $("clock").textContent="Disconnected";document.title="⚠ Agent Swarm";
+  }
+  setTimeout(tick,fails>=3?2000:400);return;
+ }
+ fails=0;
+ if(s.started!==started){started=s.started;nWork=s.workers.length;timeout=s.timeout||0;build(s.workers);}
+ s.workers.forEach(paintWorker);
+ header(s);
  setTimeout(tick,400);
 }
 tick();
 </script></body></html>"""
+)
 
 
-# Dedicated single-worker detail page (opened when a row is clicked / Enter). Shows
-# the repo + expandable full prompt, a time progress bar, the step-by-step stream
-# revealed with a typewriter, and the final Markdown answer / image (with a copy
-# button). Mirrors the single-worker viewer in server.py.
-_WORKER_HTML = """<!doctype html><html lang="en" translate="no"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Agent Intern</title><style>
-:root{--bg:#0a0c10;--fg:#d6d6d6;--dim:#6a7480;--green:#3fdf7f;--cyan:#5cd6e6;--red:#ff6b6b;--bd:#191c22;--code:#06080b;--ubg:#13251c;--ubd:#2a5a41;--uc:#e9f6ee}
-*{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg)}
-body{color:var(--fg);font:13px/1.6 ui-monospace,"Cascadia Mono",Consolas,monospace}
-::-webkit-scrollbar{width:9px}::-webkit-scrollbar-thumb{background:#23262d;border-radius:6px}
-.top{position:sticky;top:0;z-index:3;background:var(--bg)}
-header{display:flex;align-items:center;gap:8px;padding:9px 14px;background:#0d0f14;border-bottom:1px solid var(--bd)}
-.name{color:var(--green);font-weight:700;text-shadow:0 0 10px rgba(63,223,127,.4)}
-.repo{color:#0a0c10;background:var(--green);border-radius:4px;padding:0 6px;font-size:10px;font-weight:700}
-.bk{border-radius:4px;padding:0 6px;font-size:9.5px;font-weight:700;letter-spacing:.3px;color:#0a0c10}
-.bk.antigravity{background:#f5b94a}.bk.codex{background:#7c9cff}.bk.copilot{background:#c3a6ff}.bk.cursor{background:#7ad9a8}.bk.grok{background:#f58a8a}.bk.muse{background:#f0a6e6}.bk.opencode{background:#8fd4e8}
-.pill{margin-left:auto;display:flex;align-items:center;gap:7px;font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
-.dot{width:8px;height:8px;border-radius:50%;flex:none;display:none}
-.dot.done{background:var(--cyan);box-shadow:0 0 7px var(--cyan);animation:pop .45s ease}
-.dot.error{background:var(--red);box-shadow:0 0 8px var(--red);animation:pop .45s ease}
-@keyframes pop{0%{transform:scale(.2)}55%{transform:scale(1.5)}100%{transform:scale(1)}}
-.spin{color:var(--green);display:inline-block;width:9px;text-align:center;text-shadow:0 0 8px rgba(63,223,127,.6)}
-.gbar{height:2px;background:#11141a}
-.gfill{height:100%;width:0;background:linear-gradient(90deg,var(--green),var(--cyan));box-shadow:0 0 8px rgba(92,214,230,.5);transition:width .4s linear}
-#chat{max-width:960px;margin:0 auto;padding:16px 14px 46px;display:flex;flex-direction:column;gap:11px}
-.msg{display:flex;max-width:100%;animation:rise .28s ease both}
-@keyframes rise{from{opacity:0;transform:translateY(7px)}}
-.msg.user{justify-content:flex-end}.msg.bot{justify-content:flex-start}
-.role{font-size:9px;letter-spacing:1.4px;font-weight:700;opacity:.7;margin:0 3px 3px}
-.wrap{display:flex;flex-direction:column;max-width:84%}
-.msg.user .wrap{align-items:flex-end}
-.bubble{position:relative;padding:9px 13px;border-radius:15px;word-break:break-word;box-shadow:0 1px 2px rgba(0,0,0,.25)}
-.bubble.user{background:var(--ubg);border:1px solid var(--ubd);color:var(--uc);border-bottom-right-radius:5px}
-.bubble.bot{background:#0c0e13;border:1px solid var(--bd);border-bottom-left-radius:5px}
-.bubble.bot.err{border-color:#5a2a2a}
-.btext{white-space:pre-wrap;word-break:break-word}
-.bubble.user.clampable .btext{max-height:7.4em;overflow:hidden;-webkit-mask-image:linear-gradient(180deg,#000 72%,transparent)}
-.bubble.user.expanded .btext{max-height:60vh;overflow:auto;-webkit-mask-image:none}
-.exp{margin-top:6px;font-size:10.5px;color:var(--cyan);cursor:pointer;user-select:none;opacity:.85}
-.exp:hover{opacity:1}
-.trace{background:#0b0d12;border:1px solid var(--bd);border-radius:13px;border-bottom-left-radius:5px;overflow:hidden;max-width:84%}
-.trace-head{display:flex;align-items:center;gap:8px;padding:7px 12px;cursor:pointer;color:var(--dim);font-size:11px}
-.trace-head:hover{background:#0f1218}
-.trace-body{padding:1px 12px 9px;display:flex;flex-direction:column;gap:3px}
-.trace.collapsed .trace-body{display:none}
-.chev{margin-left:auto;color:var(--green);opacity:.7;transition:transform .2s}
-.trace.collapsed .chev{transform:rotate(-90deg)}
-.ty{display:inline-flex;gap:3px;align-items:center}
-.ty i{width:4px;height:4px;border-radius:50%;background:var(--green);opacity:.4;animation:ty 1s infinite}
-.ty i:nth-child(2){animation-delay:.16s}.ty i:nth-child(3){animation-delay:.32s}
-@keyframes ty{0%,60%,100%{opacity:.35}30%{opacity:1}}
-.step{display:flex;gap:8px;align-items:baseline;font-size:11.5px;animation:rise .2s ease both}
-.step .sym{width:11px;flex:none}
-.step .txt{white-space:pre-wrap;word-break:break-word;color:#c7ccd2}
-.step.command .sym{color:var(--green)}.step.command .txt{color:#eaeef2}
-.step.narration .sym,.step.narration .txt{color:var(--cyan)}
-.step.result .sym,.step.result .txt{color:var(--green);opacity:.55}
-.md .h{font-weight:700;margin:12px 0 5px;color:#cdd9e5}
-.md .h1{font-size:16px;color:#fff}.md .h2{font-size:14px}.md .h3{font-size:12.5px;color:var(--green)}
-.md .p{margin:3px 0;white-space:pre-wrap;word-break:break-word}
-.md .li{display:flex;gap:8px;margin:2px 0}
-.md .bul{color:var(--green);flex:none;min-width:14px;text-align:right}
-.md .lit{white-space:pre-wrap;word-break:break-word}
-.md pre.code{background:var(--code);border-left:2px solid var(--green);border-radius:4px;padding:9px 11px;margin:7px 0;overflow:auto;white-space:pre;color:#e9efe9}
-.md code{background:#16191f;padding:1px 5px;border-radius:4px;color:#9fe6ad}
-.md .lnk{color:var(--cyan);border-bottom:1px dotted #2a6b73}
-.md strong{color:#fff}
-.md .copy{position:absolute;top:7px;right:8px;background:#0e1218;border:1px solid var(--bd);color:var(--dim);font:inherit;font-size:10px;padding:2px 8px;border-radius:5px;cursor:pointer;opacity:0;transition:opacity .15s,color .15s,border-color .15s}
-.bubble.bot:hover .copy{opacity:.92}
-.md .copy:hover{color:var(--green);border-color:#2a3340}
-.shot{max-width:100%;border:1px solid var(--bd);border-radius:12px;display:block;animation:rise .3s ease both}
-.jump{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#12161d;border:1px solid #2a3340;color:var(--cyan);font-size:11px;padding:5px 13px;border-radius:20px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.5);animation:rise .3s;z-index:4}
-</style></head><body>
-<div class="top">
-<header><span class="name">Agent Intern</span>
-<span class="bk" id="bk" style="display:none"></span>
-<span class="repo" id="repo" style="display:none"></span>
-<span class="pill"><span class="dot" id="dot"></span><span class="spin" id="spin"></span><span id="st"></span></span></header>
-<div class="gbar"><div class="gfill" id="gfill"></div></div>
-</div>
-<div id="chat"></div>
-<div class="jump" id="jump" style="display:none">↓ jump to latest</div>
-<script>
-const SYM={narration:"▸",command:"$",result:"✓"};
-// Backends that get their own badge; anything else (incl. antigravity) shows "agy".
-const BACKEND_BADGES=["codex","copilot","cursor","grok","opencode","muse"];
-const IDX=parseInt(new URLSearchParams(location.search).get("i")||"0",10);
-const K=encodeURIComponent(new URLSearchParams(location.search).get("k")||"");
-let started=null,seen=0,fin=false,follow=true,timeout=0,traceEl=null,traceBody=null;
-const $=id=>document.getElementById(id);
-const chat=()=>$("chat");
-function esc(s){return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
-function toBottom(){window.scrollTo(0,document.body.scrollHeight);}
-function maybeBottom(){if(follow)toBottom();}
-window.addEventListener("scroll",()=>{
- follow=window.innerHeight+window.scrollY>=document.body.scrollHeight-44;
- $("jump").style.display=follow?"none":"";
-});
-$("jump").onclick=()=>{follow=true;$("jump").style.display="none";toBottom();};
-const FR="⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";let fi=0,spinT=null;
-function startSpin(){if(spinT)return;spinT=setInterval(()=>{$("spin").textContent=FR[fi=(fi+1)%FR.length];},80);}
-function stopSpin(){if(spinT){clearInterval(spinT);spinT=null;}$("spin").textContent="";}
-function inl(s){
- return s.replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g,"<span class='lnk'>$1</span>")
-         .replace(/`([^`]+)`/g,(m,c)=>"<code>"+c+"</code>")
-         .replace(/\\*\\*([^*]+)\\*\\*/g,"<strong>$1</strong>");
-}
-function md(src){
- const lines=esc(src).split("\\n"),out=[];let inC=false,code="";
- for(const ln of lines){
-  const f=ln.match(/^```(\\w*)\\s*$/);
-  if(f){if(!inC){inC=true;code="";}else{inC=false;
-   out.push("<pre class='code'>"+code.replace(/\\n$/,"")+"</pre>");}continue;}
-  if(inC){code+=ln+"\\n";continue;}
-  const h=ln.match(/^(#{1,6})\\s+(.*)$/);
-  if(h){out.push("<div class='h h"+h[1].length+"'>"+inl(h[2])+"</div>");continue;}
-  const b=ln.match(/^\\s*[-*]\\s+(.*)$/);
-  if(b){out.push("<div class='li'><span class='bul'>•</span>"+
-   "<span class='lit'>"+inl(b[1])+"</span></div>");continue;}
-  const n=ln.match(/^\\s*(\\d+)\\.\\s+(.*)$/);
-  if(n){out.push("<div class='li'><span class='bul'>"+n[1]+".</span>"+
-   "<span class='lit'>"+inl(n[2])+"</span></div>");continue;}
-  if(ln.trim()==="")continue;
-  out.push("<div class='p'>"+inl(ln)+"</div>");
- }
- if(inC)out.push("<pre class='code'>"+code+"</pre>");
- return out.join("");
-}
-function copyText(txt,btn){
- navigator.clipboard.writeText(txt).then(()=>{
-  const o=btn.textContent;btn.textContent="copied ✓";setTimeout(()=>btn.textContent=o,1200);
- }).catch(()=>{});
-}
-function userBubble(text){
- const m=document.createElement("div");m.className="msg user";
- const wrap=document.createElement("div");wrap.className="wrap";
- const r=document.createElement("div");r.className="role";r.textContent="CLAUDE";wrap.appendChild(r);
- const b=document.createElement("div");b.className="bubble user clampable";
- const t=document.createElement("div");t.className="btext";t.textContent=text||"";
- b.appendChild(t);wrap.appendChild(b);m.appendChild(wrap);chat().appendChild(m);
- requestAnimationFrame(()=>{
-  if(t.scrollHeight>t.clientHeight+2){
-   const x=document.createElement("div");x.className="exp";x.textContent="show more ▾";
-   x.onclick=()=>{const e=b.classList.toggle("expanded");x.textContent=e?"show less ▴":"show more ▾";maybeBottom();};
-   b.appendChild(x);
-  }else{b.classList.remove("clampable");}
-  maybeBottom();
- });
-}
-function newTrace(){
- const m=document.createElement("div");m.className="msg bot";
- const tr=document.createElement("div");tr.className="trace";
- tr.innerHTML="<div class='trace-head'><span class='ty'><i></i><i></i><i></i></span>"+
-  "<span class='tlabel'>working…</span><span class='chev'>▾</span></div>"+
-  "<div class='trace-body'></div>";
- m.appendChild(tr);chat().appendChild(m);
- tr.querySelector(".trace-head").onclick=()=>tr.classList.toggle("collapsed");
- traceEl=tr;traceBody=tr.querySelector(".trace-body");
-}
-function addStep(e){
- if(!traceBody)return;
- const r=document.createElement("div");r.className="step "+e.kind;
- r.innerHTML="<span class='sym'></span><span class='txt'></span>";
- r.querySelector(".sym").textContent=SYM[e.kind]||"·";
- r.querySelector(".txt").textContent=e.text;
- traceBody.appendChild(r);maybeBottom();
-}
+# Dedicated single-worker detail page (opened when a card is clicked / Enter): the
+# same chat window as the single-run viewer (watch_ui), fed from this dashboard's
+# /events by the worker's index — its prompt, live step timeline, then the answer
+# or image.
+_WORKER_HTML = watch_ui.page(
+    "Agent Intern",
+    r"""
+const IDX=parseInt(Q.get("i")||"0",10);
+let started=null,seen=0,fin=false,fails=0;
 function rebuild(w,back){
- chat().innerHTML="";seen=0;fin=false;follow=true;traceEl=null;traceBody=null;
- $("dot").style.display="none";$("dot").className="dot";
- $("gfill").style.width="0";$("gfill").style.background="";
- $("jump").style.display="none";startSpin();
- userBubble(w.prompt||w.label||"");
- newTrace();
+ resetChat();seen=0;fin=false;
+ if(!w){emptyState("Worker "+IDX+" is not part of the current swarm");return;}
+ userBubble(w.prompt||w.label||"","Claude");
+ newTrace(back==="codex");
 }
 function finish(w,back){
- fin=true;stopSpin();
- $("dot").className="dot "+w.status;$("dot").style.display="";
- $("gfill").style.width="100%";
- if(w.status==="error")$("gfill").style.background="var(--red)";
- if(traceEl){
-  traceEl.classList.add("collapsed");
-  const lbl=traceEl.querySelector(".tlabel");if(lbl)lbl.textContent=seen+" steps ✓";
-  const ty=traceEl.querySelector(".ty");if(ty)ty.remove();
- }
- if(w.image){
-  const m=document.createElement("div");m.className="msg bot";
-  const wrap=document.createElement("div");wrap.className="wrap";
-  const im=document.createElement("img");im.className="shot";
-  im.onload=maybeBottom;im.src="/image?k="+K+"&p="+encodeURIComponent(w.image);
-  wrap.appendChild(im);m.appendChild(wrap);chat().appendChild(m);
- }
- if(w.answer){
-  const m=document.createElement("div");m.className="msg bot";
-  const wrap=document.createElement("div");wrap.className="wrap";
-  const r=document.createElement("div");r.className="role";r.textContent=back.toUpperCase();wrap.appendChild(r);
-  const b=document.createElement("div");b.className="bubble bot md"+(w.status==="error"?" err":"");
-  b.innerHTML=md(w.answer);
-  const cp=document.createElement("button");cp.className="copy";cp.textContent="copy";
-  cp.onclick=()=>copyText(w.answer,cp);b.appendChild(cp);
-  wrap.appendChild(b);m.appendChild(wrap);chat().appendChild(m);
- }
- maybeBottom();
+ fin=true;finishTrace(w.status);
+ if(w.image)imageCard("/image?k="+K+"&p="+encodeURIComponent(w.image));
+ const err=w.status==="error",meta=back+" · "+fmtS(w.elapsed);
+ if(w.answer)botCard(w.answer,err?"Failed":"Answer",{copy:!err,err:err,meta:meta});
 }
 async function tick(){
- try{
-  const s=await(await fetch("/events?k="+K,{cache:"no-store"})).json();
-  const w=s.workers[IDX];
+ let s=null;
+ try{const r=await fetch("/events?k="+K,{cache:"no-store"});if(r.ok)s=await r.json();}catch(e){}
+ if(!s){if(++fails>=3&&!fin)setState("lost");}
+ else{
+  fails=0;
+  const w=s.workers[IDX],back=w?bkName(w.backend):"agy";
   if(w){
-   const back=w.backend||"agy";const bname=BACKEND_BADGES.includes(back)?back:"agy";
-   if(s.started!==started){started=s.started;timeout=s.timeout||0;rebuild(w,bname);}
-   document.title="Intern · "+(w.repo?w.repo+" · ":"")+(w.label||("Worker "+IDX));
-   if(w.repo){$("repo").style.display="";$("repo").textContent=w.repo;}
-   if(w.backend){$("bk").style.display="";$("bk").className="bk "+w.backend;$("bk").textContent=bname;}
-   if(!fin){
-    $("st").textContent=w.status==="queued"?"queued":(w.status||"working")+" · "+(w.elapsed||0).toFixed(1)+"s";
-    let frac=w.status==="working"?(timeout>0?Math.min(w.elapsed/timeout,.98):0.06):0.03;
-    $("gfill").style.width=Math.round(frac*100)+"%";
-   }
+   TITLE="Intern · "+(w.repo?w.repo+" · ":"")+(w.label||("Worker "+IDX));
+   setAgent(w.backend,w.repo);
+  }
+  if(s.started!==started){started=s.started;rebuild(w,back);}
+  if(!w)setState("idle");
+  else{
    for(let i=seen;i<w.events.length;i++)addStep(w.events[i]);
    seen=w.events.length;
-   if((w.status==="done"||w.status==="error")&&!fin){
-    $("st").textContent=w.status+" · "+(w.elapsed||0).toFixed(1)+"s";finish(w,bname);}
+   if(w.status==="queued")setState("queued");
+   else if(w.status==="working")setState("working",{start:w.started,timeout:w.timeout||s.timeout,elapsed:w.elapsed});
+   else{if(!fin)finish(w,back);setState(w.status,{elapsed:w.elapsed});}
   }
- }catch(e){}
- setTimeout(tick,fin?1500:400);
+ }
+ setTimeout(tick,fin?1500:fails>=3?2000:400);
 }
 tick();
-</script></body></html>"""
+""",
+)

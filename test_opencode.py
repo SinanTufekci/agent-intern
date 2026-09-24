@@ -830,6 +830,21 @@ def test_swarm_never_lowers_a_generous_budget(tmp_path, monkeypatch):
     assert seen["timeout_s"] == 900
 
 
+def test_watched_opencode_worker_draws_its_bar_against_the_raised_budget(tmp_path, monkeypatch):
+    """The dashboard's time bar must use the budget the worker really has; drawn
+    against the swarm's 180s it turned amber and pinned near full while opencode
+    still had minutes left."""
+    import swarm_watch
+
+    updates = []
+    monkeypatch.setattr(swarm_watch, "worker_update", lambda i, **kw: updates.append(kw))
+    monkeypatch.setattr(swarm_watch, "worker_finish", lambda *a, **k: None)
+    monkeypatch.setattr(opencode_bridge, "run_opencode_streaming", lambda *a, **k: "ok")
+    swarm._run_opencode_worker_watched(0, "hi", str(tmp_path), "read-only", None, 180)
+    assert updates[0]["status"] == "working"
+    assert updates[0]["timeout"] == opencode_bridge.DEFAULT_TIMEOUT_S
+
+
 def test_timeout_message_names_the_free_model_slowness(tmp_path, monkeypatch):
     monkeypatch.setattr(subprocess, "Popen", _fake_popen(hang=True))
     monkeypatch.setattr(opencode_bridge, "_kill_tree", lambda p: None)

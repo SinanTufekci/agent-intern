@@ -474,6 +474,7 @@ import kimi_bridge
 import muse_bridge
 import opencode_bridge
 import proc_tree
+import watch_ui
 
 # Server-level instructions. The MCP client sends these to its model on connect
 # (Claude Code surfaces them as an "MCP Server Instructions" block), so EVERY
@@ -2634,323 +2635,63 @@ class _WatchFeed:
             _watch_append(self._rid, new_events)
 
 
-# Self-contained dark-theme page: polls /events and renders steps live, with a
-# spinner while working and the final answer card on completion. Resets its view
-# when `started` changes, so one browser tab can be reused across runs.
-# Terminal-styled page with typewriter step reveal and a Markdown-rendered answer.
-# __WIN_W__/__WIN_H__ are substituted per request (see _watch_html).
-_WATCH_HTML = """<!doctype html><html lang="en" translate="no"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="google" content="notranslate">
-<title>Agent Intern — watching agy</title>
-<style>
-:root{
- --bg:#0a0c10;--fg:#d6d6d6;--dim:#6a7480;--green:#3fdf7f;--cyan:#5cd6e6;
- --red:#ff6b6b;--bd:#191c22;--code:#06080b;
- --ubg:#13251c;--ubd:#2a5a41;--uc:#e9f6ee;
-}
-*{box-sizing:border-box}
-html,body{margin:0;height:100%;background:var(--bg)}
-body{
- color:var(--fg);
- font:13px/1.6 ui-monospace,"Cascadia Mono",Consolas,"DejaVu Sans Mono",monospace;
-}
-::-webkit-scrollbar{width:9px}::-webkit-scrollbar-thumb{background:#23262d;border-radius:6px}
-.top{position:sticky;top:0;z-index:3;background:var(--bg)}
-header{
- display:flex;align-items:center;gap:8px;
- padding:8px 13px;background:#0d0f14;border-bottom:1px solid var(--bd);
- font-size:12px;color:var(--dim);
-}
-.name{color:var(--green);font-weight:700;text-shadow:0 0 10px rgba(63,223,127,.4)}
-.wlabel{color:var(--dim)}
-.pill{margin-left:auto;display:flex;align-items:center;gap:7px;font-variant-numeric:tabular-nums}
-.dot{
- width:7px;height:7px;border-radius:50%;background:var(--cyan);
- box-shadow:0 0 9px var(--cyan);animation:pop .45s ease;
-}
-.dot.err{background:var(--red);box-shadow:0 0 8px var(--red)}
-@keyframes pop{0%{transform:scale(.2)}55%{transform:scale(1.5)}100%{transform:scale(1)}}
-.spin{
- color:var(--green);display:inline-block;width:9px;text-align:center;
- text-shadow:0 0 8px rgba(63,223,127,.6);
-}
-#elapsed{color:#556}
-.gbar{height:2px;background:#11141a}
-.gfill{
- height:100%;width:0;background:linear-gradient(90deg,var(--green),var(--cyan));
- box-shadow:0 0 8px rgba(92,214,230,.5);transition:width .5s linear;
-}
-/* --- chat conversation --- */
-#chat{
- max-width:960px;margin:0 auto;padding:16px 14px 46px;
- display:flex;flex-direction:column;gap:11px;
-}
-.msg{display:flex;max-width:100%;animation:rise .28s ease both}
-@keyframes rise{from{opacity:0;transform:translateY(7px)}}
-.msg.user{justify-content:flex-end}
-.msg.bot{justify-content:flex-start}
-.role{font-size:9px;letter-spacing:1.4px;font-weight:700;opacity:.7;margin:0 3px 3px}
-.wrap{display:flex;flex-direction:column;max-width:84%}
-.msg.user .wrap{align-items:flex-end}
-.bubble{
- position:relative;padding:9px 13px;border-radius:15px;word-break:break-word;
- box-shadow:0 1px 2px rgba(0,0,0,.25);
-}
-.bubble.user{
- background:var(--ubg);border:1px solid var(--ubd);color:var(--uc);
- border-bottom-right-radius:5px;
-}
-.bubble.bot{
- background:#0c0e13;border:1px solid var(--bd);border-bottom-left-radius:5px;
-}
-.btext{white-space:pre-wrap;word-break:break-word}
-.bubble.user.clampable .btext{
- max-height:7.4em;overflow:hidden;
- -webkit-mask-image:linear-gradient(180deg,#000 72%,transparent);
-}
-.bubble.user.expanded .btext{max-height:60vh;overflow:auto;-webkit-mask-image:none}
-.exp{
- margin-top:6px;font-size:10.5px;color:var(--cyan);cursor:pointer;
- user-select:none;opacity:.85;
-}
-.exp:hover{opacity:1}
-/* --- live step trace (assistant "thinking") --- */
-.trace{
- background:#0b0d12;border:1px solid var(--bd);border-radius:13px;
- border-bottom-left-radius:5px;overflow:hidden;max-width:84%;
-}
-.trace-head{
- display:flex;align-items:center;gap:8px;padding:7px 12px;cursor:pointer;
- color:var(--dim);font-size:11px;
-}
-.trace-head:hover{background:#0f1218}
-.trace-body{padding:1px 12px 9px;display:flex;flex-direction:column;gap:3px}
-.trace.collapsed .trace-body{display:none}
-.chev{margin-left:auto;color:var(--green);opacity:.7;transition:transform .2s}
-.trace.collapsed .chev{transform:rotate(-90deg)}
-.ty{display:inline-flex;gap:3px;align-items:center}
-.ty i{width:4px;height:4px;border-radius:50%;background:var(--green);opacity:.4;
- animation:ty 1s infinite}
-.ty i:nth-child(2){animation-delay:.16s}.ty i:nth-child(3){animation-delay:.32s}
-@keyframes ty{0%,60%,100%{opacity:.35}30%{opacity:1}}
-.step{display:flex;gap:8px;align-items:baseline;font-size:11.5px;animation:rise .2s ease both}
-.step .sym{width:11px;flex:none}
-.step .txt{white-space:pre-wrap;word-break:break-word;color:#c7ccd2}
-.step.command .sym{color:var(--green)}.step.command .txt{color:#eaeef2}
-.step.narration .sym,.step.narration .txt{color:var(--cyan)}
-.step.result .sym,.step.result .txt{color:var(--green);opacity:.55}
-/* --- markdown answer card --- */
-.md .h{font-weight:700;margin:12px 0 5px;color:#cdd9e5}
-.md .h1{font-size:16px;color:#fff}.md .h2{font-size:14px}
-.md .h3{font-size:12.5px;color:var(--green)}
-.md .p{margin:3px 0;white-space:pre-wrap;word-break:break-word}
-.md .li{display:flex;gap:8px;margin:2px 0}
-.md .bul{color:var(--green);flex:none;min-width:14px;text-align:right}
-.md .lit{white-space:pre-wrap;word-break:break-word}
-.md pre.code{
- background:var(--code);border-left:2px solid var(--green);border-radius:4px;
- padding:9px 11px;margin:7px 0;overflow:auto;white-space:pre;color:#e9efe9;
-}
-.md code{background:#16191f;padding:1px 5px;border-radius:4px;color:#9fe6ad}
-.md .lnk{color:var(--cyan);border-bottom:1px dotted #2a6b73}
-.md strong{color:#fff}
-.md .copy{
- position:absolute;top:7px;right:8px;background:#0e1218;border:1px solid var(--bd);
- color:var(--dim);font:inherit;font-size:10px;padding:2px 8px;border-radius:5px;
- cursor:pointer;opacity:0;transition:opacity .15s,color .15s,border-color .15s;
-}
-.bubble.bot:hover .copy{opacity:.92}
-.md .copy:hover{color:var(--green);border-color:#2a3340}
-.shot{max-width:100%;border:1px solid var(--bd);border-radius:12px;display:block;
- animation:rise .3s ease both}
-.hint{
- position:fixed;bottom:7px;right:12px;color:#3b414a;font-size:10.5px;
- pointer-events:none;user-select:none;
-}
-.jump{
- position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#12161d;
- border:1px solid #2a3340;color:var(--cyan);font-size:11.5px;padding:5px 13px;
- border-radius:20px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.5);
- animation:rise .3s;z-index:4;
-}
-</style></head><body>
-<div class="top">
- <header>
-  <span class="name">Agent Intern</span><span class="wlabel" id="wlabel">— watching agy</span>
-  <span class="pill" id="pill">
-   <span class="dot" id="dot" style="display:none"></span>
-   <span class="spin" id="spin"></span>
-   <span id="status">working</span><span id="elapsed"></span>
-  </span>
- </header>
- <div class="gbar"><div class="gfill" id="gfill"></div></div>
-</div>
-<div id="chat"></div>
-<div class="jump" id="jump" style="display:none">↓ jump to latest</div>
-<div class="hint">⏎ / esc · close</div>
-<script>
+# The single-run viewer: watch_ui's chat window plus a poll loop over /events for
+# one run id. It rebuilds itself when `started` changes, so one window is reused
+# across sequential runs. __WIN_W__/__WIN_H__ are substituted per request (see
+# _watch_html).
+_WATCH_HTML = watch_ui.page(
+    "Agent Intern",
+    r"""
 try{window.resizeTo(__WIN_W__,__WIN_H__);}catch(e){}
 document.addEventListener("keydown",e=>{
  if(e.key==="Enter"||e.key==="Escape"){try{window.close();}catch(_){}}
 });
-const SYM={narration:"▸",command:"$",result:"✓"};
-let started=null,seen=0,finished=false,follow=true,traceEl=null,traceBody=null;
-const RID=new URLSearchParams(location.search).get("id")||"main";
-const K=encodeURIComponent(new URLSearchParams(location.search).get("k")||"");
-const $=id=>document.getElementById(id);
-const chat=()=>$("chat");
-function toBottom(){window.scrollTo(0,document.body.scrollHeight);}
-function maybeBottom(){if(follow)toBottom();}
-window.addEventListener("scroll",()=>{
- follow=window.innerHeight+window.scrollY>=document.body.scrollHeight-44;
- $("jump").style.display=follow?"none":"";
-});
-$("jump").addEventListener("click",()=>{follow=true;$("jump").style.display="none";toBottom();});
-function copyText(txt,btn){
- navigator.clipboard.writeText(txt).then(()=>{
-  const o=btn.textContent;btn.textContent="copied ✓";setTimeout(()=>btn.textContent=o,1200);
- }).catch(()=>{});
-}
-const FR="⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";let fi=0,spinT=null;
-function startSpin(){
- if(spinT)return;
- spinT=setInterval(()=>{$("spin").textContent=FR[fi=(fi+1)%FR.length];},80);
-}
-function stopSpin(){if(spinT){clearInterval(spinT);spinT=null;}$("spin").textContent="";}
-function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
-function inl(s){
- return s.replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g,"<span class='lnk'>$1</span>")
-         .replace(/`([^`]+)`/g,(m,c)=>"<code>"+c+"</code>")
-         .replace(/\\*\\*([^*]+)\\*\\*/g,"<strong>$1</strong>");
-}
-function md(src){
- const lines=esc(src).split("\\n"),out=[];let inC=false,code="";
- for(const ln of lines){
-  const f=ln.match(/^```(\\w*)\\s*$/);
-  if(f){if(!inC){inC=true;code="";}else{inC=false;
-   out.push("<pre class='code'>"+code.replace(/\\n$/,"")+"</pre>");}continue;}
-  if(inC){code+=ln+"\\n";continue;}
-  const h=ln.match(/^(#{1,6})\\s+(.*)$/);
-  if(h){out.push("<div class='h h"+h[1].length+"'>"+inl(h[2])+"</div>");continue;}
-  const b=ln.match(/^\\s*[-*]\\s+(.*)$/);
-  if(b){out.push("<div class='li'><span class='bul'>•</span>"+
-   "<span class='lit'>"+inl(b[1])+"</span></div>");continue;}
-  const n=ln.match(/^\\s*(\\d+)\\.\\s+(.*)$/);
-  if(n){out.push("<div class='li'><span class='bul'>"+n[1]+".</span>"+
-   "<span class='lit'>"+inl(n[2])+"</span></div>");continue;}
-  if(ln.trim()==="")continue;
-  out.push("<div class='p'>"+inl(ln)+"</div>");
+const RID=Q.get("id")||"main";
+let started=null,seen=0,fin=false,fails=0;
+function rebuild(s,back){
+ resetChat();seen=0;fin=false;
+ if(s.status==="idle"){emptyState("Waiting for a watched run…");return;}
+ for(const t of s.history||[]){
+  if(t.role==="user")userBubble(t.content,"Claude");else botCard(t.content,back,{meta:"earlier"});
  }
- if(inC)out.push("<pre class='code'>"+code+"</pre>");
- return out.join("");
+ userBubble(s.prompt||s.title||"","Claude");
+ newTrace(back==="codex");
 }
-// A user prompt as a right-aligned chat bubble; long ones clamp with an expander.
-function userBubble(text,role){
- const m=document.createElement("div");m.className="msg user";
- const wrap=document.createElement("div");wrap.className="wrap";
- if(role){const r=document.createElement("div");r.className="role";
-  r.textContent=role;wrap.appendChild(r);}
- const b=document.createElement("div");b.className="bubble user clampable";
- const t=document.createElement("div");t.className="btext";t.textContent=text||"";
- b.appendChild(t);wrap.appendChild(b);m.appendChild(wrap);chat().appendChild(m);
- requestAnimationFrame(()=>{
-  if(t.scrollHeight>t.clientHeight+2){
-   const x=document.createElement("div");x.className="exp";x.textContent="show more ▾";
-   x.onclick=()=>{const e=b.classList.toggle("expanded");
-    x.textContent=e?"show less ▴":"show more ▾";maybeBottom();};
-   b.appendChild(x);
-  }else{b.classList.remove("clampable");}
-  maybeBottom();
- });
- return b;
-}
-// An assistant answer as a left-aligned markdown card (with optional copy button).
-function botCard(text,copy,role){
- const m=document.createElement("div");m.className="msg bot";
- const wrap=document.createElement("div");wrap.className="wrap";
- if(role){const r=document.createElement("div");r.className="role";
-  r.textContent=role;wrap.appendChild(r);}
- const b=document.createElement("div");b.className="bubble bot md";
- b.innerHTML=md(text||"");
- if(copy){const cp=document.createElement("button");cp.className="copy";cp.textContent="copy";
-  cp.onclick=()=>copyText(text,cp);b.appendChild(cp);}
- wrap.appendChild(b);m.appendChild(wrap);chat().appendChild(m);
- return b;
-}
-// The live "thinking" trace under the current prompt (streams steps; collapsible).
-function newTrace(){
- const m=document.createElement("div");m.className="msg bot";
- const tr=document.createElement("div");tr.className="trace";
- tr.innerHTML="<div class='trace-head'><span class='ty'><i></i><i></i><i></i></span>"+
-  "<span class='tlabel'>working…</span><span class='chev'>▾</span></div>"+
-  "<div class='trace-body'></div>";
- m.appendChild(tr);chat().appendChild(m);
- tr.querySelector(".trace-head").onclick=()=>tr.classList.toggle("collapsed");
- traceEl=tr;traceBody=tr.querySelector(".trace-body");
-}
-function addStep(e){
- if(!traceBody)return;
- const r=document.createElement("div");r.className="step "+e.kind;
- r.innerHTML="<span class='sym'></span><span class='txt'></span>";
- r.querySelector(".sym").textContent=SYM[e.kind]||"·";
- r.querySelector(".txt").textContent=e.text;
- traceBody.appendChild(r);maybeBottom();
-}
-function rebuild(s){
- chat().innerHTML="";seen=0;finished=false;follow=true;traceEl=null;traceBody=null;
- $("dot").style.display="none";$("dot").classList.remove("err");
- $("gfill").style.width="0";$("gfill").style.background="";
- $("jump").style.display="none";startSpin();
- (s.history||[]).forEach(t=>{
-  if(t.role==="user")userBubble(t.content,"CLAUDE");
-  else botCard(t.content,false,(s.backend||"agy").toUpperCase());
- });
- userBubble(s.prompt||s.title||"","CLAUDE");
- newTrace();
-}
-function finish(s){
- finished=true;stopSpin();$("dot").style.display="";
- $("gfill").style.width="100%";
- if(s.status==="error"){$("dot").classList.add("err");$("gfill").style.background="var(--red)";}
- $("status").textContent=(s.status==="error"?"failed":"done")+" in "+(s.elapsed||0).toFixed(1)+"s";
- $("elapsed").textContent="";
- if(traceEl){
-  traceEl.classList.add("collapsed");
-  const lbl=traceEl.querySelector(".tlabel");if(lbl)lbl.textContent=seen+" steps ✓";
-  const ty=traceEl.querySelector(".ty");if(ty)ty.remove();
- }
- if(s.image){
-  const m=document.createElement("div");m.className="msg bot";
-  const wrap=document.createElement("div");wrap.className="wrap";
-  const im=document.createElement("img");im.className="shot";
-  im.onload=maybeBottom;im.src="/image?k="+K+"&p="+encodeURIComponent(s.image);
-  wrap.appendChild(im);m.appendChild(wrap);chat().appendChild(m);
- }
- if(s.answer)botCard(s.answer,true,(s.backend||"agy").toUpperCase());
- maybeBottom();
+function finish(s,back){
+ fin=true;finishTrace(s.status);
+ if(s.image)imageCard("/image?k="+K+"&p="+encodeURIComponent(s.image));
+ const err=s.status==="error",meta=back+" · "+fmtS(s.elapsed);
+ if(s.answer)botCard(s.answer,err?"Failed":"Answer",{copy:!err,err:err,meta:meta});
 }
 async function tick(){
+ let s=null;
  try{
-  const s=await (await fetch("/events?id="+RID+"&k="+K,{cache:"no-store"})).json();
-  if(s.started!==started){started=s.started;rebuild(s);}
-  const back=s.backend||"agy";
-  $("wlabel").textContent="— watching "+back;
-  document.title="Agent Intern — "+back;
-  if(!finished){
-   $("status").textContent="working";
-   $("elapsed").textContent=s.elapsed?" · "+s.elapsed.toFixed(1)+"s":"";
-   const to=s.timeout||0;const fr=to>0?Math.min((s.elapsed||0)/to,.98):0.05;
-   $("gfill").style.width=Math.round(fr*100)+"%";
-  }
-  for(let i=seen;i<s.events.length;i++)addStep(s.events[i]);
-  seen=s.events.length;
-  if((s.status==="done"||s.status==="error")&&!finished)finish(s);
+  const r=await fetch("/events?id="+encodeURIComponent(RID)+"&k="+K,{cache:"no-store"});
+  if(r.ok)s=await r.json();
  }catch(e){}
- setTimeout(tick,finished?1500:400);
+ if(!s){if(++fails>=3&&!fin)setState("lost");}
+ else{
+  fails=0;
+  const back=bkName(s.backend);
+  TITLE="Agent Intern · "+back;
+  setAgent(s.backend);
+  if(s.started!==started){started=s.started;rebuild(s,back);}
+  if(s.status==="idle")setState("idle");
+  else{
+   for(let i=seen;i<s.events.length;i++)addStep(s.events[i]);
+   seen=s.events.length;
+   if(s.status!=="working"){if(!fin)finish(s,back);setState(s.status,{elapsed:s.elapsed});}
+   else setState("working",{start:s.started,timeout:s.timeout,elapsed:s.elapsed});
+  }
+ }
+ setTimeout(tick,fin?1500:fails>=3?2000:400);
 }
 tick();
-</script></body></html>"""
+""",
+    css=".hint{position:fixed;bottom:10px;right:14px;color:var(--tx3);font-size:11px;"
+    "pointer-events:none;user-select:none}",
+    body="<div class='hint'><kbd>Esc</kbd> to close</div>",
+)
 
 
 def _watch_html() -> str:
@@ -3707,8 +3448,8 @@ def agent_swarm(
                    default would kill about half of them mid-answer and report a
                    slow worker as a broken one. The budget is only ever raised,
                    never lowered.
-        watch: If true, open the live "Agent Swarm" dashboard window (one row per
-               worker, with a backend badge; click a row for its full step log).
+        watch: If true, open the live "Agent Swarm" dashboard window (one card per
+               worker, with its backend's logo; click a card for its full step log).
     """
     import swarm
 

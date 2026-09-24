@@ -95,15 +95,15 @@ its narration, the real commands it runs, then the answer or the finished image.
 <td width="50%" align="center"><b><code>antigravity_image</code> — image inline</b></td>
 </tr>
 <tr>
-<td><img src="https://raw.githubusercontent.com/SinanTufekci/agent-intern/main/assets/watch-ask.gif" width="100%" alt="Agent Intern chat window for a text ask: the prompt as a CLAUDE chat bubble, the agent's live steps (narration, the real commands it runs, completions) in a collapsible trace, then the final Markdown answer card"></td>
-<td><img src="https://raw.githubusercontent.com/SinanTufekci/agent-intern/main/assets/watch-image.gif" width="100%" alt="Agent Intern chat window generating an image: the prompt bubble, the live step trace, then the finished image shown inline"></td>
+<td><img src="https://raw.githubusercontent.com/SinanTufekci/agent-intern/main/assets/watch-ask.gif" width="100%" alt="Agent Intern window for a text ask: Claude's prompt as a chat bubble, the agent's live steps as a timeline (its narration, and each real command it runs ticked off with its duration), then the answer as a Markdown card"></td>
+<td><img src="https://raw.githubusercontent.com/SinanTufekci/agent-intern/main/assets/watch-image.gif" width="100%" alt="Agent Intern window generating an image: the prompt bubble, the live step timeline, then the finished image shown inline"></td>
 </tr>
 </table>
 
 <div align="center">
-<img src="https://raw.githubusercontent.com/SinanTufekci/agent-intern/main/assets/watch-swarm.gif" width="62%" alt="Agent Swarm dashboard: workers running in parallel, each row showing its backend badge, repo, prompt, latest step and a per-worker time bar, while the overall done/total counter climbs">
+<img src="https://raw.githubusercontent.com/SinanTufekci/agent-intern/main/assets/watch-swarm.gif" width="62%" alt="Agent Swarm dashboard: one card per worker with its backend's logo, prompt, a status chip with a live clock, its latest step and a time bar, under counters for running, queued, done and failed workers">
 <br>
-<sub><code>agent_swarm(..., watch=true)</code> — one row per worker; click a row to pop that agent into its own window.
+<sub><code>agent_swarm(..., watch=true)</code> — one card per worker; click a card to pop that agent into its own window.
 <a href="https://github.com/SinanTufekci/agent-intern/blob/main/docs/watch-and-swarm.md">More on watch mode and swarms →</a></sub>
 </div>
 

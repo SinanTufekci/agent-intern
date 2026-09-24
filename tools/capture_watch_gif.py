@@ -49,7 +49,10 @@ SCALE = 2
 INTERVAL = 0.25  # seconds between screenshots
 TAIL_S = 6.0  # keep filming this long after the run finishes (final answer/image)
 SAFETY_CAP_S = 360.0  # hard stop on the capture loop
-COLORS = 96  # GIF palette size (dark UI needs few colors)
+# GIF palette size. The dark UI itself needs few colours, but the backend logos are
+# small, saturated areas that a 96-colour median cut dropped entirely (they came
+# out grey), so leave room for them.
+COLORS = 200
 
 
 def _make_workspace() -> str:
@@ -87,7 +90,8 @@ def _capture(port: int, viewport: tuple[int, int], start_run, label: str) -> lis
             viewport={"width": viewport[0], "height": viewport[1]},
             device_scale_factor=SCALE,
         )
-        page.goto(f"http://127.0.0.1:{port}/")
+        # The viewer refuses a request without the per-process token (0.23.1).
+        page.goto(f"http://127.0.0.1:{port}/?k={server._WATCH_TOKEN}")
         time.sleep(0.7)  # let the page mount + start polling /events
         t, done = start_run()
         t.start()
@@ -165,8 +169,15 @@ def _build_gif(frames: list, out_path: str, label: str) -> None:
     # hold the final frame a little longer
     durs[-1] += 1700
 
-    # one shared adaptive palette (built from a late frame with the most content)
-    master = images[-1].quantize(colors=COLORS, method=Image.MEDIANCUT)
+    # One shared adaptive palette, built from early, middle and final frames stacked
+    # together, so colours that only appear mid-run (spinners, amber bars) or only
+    # at the end (the answer, the image) all get palette entries.
+    picks = [images[0], images[len(images) // 2], images[-1]]
+    w, h = picks[0].size
+    stack = Image.new("RGB", (w, h * len(picks)))
+    for k, im in enumerate(picks):
+        stack.paste(im, (0, h * k))
+    master = stack.quantize(colors=COLORS, method=Image.MEDIANCUT)
     pal = [im.quantize(palette=master, dither=Image.Dither.NONE) for im in images]
 
     pal[0].save(
@@ -231,8 +242,10 @@ def mode_image(out_path: str) -> None:
 def mode_swarm(out_path: str) -> None:
     ws = _make_workspace()
     port = swarm_watch.ensure_server()
-    # A mixed swarm — Antigravity + Codex workers side by side — to show
-    # agent_swarm's per-worker backend badges. Needs both `agy` and `codex` logged in.
+    # A mixed swarm — Antigravity, Codex and Copilot side by side — to show each
+    # card's backend logo. Needs `agy`, `codex` and `copilot` logged in. Codex gets
+    # a question it can answer without files: on Windows its read-only sandbox
+    # refuses every command, reads included.
     tasks = [
         {
             "backend": "antigravity",
@@ -241,12 +254,12 @@ def mode_swarm(out_path: str) -> None:
         },
         {
             "backend": "codex",
-            "prompt": "Read pyproject.toml and list this package's name and version.",
+            "prompt": "In one sentence, what does `git bisect` do?",
             "workspace": ws,
         },
         {
-            "backend": "antigravity",
-            "prompt": "Read CHANGELOG.md and name the latest released version in one line.",
+            "backend": "copilot",
+            "prompt": "Read pyproject.toml and list this package's name and version.",
             "workspace": ws,
         },
     ]
@@ -256,7 +269,8 @@ def mode_swarm(out_path: str) -> None:
             lambda: swarm.swarm_agents(tasks, max_concurrency=3, timeout_s=150, watch=True)
         )
 
-    frames = _capture(port, (440, 640), start_run, "swarm")
+    # The dashboard's own window size (swarm_watch.open_window).
+    frames = _capture(port, (440, 720), start_run, "swarm")
     _build_gif(frames, out_path, "swarm")
     shutil.rmtree(ws, ignore_errors=True)
 

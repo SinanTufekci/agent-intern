@@ -15,8 +15,8 @@ Pass **`watch=true`** to **any single-prompt tool** — `antigravity_ask`, `anti
 the agent work live in a little chat-style browser window** called **Agent Intern**. The agent
 still runs headless; alongside it the bridge serves a tiny page on `127.0.0.1` and opens it in a
 small, chromeless app window that renders the exchange as a **conversation**: your prompt shows as a
-chat bubble, the agent's live steps stream in a collapsible "thinking" trace — its planner narration
-(▸), the **real commands** it runs (`$`), and completions (✓), read live (from agy's
+chat bubble, the agent's live steps stream in as a collapsible **timeline** — its planner narration,
+the **real commands** it runs (`$`), and how each one ended (✓ / ✗), read live (from agy's
 `--output-format stream-json` on 1.1.8+ — its transcript on older agy — or codex's / copilot's JSON
 event stream, cursor's / grok's streaming-json, or opencode's `--format json` events, which are the
 very same stream its non-watched calls read) — and the final
@@ -34,18 +34,18 @@ watched `grok_continue` or `opencode_continue` opens without history for the sam
 <td width="50%" align="center"><b><code>antigravity_image</code> — image inline</b></td>
 </tr>
 <tr>
-<td><img src="../assets/watch-ask.gif" width="100%" alt="Agent Intern chat window for a text ask: the prompt as a CLAUDE chat bubble, the agent's live steps (narration, the real commands it runs, completions) in a collapsible trace, then the final Markdown answer card"></td>
-<td><img src="../assets/watch-image.gif" width="100%" alt="Agent Intern chat window generating an image: the prompt bubble, the live step trace, then the finished image shown inline"></td>
+<td><img src="../assets/watch-ask.gif" width="100%" alt="Agent Intern window for a text ask: Claude's prompt as a chat bubble, the agent's live steps as a timeline (its narration, and each real command it runs ticked off with its duration), then the answer as a Markdown card"></td>
+<td><img src="../assets/watch-image.gif" width="100%" alt="Agent Intern window generating an image: the prompt bubble, the live step timeline, then the finished image shown inline"></td>
 </tr>
 </table>
-<sub>Real captures — the agent runs headless while the <b>Agent Intern</b> window renders the exchange as a chat conversation: your prompt as a <b>CLAUDE</b> bubble, live steps (▸ narration · <code>$</code> commands · ✓ completions) in a collapsible trace, then the final Markdown answer or inline image.</sub>
+<sub>Real captures — the agent runs headless while the <b>Agent Intern</b> window renders the exchange as a chat conversation: Claude's prompt as a bubble, the live steps as a timeline (narration, and each <code>$</code> command ticked off ✓ with its duration), then the final Markdown answer or inline image.</sub>
 </div>
 
 - **Cross-platform & best-effort.** Prefers a Chromium browser (`--app` mode) for the
   windowed look; falls back to a normal browser window. If nothing can open, the run
   still completes and returns normally.
 - **Window size.** Set **`AGY_WATCH_WINDOW_SIZE`** (e.g. `AGY_WATCH_WINDOW_SIZE=480,700`)
-  to resize the window; default is `560,760`. Press **Enter / Esc** in the window to
+  to resize the window; default is `560,760`. Press **Esc** (or Enter) in the window to
   close it.
 - **One window, reused — but concurrent runs stay separate.** Repeated *sequential*
   watch calls **reuse the already-open window** instead of stacking a new one (the open
@@ -63,19 +63,33 @@ watched `grok_continue` or `opencode_continue` opens without history for the sam
   connecting. The bridge puts the token in every URL it opens, so none of this is visible in
   normal use. Worth knowing because the server starts lazily but is never stopped: one
   `watch=true` run leaves the port listening for the life of the MCP server.
-- **Chat layout & history.** Prompts render as chat bubbles (labelled **CLAUDE**, since the MCP
-  client writes them) — long ones clamp to a few lines with a **show more / show less** toggle — and
-  answers as Markdown cards tagged with the backend (**AGY** / **CODEX** / **COPILOT** / **CURSOR**). A
+- **Chat layout & history.** Prompts render as chat bubbles labelled **Claude**, since the MCP
+  client writes them. Long ones clamp to a few lines behind a **Show more / Show less** toggle.
+  The agent's side carries its backend's logo, which also heads the window, and its answer
+  arrives as a Markdown card. A
   **`*_continue`** run seeds the window with
   the conversation's **prior turns**, read from each backend's own session store (agy's
   transcript, codex's rollout, copilot's `events.jsonl`; Cursor's store is opaque, so a watched
   `cursor_continue` opens without visible history). The swarm's per-worker detail
   window uses the same chat design for its one task.
-- **Progress, keyboard & copy.** Each panel shows a time progress bar (elapsed /
-  timeout). The swarm dashboard adds an overall done/total bar and per-row time bars;
-  use **↑/↓** to select a worker and **↵** to open its detail window. Answers render
-  as Markdown with a **copy** button, and a "jump to latest" badge appears if you
-  scroll up.
+- **Steps you can read at a glance.** The steps form a timeline, each with its time since the
+  start. A command shows a pulsing node and a spinner while it runs, then a **✓ with how long it
+  took**, or a red **✗ with the error underneath**. That replaces the separate "command finished"
+  line each command used to add. (Codex reports a command only once it has finished, so its
+  commands never show as running.) A failed run leaves its timeline open and marks its answer card red.
+- **Progress, keyboard & copy.** The status chip in the header ticks live, next to the time budget
+  (`Working · 14.1s / 3m00s`). The progress bar under it turns **amber past 75%** of the budget.
+  The window title leads with the state (● working, ✓ done, ✗ failed), so you can read it from
+  the taskbar. If the bridge goes away mid-run, the window says **Disconnected** and stops
+  pretending to work. Answers render as Markdown, including tables, block quotes, nested lists
+  and fenced code with a language label. Code blocks have their own **copy** button, and so does
+  the answer. A "jump to latest" badge appears if you scroll up.
+- **Swarm dashboard.** One card per worker. The header counts workers by state (running,
+  queued, done, failed), its overall bar splits into done and failed, and its clock stops when the
+  last worker finishes. Each card shows the backend's logo, the prompt, a status chip with a live
+  clock, the latest step, a step count and a time bar that turns amber near the budget. An opencode
+  card is measured against opencode's raised budget. Use **↑/↓** to select a worker and **↵** to
+  open its detail window.
 - **Coarse, not token-level.** The backends flush their step stream in chunks, so you
   get a handful of live steps, not character streaming. The returned value is identical
   to the non-watch call. Nothing is sent anywhere but your own machine.
@@ -111,9 +125,9 @@ agent_swarm(tasks=[
 ```
 
 <div align="center">
-<img src="../assets/watch-swarm.gif" width="62%" alt="Agent Swarm dashboard: workers running in parallel, each row showing its backend badge, repo, prompt, latest step and a per-worker time bar, while the overall done/total counter climbs">
+<img src="../assets/watch-swarm.gif" width="62%" alt="Agent Swarm dashboard: one card per worker with its backend's logo, prompt, a status chip with a live clock, its latest step and a time bar, under counters for running, queued, done and failed workers">
 <br>
-<sub><code>agent_swarm(..., watch=true)</code> — one row per worker (with a backend badge); the done/total bar climbs as workers finish. Click a row (or <b>↑/↓</b> then <b>↵</b>) to pop that agent into its own window.</sub>
+<sub><code>agent_swarm(..., watch=true)</code> — one card per worker, with its backend's logo; the counters and the done/failed bar move as workers finish. Click a card (or <b>↑/↓</b> then <b>↵</b>) to pop that agent into its own window.</sub>
 </div>
 
 **How it stays correct under concurrency.** The single-agent agy tools serialize
@@ -142,8 +156,8 @@ quota/rate-limit pressure for wall-clock.
   never lowered, and a paid model simply finishes early.
 - **Error isolation** — a worker that fails is reported in place; the others still
   return.
-- **`watch=true`** — opens a thin live **Agent Swarm** dashboard (one row per
-  worker, with a **backend badge**, repo, prompt, and latest step). **Click a row**
+- **`watch=true`** — opens a thin live **Agent Swarm** dashboard (one card per
+  worker, with its **backend's logo**, repo, prompt, and latest step). **Click a card**
   to pop that agent into its own window streaming its full step log.
 
 > [!WARNING]

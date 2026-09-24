@@ -1342,7 +1342,8 @@ def _run_opencode_worker_watched(
 
     timeout_s = _opencode_timeout(timeout_s)  # see _opencode_timeout
     start = time.time()
-    swarm_watch.worker_update(index, status="working", started=start)
+    # The raised budget, not the swarm's: the row's time bar is drawn against it.
+    swarm_watch.worker_update(index, status="working", started=start, timeout=timeout_s)
 
     def on_event(ev: dict) -> None:
         lines = server._opencode_event_to_watch_lines(ev)

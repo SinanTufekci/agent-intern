@@ -10,6 +10,40 @@ summary.
 
 ## [Unreleased]
 
+### Changed
+
+- **The watch windows were redesigned.** They keep the same dark green-and-cyan look, but no
+  longer read like a terminal. Text is now sans-serif, with monospace kept for commands and code.
+  Each backend is shown by its own logo, which heads the window and marks the agent's side of the
+  chat. Claude's prompts carry Claude's. The logos come from the MIT-licensed LobeHub icon set, and
+  its licence ships alongside them in `watch_ui.py`. The run's state sits in a status chip with a live clock and the time
+  budget (`Working · 14.1s / 3m00s`). The agent's steps form a timeline: each shows its time since
+  the start, and a command pulses while it runs, then settles to a ✓ with its duration or a red ✗
+  with the error underneath. That replaces the "command finished" line that used to follow every
+  command. Answers arrive as cards with a Copy button. They render tables, block quotes, nested
+  lists, italics and fenced code, and each code block has a language label and its own Copy button.
+  Links are still shown but not clickable, and every string is still escaped before any tag is
+  added. A failed run keeps its timeline open and marks its answer card red. The progress bar
+  turns amber past 75% of the budget, and the window title leads with the state (● ✓ ✗). If the
+  bridge goes away mid-run, the window says "Disconnected" instead of spinning forever. The swarm
+  dashboard shows one card per worker, with counters for running, queued, done and failed, and an
+  overall bar split into done and failed. The single-run window and the swarm's per-worker window
+  now share one implementation (`watch_ui.py`) instead of two hand-synced copies.
+
+### Fixed
+
+- **Watch clocks froze between steps.** The single-run window moved its clock only when a new step
+  arrived. In the swarm dashboard, every row except Antigravity's sat at 0.0s with an empty time bar
+  until its worker finished, because only the Antigravity runners report elapsed time while working.
+  The clocks now run in the page from each run's start time.
+- **The swarm dashboard's clock kept counting after the last worker finished.** It now stops at the
+  moment the last worker did.
+- **An opencode swarm row measured its time bar against the swarm's `timeout_s`**, not the raised
+  budget of at least 300 s that the worker actually gets. The bar pinned near full and would have
+  read as about to time out while opencode still had minutes left.
+- **`tools/capture_watch_gif.py` could no longer record.** It opened the viewer without the access
+  token that 0.23.1 made mandatory, so every frame it captured was a 403.
+
 ## [0.31.1] - 2026-09-24
 
 ### Fixed
