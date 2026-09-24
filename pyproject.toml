@@ -76,6 +76,7 @@ py-modules = [
     "muse_bridge",
     "muse_tools",
     "opencode_bridge",
+    "opencode_tools",
 ]
 
 [tool.ruff]
