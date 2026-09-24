@@ -409,3 +409,48 @@ def test_no_module_calls_subprocess_popen_directly():
                 if isinstance(fn.value, ast.Name) and fn.value.id == "subprocess":
                     offenders.append(f"{path.name}:{node.lineno}")
     assert not offenders, "use proc_tree.popen so check_args runs: " + ", ".join(offenders)
+
+
+# ------------------------------------------------------------ conftest's tripwire
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["codex", "exec", "hi"],
+        ["C:\\Users\\x\\.local\\bin\\agy.exe", "-p", "hi"],
+        "copilot -p hi",
+        ["cmd", "/c", "cursor-agent.cmd", "-p", "hi"],
+        ["node", "C:/npm/opencode.js", "run"],
+        ["muse-bin-1.3.0.exe", "exec"],
+        ["C:/Program Files/Google/Chrome/Application/chrome.exe", "--app=http://x"],
+    ],
+)
+def test_the_tripwire_stops_agent_clis_and_browsers(args):
+    import conftest
+
+    try:
+        with pytest.raises(RuntimeError, match="tried to start the real"):
+            subprocess.Popen(args)
+    finally:
+        conftest._trips.clear()  # the attempt was the point; don't fail teardown
+
+
+def test_the_tripwire_lets_other_programs_run():
+    out = subprocess.run([sys.executable, "-c", "print('ok')"], capture_output=True, text=True)
+    assert out.stdout.strip() == "ok"
+
+
+def test_the_tripwire_catches_an_attempt_the_code_swallowed():
+    """Probes like _get_agy_version catch everything and report "not installed",
+    so a raised error alone would let the test pass. The attempt is recorded too."""
+    import conftest
+
+    try:
+        try:
+            subprocess.Popen(["grok", "--version"])
+        except Exception:  # noqa: BLE001 - swallowed, as the code under test would
+            pass
+        assert conftest._trips and conftest._trips[0].startswith("grok:")
+    finally:
+        conftest._trips.clear()

@@ -595,13 +595,21 @@ def test_spawn_kwargs_is_subprocess_run_compatible(monkeypatch):
 # --------------------------------------------------------------------------
 
 
-def test_build_agy_args_uses_default_agy_bin(monkeypatch):
+@pytest.fixture
+def agy_absent(monkeypatch):
+    """No agy to probe, as on CI. Building argv asks `agy --version` which flags
+    it can pass, and these tests used to run the real agy for that wherever one
+    was installed, so what they checked depended on the machine."""
+    monkeypatch.setattr(server, "_get_agy_version", lambda: None)
+
+
+def test_build_agy_args_uses_default_agy_bin(monkeypatch, agy_absent):
     monkeypatch.setattr(server, "AGY_BIN", "agy")
     args, _ = server._build_agy_args("hi", "C:\\ws", continue_conv=False, timeout_s=10)
     assert args[0] == "agy"
 
 
-def test_build_agy_args_honors_custom_agy_bin(monkeypatch):
+def test_build_agy_args_honors_custom_agy_bin(monkeypatch, agy_absent):
     custom = "C:\\Users\\x\\AppData\\Local\\agy\\bin\\agy.exe"
     monkeypatch.setattr(server, "AGY_BIN", custom)
     args, _ = server._build_agy_args("hi", "C:\\ws", continue_conv=False, timeout_s=10)
@@ -616,7 +624,7 @@ def test_build_agy_args_honors_custom_agy_bin(monkeypatch):
 # --------------------------------------------------------------------------
 
 
-def test_agy_base_args_passes_skip_permissions():
+def test_agy_base_args_passes_skip_permissions(agy_absent):
     """agy 1.1.3 soft-denies any tool needing a permission headlessly (print mode
     can't prompt), which kills every tool-using call. The flag is agy's own remedy.
     """
@@ -624,7 +632,7 @@ def test_agy_base_args_passes_skip_permissions():
 
 
 @pytest.mark.parametrize("model", [None, "gemini-3.1-pro-high"])
-def test_build_agy_args_skip_permissions_precedes_prompt(model):
+def test_build_agy_args_skip_permissions_precedes_prompt(model, agy_absent):
     """The flag MUST come before -p: agy's -p takes the prompt as its VALUE, so
     `-p --dangerously-skip-permissions <task>` makes the flag the prompt and drops
     the task (verified on 1.1.3 — agy replied describing the flag).
@@ -955,7 +963,7 @@ def test_run_agy_without_schema_is_unchanged(fake_agy_json, last_conv_file):
 # --------------------------------------------------------------------------
 
 
-def test_build_agy_args_includes_model_when_given(monkeypatch):
+def test_build_agy_args_includes_model_when_given(monkeypatch, agy_absent):
     monkeypatch.setattr(server, "AGY_BIN", "agy")
     args, _ = server._build_agy_args(
         "hi", "C:\\ws", continue_conv=False, timeout_s=10, model="gemini-3.1-pro-high"
@@ -966,7 +974,7 @@ def test_build_agy_args_includes_model_when_given(monkeypatch):
     assert args[-2:] == ["-p", "hi"]
 
 
-def test_build_agy_args_omits_model_when_none(monkeypatch):
+def test_build_agy_args_omits_model_when_none(monkeypatch, agy_absent):
     monkeypatch.setattr(server, "AGY_BIN", "agy")
     args, _ = server._build_agy_args("hi", "C:\\ws", continue_conv=False, timeout_s=10)
     assert "--model" not in args
@@ -1097,6 +1105,7 @@ def _model_family(slug: str) -> str:
     return slug
 
 
+@pytest.mark.real_cli
 def test_documented_model_slugs_still_accepted_by_live_agy(monkeypatch):
     monkeypatch.setattr(server, "_AGY_MODELS_CACHE", None)  # force a fresh read
     live = server.list_agy_models()
@@ -1110,6 +1119,7 @@ def test_documented_model_slugs_still_accepted_by_live_agy(monkeypatch):
     )
 
 
+@pytest.mark.real_cli
 def test_live_agy_model_families_are_all_documented(monkeypatch):
     """The reverse direction: agy grew a family our docs never mention.
 
@@ -3229,7 +3239,11 @@ def test_every_runtime_module_is_listed_in_py_modules():
     root = Path(__file__).parent
     block = (root / "pyproject.toml").read_text(encoding="utf-8").split("py-modules = [", 1)[1]
     listed = set(re.findall(r'"([A-Za-z_][A-Za-z0-9_]*)"', block.split("]", 1)[0]))
-    on_disk = {p.stem for p in root.glob("*.py") if not p.stem.startswith("test_")}
+    on_disk = {
+        p.stem
+        for p in root.glob("*.py")
+        if not p.stem.startswith("test_") and p.stem != "conftest"  # pytest's, not the wheel's
+    }
     assert on_disk - listed == set(), (
         f"not in pyproject py-modules, so missing from the published wheel: "
         f"{sorted(on_disk - listed)}"

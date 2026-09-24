@@ -353,7 +353,13 @@ def test_swarm_accepts_muse_and_its_aliases(tmp_path):
 # -------------------------------------------------------------------- live (echo provider)
 _REAL = muse_bridge._resolve_bin()
 _HAVE_MUSE = bool(shutil.which(_REAL) or os.path.isfile(_REAL))
-live = pytest.mark.skipif(not _HAVE_MUSE, reason="muse is not installed")
+_skip_without_muse = pytest.mark.skipif(not _HAVE_MUSE, reason="muse is not installed")
+
+
+def live(test):
+    """Runs the real muse (echo provider, no quota) when it is installed. Marked
+    real_cli so conftest's tripwire lets it start muse."""
+    return pytest.mark.real_cli(_skip_without_muse(test))
 
 
 @pytest.fixture
