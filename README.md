@@ -77,12 +77,12 @@ spending quota.
 
 ## What it's for
 
-- 🎨 **Images, inside Claude Code** — `antigravity_image` has Gemini draw it and returns the saved file — no extra API key, no extra tool.
-- 🧠 **A second opinion** — A different model family reviews what Claude just wrote. Their blind spots rarely overlap.
-- 🐝 **Parallel fan-out** — `agent_swarm` runs N tasks at once and can mix backends in a single call (~2.8× at 3 Gemini workers).
-- 💸 **Cheaper grunt work** — Bulk renames, boilerplate and first-pass ports burn *their* quota instead of Claude's tokens.
-- 🆓 **No subscription? Still works** — opencode's free models answer with zero credentials — slow, but free.
-- 🔌 **Zero new auth** — Piggybacks the CLI logins you already have. The bridge manages no keys of its own.
+- 🎨 **Images, inside Claude Code.** `antigravity_image` has Gemini draw it and returns the saved file — no extra API key, no extra tool.
+- 🧠 **A second opinion.** A different model family reviews what Claude just wrote. Their blind spots rarely overlap.
+- 🐝 **Parallel fan-out.** `agent_swarm` runs N tasks at once and can mix backends in a single call (~2.8× at 3 Gemini workers).
+- 💸 **Cheaper grunt work.** Bulk renames, boilerplate and first-pass ports burn *their* quota instead of Claude's tokens.
+- 🆓 **No subscription? Still works.** opencode's free models answer with zero credentials — slow, but free.
+- 🔌 **Zero new auth.** Piggybacks the CLI logins you already have. The bridge manages no keys of its own.
 
 ### Watch it work
 
