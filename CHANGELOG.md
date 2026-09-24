@@ -10,6 +10,52 @@ summary.
 
 ## [Unreleased]
 
+## [0.30.2] - 2026-09-24
+
+### Fixed
+
+- **0.30.1 could not start when installed from PyPI.** It introduced `proc_tree.py` — the shared
+  process-tree killer every bridge now imports at module level — and never added it to the
+  hand-maintained `py-modules` list in `pyproject.toml`, so the wheel shipped without it. Every
+  `uvx agent-intern` that resolved to 0.30.1 died on startup with
+  `ModuleNotFoundError: No module named 'proc_tree'`, before a single tool was registered. A git
+  checkout was unaffected, which is exactly why nothing caught it: the tests import from the repo
+  root, where the file exists, and CI installs the repo in editable mode, which reads the same
+  directory. Only a clean install sees what the wheel really contains.
+
+  **If uvx cached 0.30.1 for you, it will keep serving that broken copy** — the recommended install
+  never auto-upgrades. Run `uvx agent-intern@latest` once, then restart Claude Code.
+
+  Three guards, because the first one alone would still have let this through:
+  - `test_every_runtime_module_is_listed_in_py_modules` compares `py-modules` against the non-test
+    modules on disk, so a new root module fails the suite until it is packaged.
+  - A new `package` CI job builds the wheel, installs it into a clean venv and imports the server
+    from outside the checkout — the same thing `uvx` does.
+  - `publish.yml` runs that same import as the last step before the PyPI upload, so a wheel that
+    can't start can't be published.
+
+### Added
+
+- **Listed in the official [MCP Registry](https://registry.modelcontextprotocol.io/)** as
+  `io.github.SinanTufekci/agent-intern`. A new `server.json` describes the package, and
+  `publish.yml` gains a job that publishes it after each PyPI upload (GitHub OIDC, no stored
+  token). The registry proves ownership by finding an `mcp-name:` line in the README PyPI renders,
+  and `test_version_is_the_same_everywhere_a_release_writes_it` keeps that line, `server.json`,
+  `pyproject.toml` and `server.__version__` in step.
+
+### Changed
+
+- **The README is short now — about 190 lines instead of 1,700.** It leads with what the bridge is
+  for, a one-line install (`claude mcp add -s user agent-intern -- uvx agent-intern`), the watch-mode
+  GIFs and a one-table backend comparison. Everything it used to hold moved, unabridged, into
+  [`docs/`](https://github.com/SinanTufekci/agent-intern/blob/main/docs/README.md): setup, the tool
+  reference, backends in depth, watch mode & swarm, security, the FAQ, and status & caveats. Its
+  images now use absolute URLs, so they render on PyPI too — they never had.
+- **The header animation shows all five verified backends.** opencode joins Antigravity, Codex,
+  Copilot and Cursor, and the old "all 4 done" became "all 5 done". A few stale counts went with it:
+  the setup guide now says 24 tools (not 21), `agent_swarm` spans six backends (not five), and the
+  architecture diagram shows all seven CLIs.
+
 ## [0.30.1] - 2026-09-15
 
 ### Fixed
@@ -1560,7 +1606,8 @@ caller might copy becomes a guaranteed rejected call.
 
 - **BREAKING:** `antigravity_ask_stream` (superseded by watch mode).
 
-[Unreleased]: https://github.com/SinanTufekci/agent-intern/compare/v0.30.1...HEAD
+[Unreleased]: https://github.com/SinanTufekci/agent-intern/compare/v0.30.2...HEAD
+[0.30.2]: https://github.com/SinanTufekci/agent-intern/compare/v0.30.1...v0.30.2
 [0.30.1]: https://github.com/SinanTufekci/agent-intern/compare/v0.30.0...v0.30.1
 [0.30.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.29.1...v0.30.0
 [0.29.1]: https://github.com/SinanTufekci/agent-intern/compare/v0.29.0...v0.29.1
