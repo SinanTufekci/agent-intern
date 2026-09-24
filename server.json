@@ -1,0 +1,22 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.SinanTufekci/agent-intern",
+  "title": "Agent Intern",
+  "description": "Delegate from Claude Code to Gemini, Codex, Copilot, Cursor and opencode CLIs as sub-agents.",
+  "repository": {
+    "url": "https://github.com/SinanTufekci/agent-intern",
+    "source": "github"
+  },
+  "version": "0.30.1",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "agent-intern",
+      "version": "0.30.1",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

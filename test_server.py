@@ -3150,3 +3150,23 @@ def test_every_runtime_module_is_listed_in_py_modules():
         f"{sorted(on_disk - listed)}"
     )
     assert listed - on_disk == set(), f"py-modules lists missing files: {sorted(listed - on_disk)}"
+
+
+def test_version_is_the_same_everywhere_a_release_writes_it():
+    # A release bumps the version in three files. The PyPI publish checks the tag
+    # against pyproject only; the other two used to be kept in step by hand.
+    # server.__version__ is what `*_status` compares against PyPI to announce an
+    # update, and server.json is what the MCP Registry lists — so a missed bump
+    # makes the bridge nag about its own release, or the registry advertise the
+    # wrong one.
+    root = Path(__file__).parent
+    pyproject = (root / "pyproject.toml").read_text(encoding="utf-8")
+    version = re.search(r'(?m)^version = "([^"]+)"', pyproject).group(1)
+    manifest = json.loads((root / "server.json").read_text(encoding="utf-8"))
+    assert server.__version__ == version
+    assert manifest["version"] == version
+    assert [p["version"] for p in manifest["packages"]] == [version]
+    # The registry proves we own the PyPI package by finding this line in the
+    # README that PyPI renders; drop it and the next registry publish fails.
+    readme = (root / "README.md").read_text(encoding="utf-8")
+    assert f"mcp-name: {manifest['name']}" in readme

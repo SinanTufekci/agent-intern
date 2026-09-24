@@ -54,3 +54,37 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+
+  # List the release in the official MCP Registry (registry.modelcontextprotocol.io),
+  # which MCP clients and directories read from. It verifies we own the PyPI package
+  # by finding the `mcp-name:` line in the README PyPI just published, so it must run
+  # after the upload. Auth is GitHub OIDC — no stored token — and it grants only the
+  # io.github.SinanTufekci/* namespace.
+  mcp-registry:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      MCP_PUBLISHER_VERSION: v1.8.1
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install mcp-publisher
+        run: |
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+
+      - name: Authenticate to the MCP Registry
+        run: ./mcp-publisher login github-oidc
+
+      # PyPI's JSON API can lag the upload by a little, and the registry reads it to
+      # verify ownership, so give it a few tries before calling the release broken.
+      - name: Publish to the MCP Registry
+        run: |
+          for attempt in 1 2 3 4 5; do
+            ./mcp-publisher publish && exit 0
+            echo "attempt $attempt failed; retrying in 30 s"
+            sleep 30
+          done
+          exit 1
