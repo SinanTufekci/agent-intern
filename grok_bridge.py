@@ -520,7 +520,7 @@ def run_grok_streaming(
     args = build_args(prompt, workspace, sandbox, model, resume_id, use_continue, json_stream=True)
 
     state: dict = {}
-    proc = subprocess.Popen(
+    proc = proc_tree.popen(
         args,
         cwd=workspace,
         stdin=subprocess.DEVNULL,

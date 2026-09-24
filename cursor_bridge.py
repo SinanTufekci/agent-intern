@@ -99,6 +99,52 @@ def _resolve_bin() -> str:
 
 CURSOR_BIN = _resolve_bin()
 
+# A cursor-agent release directory under the install's versions/: YYYY.MM.DD, an
+# optional -HH-MM-SS, then -<commit>. Copied from cursor-agent.ps1's own filter.
+_VERSION_DIR_RE = re.compile(r"^(\d{4})\.(\d{1,2})\.(\d{1,2})(-\d{2}-\d{2}-\d{2})?-[a-f0-9]+$")
+
+
+def _launch_prefix(bin_path: str) -> list[str]:
+    """argv prefix that runs cursor-agent, bypassing cmd.exe when it is the Windows shim.
+
+    The installer's `cursor-agent.CMD` hands its arguments to cmd.exe (`%*`, with
+    delayed expansion on), which re-parses them — so a prompt containing `"` and `&`
+    runs a shell command on the host, whatever the sandbox says. See proc_tree's
+    batch-shim note. The shim only forwards to `cursor-agent.ps1`, which runs
+    `node.exe index.js` from the install dir if present, else from the newest
+    `versions/<YYYY.MM.DD>-<commit>/`. Doing that selection here and launching node
+    directly is the same program with cmd.exe and PowerShell taken out. Verified
+    live: `--version` and `status` answer identically both ways. Anything we can't
+    resolve falls back to the shim, where proc_tree.check_args refuses a dangerous
+    prompt instead of running it.
+    """
+    if os.name != "nt" or not proc_tree.is_batch_file(bin_path):
+        return [bin_path]
+    base = Path(bin_path).parent
+    flat = (base / "node.exe", base / "index.js")
+    if all(f.is_file() for f in flat):
+        return [str(f) for f in flat]
+    best: Optional[tuple[int, str]] = None
+    versions = base / "versions"
+    for d in versions.iterdir() if versions.is_dir() else ():
+        m = _VERSION_DIR_RE.match(d.name)
+        if not m or not d.is_dir():
+            continue
+        key = (int(f"{m.group(1)}{int(m.group(2)):02d}{int(m.group(3)):02d}"), d.name)
+        if best is None or key > best:
+            best = key
+    if best is not None:
+        node, entry = versions / best[1] / "node.exe", versions / best[1] / "index.js"
+        if node.is_file() and entry.is_file():
+            return [str(node), str(entry)]
+    return [bin_path]
+
+
+def _launch() -> list[str]:
+    """The argv prefix for every cursor-agent call (see _launch_prefix)."""
+    return _launch_prefix(CURSOR_BIN)
+
+
 # cursor's state home. Chats live under ~/.cursor/chats/<workspace-hash>/<chat-id>/
 # (each chat dir has meta.json + store.db). No documented override, so this is
 # fixed to the home dir; we only READ these files (for the restart-proof continue
@@ -142,8 +188,27 @@ def _spawn_kwargs() -> dict:
     shim doesn't flash a console; POSIX starts a new session.
     """
     if os.name == "nt":
-        return {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)}
+        return {
+            "creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000),
+            "env": _env(),
+        }
     return {"start_new_session": True}
+
+
+def _env() -> dict:
+    """Process env carrying what cursor-agent.ps1 would have set.
+
+    Needed now that _launch_prefix runs node directly instead of the ps1: the
+    launcher records how it was invoked and points node's compile cache at a fixed
+    dir (without it every call recompiles). Both are setdefault, so a value the user
+    exported still wins.
+    """
+    env = dict(os.environ)
+    env.setdefault("CURSOR_INVOKED_AS", os.path.basename(CURSOR_BIN))
+    local = env.get("LOCALAPPDATA")
+    if local:
+        env.setdefault("NODE_COMPILE_CACHE", os.path.join(local, "cursor-compile-cache"))
+    return env
 
 
 def normalize_workspace(ws: Optional[str]) -> str:
@@ -192,7 +257,7 @@ def create_chat(workspace: str) -> str:
     good measure and let the subsequent ask create the workspace's chat dir.
     """
     proc = proc_tree.run_captured(
-        [CURSOR_BIN, "create-chat"],
+        [*_launch(), "create-chat"],
         cwd=workspace,
         stdin=subprocess.DEVNULL,
         timeout=30,
@@ -319,7 +384,7 @@ def list_models() -> list[str]:
         return _MODELS_CACHE
     try:
         proc = proc_tree.run_captured(
-            [CURSOR_BIN, "models"],
+            [*_launch(), "models"],
             stdin=subprocess.DEVNULL,
             timeout=20,
             **_TEXT,
@@ -393,7 +458,7 @@ def build_args(
     last.
     """
     args = [
-        CURSOR_BIN,
+        *_launch(),
         "-p",
         "--output-format",
         "stream-json" if json_stream else "text",
@@ -503,7 +568,7 @@ def run_cursor_streaming(
     args = build_args(prompt, workspace, sandbox, model, chat_id, json_stream=True)
 
     state: dict = {"answer": "", "assistant": ""}
-    proc = subprocess.Popen(
+    proc = proc_tree.popen(
         args,
         cwd=workspace,
         stdin=subprocess.DEVNULL,
@@ -582,7 +647,7 @@ def cursor_version() -> Optional[str]:
     """`cursor-agent --version` first line, or None if cursor can't be run."""
     try:
         proc = proc_tree.run_captured(
-            [CURSOR_BIN, "--version"],
+            [*_launch(), "--version"],
             stdin=subprocess.DEVNULL,
             timeout=15,
             **_TEXT,
@@ -604,7 +669,7 @@ def auth_status() -> tuple[bool, str]:
     """
     try:
         proc = proc_tree.run_captured(
-            [CURSOR_BIN, "status"],
+            [*_launch(), "status"],
             stdin=subprocess.DEVNULL,
             timeout=20,
             **_TEXT,

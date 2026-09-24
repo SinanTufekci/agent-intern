@@ -502,7 +502,7 @@ def _run_text_worker_watched(
         if model:
             args += ["--model", model]
         args += ["-p", prompt]
-        proc = subprocess.Popen(
+        proc = proc_tree.popen(
             args,
             cwd=workspace,
             stdin=subprocess.DEVNULL,
@@ -738,7 +738,7 @@ def _run_image_worker_watched(index, prompt, target, workspace, timeout_s) -> Wo
         os.makedirs(workspace, exist_ok=True)
         wrapped = server._wrap_image_prompt(prompt, target)
         args = server._agy_base_args(timeout_s) + ["-p", wrapped]
-        proc = subprocess.Popen(
+        proc = proc_tree.popen(
             args,
             cwd=workspace,
             stdin=subprocess.DEVNULL,

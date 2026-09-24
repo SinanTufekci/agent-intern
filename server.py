@@ -3035,7 +3035,7 @@ def _open_watch_window(url: str, rid: str = _MAIN) -> None:
         return
     for exe in _chromium_app_browsers():
         try:
-            subprocess.Popen(
+            proc_tree.popen(
                 [exe, f"--app={url}", f"--window-size={_WATCH_WINDOW_SIZE}"],
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
@@ -3106,7 +3106,7 @@ def _run_agy_watched(
         except Exception:  # noqa: BLE001 - the viewer is best-effort, never fatal
             pass
 
-        proc = subprocess.Popen(
+        proc = proc_tree.popen(
             args,
             cwd=workspace,
             stdin=subprocess.DEVNULL,
@@ -3247,7 +3247,7 @@ def _run_agy_image_watched(
         except Exception:  # noqa: BLE001 - viewer is best-effort
             pass
 
-        proc = subprocess.Popen(
+        proc = proc_tree.popen(
             args,
             cwd=workspace,
             stdin=subprocess.DEVNULL,

@@ -165,6 +165,29 @@ no approval gate — the same posture as Antigravity, and verified live on 0.29.
 *rejects* `--auto`/`--yolo` precisely because it is already self-approving. No flag makes it safe.
 Assume every `kimi_ask` runs arbitrary code with your privileges.
 
+### Windows: batch-file shims and the prompt
+
+On Windows several of these CLIs install as a `.cmd` shim (npm's `opencode.cmd`, the Cursor
+installer's `cursor-agent.CMD`). Windows cannot run a `.cmd` directly — it hands the whole command line
+to `cmd.exe`, which re-parses every argument with its own rules: `%var%` and `!var!` expansion, and
+`&`, `|`, `<`, `>` as command separators. Python quotes arguments for the C runtime, not for `cmd.exe`,
+so a prompt that closes a quote and continues with `& <command>` ran that command on the host —
+**before the agent started, so no `sandbox` setting applied**. The prompt can carry text Claude read
+from an untrusted file or page, which is what made this exploitable. Versions up to and including
+**0.30.2** were affected for the cursor and opencode backends on Windows; it was verified live
+against both real shims, and fixed in **0.30.3**:
+
+- **The shims are bypassed.** opencode's npm shim is resolved to the native `opencode.exe` it wraps,
+  and cursor is launched as the `node.exe index.js` its own launcher would pick. `cmd.exe` is no
+  longer involved, so the prompt reaches the CLI verbatim.
+- **Anything still left is refused, not run.** Every spawn goes through one check: if the target is
+  a `.cmd`/`.bat` and an argument contains `" % ! ^ & | < >` or a newline, the call fails with an
+  error naming the backend's `*_BIN` override instead of running. A test fails the build if any
+  module spawns a process without that check.
+
+If a backend reports that refusal, point its `*_BIN` variable at the real executable rather than the
+shim.
+
 ### What that means for you
 
 - The `workspace` argument is only a *starting context*, **not a security boundary** — Antigravity and

@@ -102,10 +102,20 @@ OPENCODE_BIN_ENV = os.environ.get("OPENCODE_BIN", "opencode")
 
 
 def _resolve_bin() -> str:
-    """Full path to the opencode executable (see OPENCODE_BIN_ENV note)."""
+    """Full path to the opencode executable (see OPENCODE_BIN_ENV note).
+
+    On Windows the npm install is an `opencode.cmd` shim, and a shim hands its
+    arguments to cmd.exe — which re-parses them, so a prompt containing `"` and `&`
+    would run a shell command on the host (see proc_tree's batch-shim note). The npm
+    shim only forwards to `node_modules/opencode-ai/bin/opencode.exe`, a native
+    binary, so launch that directly: same program, no cmd.exe. If the shim can't be
+    resolved, proc_tree.check_args refuses a dangerous prompt instead of running it.
+    """
     if os.path.sep in OPENCODE_BIN_ENV or os.path.isfile(OPENCODE_BIN_ENV):
-        return OPENCODE_BIN_ENV
-    return shutil.which(OPENCODE_BIN_ENV) or OPENCODE_BIN_ENV
+        found = OPENCODE_BIN_ENV
+    else:
+        found = shutil.which(OPENCODE_BIN_ENV) or OPENCODE_BIN_ENV
+    return proc_tree.npm_shim_target(found) or found
 
 
 OPENCODE_BIN = _resolve_bin()
@@ -543,7 +553,7 @@ def _run_impl(
     args = build_args(prompt, workspace, sandbox, model, resume_id, use_continue, agent)
 
     state: dict = {}
-    proc = subprocess.Popen(
+    proc = proc_tree.popen(
         args,
         cwd=workspace,
         stdin=subprocess.DEVNULL,

@@ -32,6 +32,7 @@ platform and its worse failure mode, completely unaddressed.
 from __future__ import annotations
 
 import os
+import re
 import signal
 import subprocess
 from typing import Optional
@@ -93,6 +94,95 @@ def kill_tree(proc: subprocess.Popen) -> None:
         pass
 
 
+# ----------------------------------------------------------------- Windows batch shims
+#
+# A `.cmd`/`.bat` file cannot be executed directly: `CreateProcess` runs it as
+# `cmd.exe /c "<file> <args>"`, so every argument is re-parsed by cmd.exe — with
+# `%var%` expansion, `!var!` expansion when the shim enables delayed expansion, and
+# `&`/`|`/`<`/`>` as command separators. Python's `list2cmdline` quotes for the
+# MSVCRT parser, not for cmd.exe, and cmd.exe does not honour its backslash-escaped
+# quotes. So an argument such as `x" & calc & "` closes the quote early and the rest
+# RUNS AS A COMMAND — verified live against a shim. The prompt is exactly such an
+# argument, and it can carry text Claude read from an untrusted file or web page.
+# That escapes every `sandbox` setting: the command runs in the shim's cmd.exe, on
+# the host, before the agent (and its sandbox) ever starts.
+#
+# Correct escaping for cmd.exe is possible only for some inputs (Rust's fix for the
+# same bug, CVE-2024-24576, refuses the rest). Two defences instead:
+#   1. each bridge resolves its shim to the real executable where it can
+#      (`npm_shim_target` below; cursor and muse have their own launch paths), so
+#      cmd.exe is never involved;
+#   2. `check_args` refuses to hand any metacharacter to a shim that is still left,
+#      turning a would-be injection into a clear error. Every spawn goes through
+#      `run_captured` / `popen` below, which call it — a test guards that.
+BATCH_SUFFIXES = (".cmd", ".bat")
+CMD_METACHARS = frozenset('"%!^&|<>\r\n')
+
+
+def is_batch_file(executable: str) -> bool:
+    """True when `executable` is a .cmd/.bat file, which Windows runs via cmd.exe."""
+    return str(executable).lower().endswith(BATCH_SUFFIXES)
+
+
+def check_args(args: list[str]) -> None:
+    """Refuse to pass cmd.exe metacharacters to a batch-file shim. Never mutates.
+
+    A no-op off Windows and for real executables. Raises ValueError naming the
+    offending characters, so the caller fails loudly instead of running whatever the
+    argument smuggled in. See the note above for why escaping is not attempted.
+    """
+    if os.name != "nt" or not args or not is_batch_file(args[0]):
+        return
+    for arg in args[1:]:
+        bad = sorted(set(str(arg)) & CMD_METACHARS)
+        if bad:
+            shown = ", ".join(repr(c) for c in bad)
+            raise ValueError(
+                f"refusing to run {args[0]!r}: it is a batch-file shim, which Windows runs "
+                f"through cmd.exe, and an argument contains characters cmd.exe would "
+                f"interpret ({shown}) — that is how a prompt injects a shell command. "
+                f"Point the backend's *_BIN env var at the real executable instead."
+            )
+
+
+def npm_shim_target(shim: str) -> Optional[str]:
+    """The native .exe an npm cmd-shim launches, or None if it isn't one.
+
+    npm's generated shims end in a line like
+        "%dp0%\\node_modules\\opencode-ai\\bin\\opencode.exe"   %*
+    where `%dp0%` is the shim's own directory. When the target is a real `.exe`,
+    launching it directly behaves identically minus cmd.exe — so the prompt never
+    meets cmd's parser. Shims that run `node script.js` are left alone (None): there
+    the correct target depends on npm's node-resolution logic, and guessing wrong is
+    worse than the loud refusal `check_args` gives.
+    """
+    if not is_batch_file(shim):
+        return None
+    try:
+        with open(shim, encoding="utf-8", errors="replace") as f:
+            text = f.read()
+    except OSError:
+        return None
+    base = os.path.dirname(os.path.abspath(shim))
+    for quoted in reversed(re.findall(r'"([^"]+\.exe)"', text, flags=re.IGNORECASE)):
+        low = quoted.lower()
+        for token in ("%dp0%", "%~dp0"):
+            if low.startswith(token):
+                # The shim spells its path with backslashes; "/" joins correctly on
+                # every OS, so the resolution is testable off Windows too.
+                rel = quoted[len(token) :].replace("\\", "/").lstrip("/")
+                candidate = os.path.normpath(os.path.join(base, rel))
+                if os.path.isfile(candidate):
+                    return candidate
+    return None
+
+
+def popen(args: list[str], **popen_kwargs) -> subprocess.Popen:
+    """`subprocess.Popen` behind the batch-shim check. Use this, never Popen directly."""
+    check_args(args)
+    return subprocess.Popen(args, **popen_kwargs)
+
+
 def run_captured(
     args: list[str],
     *,
@@ -112,7 +202,7 @@ def run_captured(
     pipes open. Reading the pipes only *after* the tree is dead is what makes the
     second read terminate; that ordering is the fix, not a detail of it.
     """
-    proc = subprocess.Popen(
+    proc = popen(
         args,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

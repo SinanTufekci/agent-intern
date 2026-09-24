@@ -437,7 +437,7 @@ def run_copilot_streaming(
     args = build_args(prompt, workspace, sandbox, model, session_id, json_stream=True)
 
     state: dict = {"answer": "", "delta": ""}
-    proc = subprocess.Popen(
+    proc = proc_tree.popen(
         args,
         cwd=workspace,
         stdin=subprocess.DEVNULL,

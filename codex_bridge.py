@@ -497,7 +497,7 @@ def run_codex_streaming(
     before = set() if continue_conv else _rollout_names()
     args = build_args(prompt, workspace, sandbox, model, resume_session, out_path, json_stream=True)
     try:
-        proc = subprocess.Popen(
+        proc = proc_tree.popen(
             args,
             cwd=workspace,
             stdin=subprocess.DEVNULL,

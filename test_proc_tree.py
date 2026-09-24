@@ -319,3 +319,96 @@ def test_no_module_kills_a_bare_process_on_timeout():
     assert not offenders, "call proc_tree.kill_tree(proc) so the grandchild dies too: " + ", ".join(
         offenders
     )
+
+
+# ------------------------------------------------------------------- batch-file shims
+#
+# A .cmd/.bat target is run through cmd.exe, which re-parses every argument — so a
+# prompt that closes a quote and adds `& <command>` runs that command on the host,
+# before the agent or its sandbox starts. These pin both defences: the refusal in
+# check_args, and resolving shims to the real executable.
+
+INJECTION = 'summarise this" & echo INJECTED_MARKER & rem "'
+
+
+def test_check_args_refuses_metacharacters_for_a_batch_shim(monkeypatch):
+    monkeypatch.setattr(proc_tree.os, "name", "nt")
+    for bad in (INJECTION, "100%", "wow!", "a|b", "a > b", "a ^ b", "line1\nline2"):
+        with pytest.raises(ValueError, match="batch-file shim"):
+            proc_tree.check_args([r"C:\tools\agent.CMD", "-p", bad])
+
+
+def test_check_args_allows_plain_arguments_and_real_executables(monkeypatch):
+    monkeypatch.setattr(proc_tree.os, "name", "nt")
+    proc_tree.check_args([r"C:\tools\agent.cmd", "--version", r"C:\work\repo"])
+    proc_tree.check_args([r"C:\tools\agent.exe", "-p", INJECTION])  # no cmd.exe involved
+    proc_tree.check_args([])
+
+
+def test_check_args_is_a_no_op_off_windows(monkeypatch):
+    monkeypatch.setattr(proc_tree.os, "name", "posix")
+    proc_tree.check_args(["/usr/local/bin/agent.cmd", "-p", INJECTION])
+
+
+@pytest.mark.skipif(os.name != "nt", reason="cmd.exe argument parsing is Windows-only")
+def test_injection_through_a_real_shim_is_refused_before_anything_runs(tmp_path):
+    """End to end on a real cmd.exe: the refusal happens, and nothing executed.
+
+    The shim writes a marker if it ever runs at all, so this also proves the check
+    fires before the spawn rather than after cmd.exe has already parsed the line.
+    """
+    marker = tmp_path / "ran.txt"
+    shim = tmp_path / "agent.cmd"
+    shim.write_text(f'@echo off\r\necho ran> "{marker}"\r\necho ARGS: %*\r\n', encoding="ascii")
+    for spawn in (
+        lambda: proc_tree.run_captured([str(shim), "-p", INJECTION], timeout=30),
+        lambda: proc_tree.popen([str(shim), "-p", INJECTION], stdout=subprocess.PIPE),
+    ):
+        with pytest.raises(ValueError, match="batch-file shim"):
+            spawn()
+    assert not marker.exists()
+
+
+def _write_npm_shim(tmp_path, target_line: str):
+    shim = tmp_path / "opencode.cmd"
+    shim.write_text(
+        "@ECHO off\r\nGOTO start\r\n:find_dp0\r\nSET dp0=%~dp0\r\nEXIT /b\r\n:start\r\n"
+        f"SETLOCAL\r\nCALL :find_dp0\r\n{target_line}   %*\r\n",
+        encoding="ascii",
+    )
+    return shim
+
+
+def test_npm_shim_target_resolves_the_native_exe(tmp_path):
+    exe = tmp_path / "node_modules" / "opencode-ai" / "bin" / "opencode.exe"
+    exe.parent.mkdir(parents=True)
+    exe.write_bytes(b"MZ")
+    shim = _write_npm_shim(tmp_path, r'"%dp0%\node_modules\opencode-ai\bin\opencode.exe"')
+    assert proc_tree.npm_shim_target(str(shim)) == str(exe)
+
+
+def test_npm_shim_target_leaves_node_script_shims_and_missing_targets_alone(tmp_path):
+    node_shim = _write_npm_shim(tmp_path, r'"%_prog%"  "%dp0%\node_modules\x\cli.js"')
+    assert proc_tree.npm_shim_target(str(node_shim)) is None
+    missing = _write_npm_shim(tmp_path, r'"%dp0%\node_modules\gone\bin\gone.exe"')
+    assert proc_tree.npm_shim_target(str(missing)) is None
+    assert proc_tree.npm_shim_target(str(tmp_path / "agent.exe")) is None
+
+
+def test_no_module_calls_subprocess_popen_directly():
+    """Every spawn must pass proc_tree.check_args, which lives in popen/run_captured.
+
+    A direct subprocess.Popen skips it — which is exactly how the cursor and opencode
+    bridges came to hand prompts to cmd.exe. Route new spawns through proc_tree.popen.
+    """
+    offenders = []
+    for path in _cli_modules():
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            fn = node.func
+            if isinstance(fn, ast.Attribute) and fn.attr == "Popen":
+                if isinstance(fn.value, ast.Name) and fn.value.id == "subprocess":
+                    offenders.append(f"{path.name}:{node.lineno}")
+    assert not offenders, "use proc_tree.popen so check_args runs: " + ", ".join(offenders)

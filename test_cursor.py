@@ -82,7 +82,8 @@ def test_normalize_workspace_abspath(tmp_path):
 
 def test_build_args_fresh_basic():
     args = cursor_bridge.build_args("hello", "C:\\ws", "read-only", None, SAMPLE_CID)
-    assert args[0] == cursor_bridge.CURSOR_BIN
+    launch = cursor_bridge._launch()
+    assert args[: len(launch)] == launch  # the shim, or node+index.js behind it
     assert "-p" in args
     assert args[args.index("--output-format") + 1] == "text"  # default clean text
     assert "--trust" in args
@@ -568,3 +569,55 @@ def test_run_cursor_streaming_completes_on_process_exit_not_stdout_eof(tmp_path,
     assert ans == "FAKE ANSWER"
     assert dt < 5.0, f"must return on process exit (~2s), not wait for the 8s child; took {dt:.1f}s"
     assert any(e.get("type") == "result" for e in events)
+
+
+# --------------------------------------------------------------------------
+# _launch_prefix — bypass the cmd.exe shim (command injection via the prompt)
+# --------------------------------------------------------------------------
+
+
+def _cursor_install(tmp_path, versions=(), flat=False):
+    shim = tmp_path / "cursor-agent.cmd"
+    shim.write_text("@echo off\r\n", encoding="ascii")
+    if flat:
+        (tmp_path / "node.exe").write_bytes(b"MZ")
+        (tmp_path / "index.js").write_text("", encoding="ascii")
+    for name in versions:
+        d = tmp_path / "versions" / name
+        d.mkdir(parents=True)
+        (d / "node.exe").write_bytes(b"MZ")
+        (d / "index.js").write_text("", encoding="ascii")
+    return str(shim)
+
+
+def test_launch_prefix_runs_node_from_the_newest_version_dir(tmp_path, monkeypatch):
+    monkeypatch.setattr(cursor_bridge.os, "name", "nt")
+    shim = _cursor_install(tmp_path, ("2026.07.23-aaaaaaa", "2026.08.11-e8db854", "not-a-version"))
+    newest = tmp_path / "versions" / "2026.08.11-e8db854"
+    assert cursor_bridge._launch_prefix(shim) == [
+        str(newest / "node.exe"),
+        str(newest / "index.js"),
+    ]
+
+
+def test_launch_prefix_prefers_a_flat_install_like_the_ps1_does(tmp_path, monkeypatch):
+    monkeypatch.setattr(cursor_bridge.os, "name", "nt")
+    shim = _cursor_install(tmp_path, ("2026.08.11-e8db854",), flat=True)
+    assert cursor_bridge._launch_prefix(shim) == [
+        str(tmp_path / "node.exe"),
+        str(tmp_path / "index.js"),
+    ]
+
+
+def test_launch_prefix_falls_back_to_the_shim_it_cannot_resolve(tmp_path, monkeypatch):
+    # proc_tree.check_args then refuses a dangerous prompt instead of running it.
+    monkeypatch.setattr(cursor_bridge.os, "name", "nt")
+    shim = _cursor_install(tmp_path)
+    assert cursor_bridge._launch_prefix(shim) == [shim]
+
+
+def test_launch_prefix_leaves_real_executables_alone(tmp_path, monkeypatch):
+    monkeypatch.setattr(cursor_bridge.os, "name", "posix")
+    assert cursor_bridge._launch_prefix("/usr/local/bin/cursor-agent") == [
+        "/usr/local/bin/cursor-agent"
+    ]

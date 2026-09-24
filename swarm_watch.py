@@ -24,6 +24,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
 
+import proc_tree
 import server
 from server import (
     _chromium_app_browsers,
@@ -209,7 +210,7 @@ def _launch(url: str, w: int, h: int, x: Optional[int] = None, y: Optional[int] 
     ]
     for exe in _chromium_app_browsers():
         try:
-            subprocess.Popen(
+            proc_tree.popen(
                 [exe, *flags],
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
