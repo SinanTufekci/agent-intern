@@ -2,7 +2,7 @@
 
 <sub>[← back to the README](../README.md) · [all docs](README.md)</sub>
 
-All 27 tools, their arguments and defaults.
+All 29 tools, their arguments and defaults.
 
 ## Tools
 
@@ -77,6 +77,8 @@ All 27 tools, their arguments and defaults.
 | Tool | Purpose |
 |---|---|
 | `agent_swarm(tasks, max_concurrency?=4, timeout_s?=180, watch?=false)` | Run **several tasks in parallel across seven backends** — each task names its `backend` (`antigravity`, `codex`, `copilot`, `cursor`, `opencode`, `grok`, or `muse`) plus a `prompt` (an optional `model` and `sandbox` for any backend — on Antigravity `sandbox: "read-only"` means **plan mode**). Every answer comes back in one block; `watch=true` opens the live dashboard ([Swarm](watch-and-swarm.md#swarm)). Kimi is not available here — see [Experimental backends](backends.md#experimental-backends). |
+| `preset_swarm(preset, material, workspace?, timeout_s?, max_concurrency?=4, watch?=false)` | Run a **predefined swarm**: a named panel of agents from different model families, each in its own role, on the same `material`. Built in: **`jury`** (independent jurors score against a rubric; returns a score table with each criterion's mean and spread and flags disagreements), **`research`** (one topic from four angles, with sources), **`red-team`** (attack a plan from three sides), **`council`** (independent code review). Members run read-only unless the preset says otherwise. Add your own as JSON files ([Preset swarms](watch-and-swarm.md#presets)). |
+| `swarm_presets(name?, workspace?)` | List every preset (built-in, yours and the project's) with its members and rubric, and any file that was skipped and why. With `name`, returns that preset as JSON to save and edit. Runs nothing. |
 
 `workspace` defaults to the MCP server's current working directory. Point it at a real project dir
 for context-aware answers — every backend gives the model access to files under that root (Codex,

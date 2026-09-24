@@ -44,7 +44,7 @@ jobs:
         run: >-
           pytest test_server.py test_swarm.py test_codex.py test_copilot.py
           test_cursor.py test_grok.py test_kimi.py test_opencode.py
-          test_proc_tree.py test_muse.py -q
+          test_proc_tree.py test_muse.py test_presets.py -q
 
   package:
     name: wheel installs and starts

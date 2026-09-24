@@ -32,8 +32,12 @@ medium or low confidence, and say "no issues found" rather than invent some.
   - `copilot_ask` or `cursor_ask`
   - `antigravity_ask`
   - `opencode_ask`. Its free models are slow, so warn the user it can take several minutes.
-- **`--council`, or the user wants several opinions:** run 2–3 reviewers from different families in
-  parallel, in a single `agent_swarm` call.
+- **`--council`, or the user wants several opinions:** run the `council` preset:
+  `preset_swarm(preset="council", material=<the brief from step 1>, workspace=<repo root>)`. It
+  runs Codex, Copilot and Gemini reviewers read-only, in parallel, each told to work independently.
+  A reviewer whose backend isn't set up fails in place and the others still answer. If fewer than
+  two answer, run an `agent_swarm` with the reviewers that do work. The user may have their own
+  `council` preset with other reviewers; `swarm_presets` shows which one will run.
 - **Keep it read-only.** Use `sandbox: "read-only"` wherever a backend accepts it, and set
   `workspace` to the repo root. For Antigravity, pass `plan: true` to `antigravity_ask`, or
   `sandbox: "read-only"` in a swarm task, so it can't edit files.

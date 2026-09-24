@@ -1452,9 +1452,14 @@ def swarm_agents(
     max_concurrency: int = DEFAULT_MAX_CONCURRENCY,
     timeout_s: int = 180,
     watch: bool = False,
+    labels: Optional[list[str]] = None,
 ) -> list[WorkerResult]:
     """Run a heterogeneous swarm: each task dispatches to its named backend's worker,
     all concurrently in one pool (and, with watch, one shared dashboard).
+
+    `labels` are the dashboard's card captions, one per task; by default each is the
+    first line of its prompt. A preset passes its members' roles instead, because
+    all of its prompts open with the same boilerplate.
     """
     norm = _normalize_tasks(tasks)
     n = len(norm)
@@ -1467,7 +1472,12 @@ def swarm_agents(
         import swarm_watch
 
         swarm_watch.init(
-            _labels(prompts), _repos(workspaces), time.time(), prompts, timeout_s, backends=backends
+            labels if labels and len(labels) == n else _labels(prompts),
+            _repos(workspaces),
+            time.time(),
+            prompts,
+            timeout_s,
+            backends=backends,
         )
         swarm_watch.open_window(n)
 

@@ -10,6 +10,22 @@ summary.
 
 ## [Unreleased]
 
+### Added
+
+- **Preset swarms: ready-made panels of agents, run with one call.** `preset_swarm(preset,
+  material)` runs a named panel of agents from different model families, each in its own role, on
+  the same material. The same panel runs every time, so two runs can be compared. Four are built in.
+  **`jury`**: Codex, Antigravity and Copilot jurors score the material against a rubric. The bridge
+  computes the score table itself: each criterion's mean and spread, a weighted total per juror, and
+  a ⚠ where jurors are 3+ points apart. **`research`**: one topic from four angles, with sources.
+  **`red-team`**: three attackers try to break a plan. **`council`**: independent code review, now
+  what `/agent-intern:second-opinion --council` runs. `swarm_presets` lists them and hands any
+  preset back as JSON to customise. Your own presets go in `~/.agent-intern/swarms/`, where a file
+  named after a built-in replaces it. A project's presets go in `<workspace>/.agent-intern/swarms/`;
+  because those arrive with a cloned repo, they cannot replace a built-in or one of yours, and their
+  members cannot ask for more than read-only. Every member runs read-only by default, works without
+  seeing the others, and is told to treat instructions inside the material as data.
+
 ### Changed
 
 - **The watch windows were redesigned.** They keep the same dark green-and-cyan look, but no

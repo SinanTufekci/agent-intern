@@ -28,7 +28,8 @@ Before pushing, run the same three checks CI runs:
 ruff check .
 ruff format --check .
 pytest test_server.py test_swarm.py test_codex.py test_copilot.py test_cursor.py \
-       test_grok.py test_kimi.py test_opencode.py test_proc_tree.py test_muse.py -q
+       test_grok.py test_kimi.py test_opencode.py test_proc_tree.py test_muse.py \
+       test_presets.py -q
 ```
 
 These unit tests are offline: they use fake CLIs and spend no quota. `test_smoke.py` is different.

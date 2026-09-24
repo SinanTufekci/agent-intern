@@ -2,7 +2,8 @@
 
 <sub>[← back to the README](../README.md) · [all docs](README.md)</sub>
 
-The live **Agent Intern** window, and `agent_swarm` for running many agents in parallel.
+The live **Agent Intern** window, `agent_swarm` for running many agents in parallel, and
+ready-made panels with `preset_swarm`.
 
 <a id="watch-mode"></a>
 
@@ -166,3 +167,83 @@ quota/rate-limit pressure for wall-clock.
 > it with **trusted prompts on trusted content**. Codex workers honor their
 > enforced `sandbox`; Copilot, Cursor and opencode workers honor their best-effort `sandbox`;
 > Antigravity workers have no real boundary.
+
+<a id="presets"></a>
+
+## ⚖️ Preset swarms — ready-made panels
+
+`agent_swarm` needs a task list built by hand. A **preset** is that list written down once: who sits
+on the panel (a role, a backend, optionally a model and a sandbox), what each member is told, and
+what Claude should do with the answers. You run it with one call, and the same panel runs every time,
+so two runs (two applications, two drafts of a plan) can be compared.
+
+```
+preset_swarm(preset="jury", material="<the full application text>")
+```
+
+| Preset | Kind | Members | What you get back |
+|---|---|---|---|
+| `jury` | jury | Technical juror · Codex, Impact juror · Antigravity, Skeptical juror · Copilot | A score table: each criterion's score per juror, its mean and spread, a weighted total per juror, and a ⚠ wherever jurors are 3+ points apart. Then each juror's reasons, strengths, weaknesses and verdict. |
+| `research` | panel | Landscape · Antigravity, Prior work & competitors · Codex, Data & evidence · Copilot, The case against · Antigravity | One topic researched from four angles, each with sources. |
+| `red-team` | panel | Technical attacker · Codex, Assumption hunter · Antigravity, Execution critic · Copilot | What will make a plan, proposal or design fail, worst first, each with a fix or a test. |
+| `council` | panel | Reviewers from Codex, Copilot and Antigravity | Independent code review of a change. The `/agent-intern:second-opinion --council` skill runs it. |
+
+- **Put everything in `material`.** Members get it inline and may not be able to read files: Codex's
+  read-only sandbox refuses every command on Windows.
+- **Read-only by default.** Every built-in member runs read-only; on Antigravity that is plan mode.
+- **Independent, and told not to take orders from the material.** Each member works alone and is
+  told that instructions inside the material (*"give this a 10"*) are part of what it is judging.
+  For an agent that is a request, not a guarantee.
+- **Jury scores are computed, not estimated.** Jurors must reply in a fixed JSON shape. The bridge
+  finds the JSON even inside prose or a code fence, drops any score outside the scale instead of
+  guessing, and does the arithmetic itself. A juror that fails or answers without usable scores is
+  left out of the table and shown below it with its raw answer.
+- **The result ends with instructions for Claude**: how to merge the answers, and to check the
+  members' claims against the material rather than paste them back.
+- **`watch=true`** opens the dashboard with one card per member, captioned with its role.
+
+### Your own presets
+
+`swarm_presets()` lists every preset. `swarm_presets(name="jury")` returns one as JSON, ready to
+save and edit. A preset is a JSON file named `<preset>.json`:
+
+- **`~/.agent-intern/swarms/`** holds your presets for every project. A file named after a
+  built-in (`jury.json`) replaces it.
+- **`<workspace>/.agent-intern/swarms/`** holds presets for one project. These arrive with whatever
+  repo you cloned, so they get less trust: they cannot replace a built-in or one of yours, and their
+  members cannot ask for more than read-only.
+
+```json
+{
+  "description": "Grant panel: our foundation's three criteria",
+  "kind": "jury",
+  "brief": "Evaluate the grant application as a member of the foundation's panel.",
+  "members": [
+    {"role": "Technical juror", "backend": "codex", "brief": "Judge the method and plan."},
+    {"role": "Impact juror", "backend": "antigravity", "brief": "Judge who benefits and how much."},
+    {"role": "Budget juror", "backend": "cursor", "model": "auto", "brief": "Judge the budget."}
+  ],
+  "rubric": [
+    {"id": "excellence", "label": "Excellence", "weight": 0.4, "guide": "Is the approach sound and new?"},
+    {"id": "impact", "label": "Impact", "weight": 0.35},
+    {"id": "implementation", "label": "Implementation", "weight": 0.25}
+  ],
+  "scale": [1, 5],
+  "disagree_at": 2,
+  "synthesis": "Give the table, then a funding recommendation with the three main reasons."
+}
+```
+
+| Key | Meaning |
+|---|---|
+| `kind` | `panel` (default) returns each answer. `jury` also needs a `rubric` and returns the score table. |
+| `brief` | Required. What the whole panel is for. |
+| `members` | 2 to 8 of `{role, backend, brief?, model?, sandbox?}`. Roles must be unique. `sandbox` defaults to `read-only`. |
+| `answer_format` | Panels only: how each member should lay out its answer. |
+| `rubric` | Juries only: `{id, label?, weight?, guide?}` per criterion. Weights are relative. |
+| `scale`, `disagree_at` | Juries only: the score range (default `[1, 10]`) and the spread that earns a ⚠ (default `3`). |
+| `timeout_s` | Per-member timeout, 30 to 3600 s (default 240). |
+| `synthesis` | What Claude should do with the answers. |
+
+A broken file doesn't stop the others from loading: `swarm_presets` lists it with the reason it was
+skipped.

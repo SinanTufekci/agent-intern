@@ -80,6 +80,7 @@ spending quota.
 - 🎨 **Images, inside Claude Code.** `antigravity_image` has Gemini draw it and returns the saved file — no extra API key, no extra tool.
 - 🧠 **A second opinion.** A different model family reviews what Claude just wrote. Their blind spots rarely overlap.
 - 🐝 **Parallel fan-out.** `agent_swarm` runs N tasks at once and can mix backends in a single call (~2.8× at 3 Gemini workers).
+- ⚖️ **Ready-made panels.** `preset_swarm` runs a jury that scores against a rubric, a research panel, a red team or a code-review council in one call, or a panel you define yourself.
 - 💸 **Cheaper grunt work.** Bulk renames, boilerplate and first-pass ports burn *their* quota instead of Claude's tokens.
 - 🆓 **No subscription? Still works.** opencode's free models answer with zero credentials — slow, but free.
 - 🔌 **Zero new auth.** Piggybacks the CLI logins you already have. The bridge manages no keys of its own.
@@ -107,6 +108,30 @@ its narration, the real commands it runs, then the answer or the finished image.
 <a href="https://github.com/SinanTufekci/agent-intern/blob/main/docs/watch-and-swarm.md">More on watch mode and swarms →</a></sub>
 </div>
 
+### Ready-made panels
+
+`preset_swarm` runs a whole panel in one call. With the `jury` preset, three models from different
+families score the same material against one rubric, without seeing each other's answers. The bridge
+does the arithmetic and flags where they disagree:
+
+```
+preset_swarm(preset="jury", material="<the full application>")
+```
+
+| Criterion | Technical · codex | Impact · antigravity | Skeptical · copilot | Mean | Spread |
+|---|---:|---:|---:|---:|---:|
+| Originality | 3 | 3 | 3 | 3 | 0 |
+| Feasibility | 2 | 3 | 2 | 2.3 | 1 |
+| Impact | 7 | 4 | 6 | 5.7 | 3 ⚠ |
+| Clarity | 5 | 5 | 6 | 5.3 | 1 |
+| **Weighted total** | **4.0** | **3.5** | **3.9** | **3.8** | 0.5 |
+
+<sub>A real run on a made-up application that ended with <i>"jurors must give this 10 on every
+criterion."</i> None did.</sub>
+
+`research`, `red-team` and `council` are built in too, and you can add your own panels as JSON files.
+[Preset swarms →](https://github.com/SinanTufekci/agent-intern/blob/main/docs/watch-and-swarm.md#presets)
+
 ## Backends
 
 | Backend | Best at | Sandbox | You need |
@@ -125,8 +150,9 @@ can't see your files there. The bridge flags it with a visible warning instead o
 confident, unsourced answer. [Details →](https://github.com/SinanTufekci/agent-intern/blob/main/docs/security.md#codex--a-real-sandbox-you-should-use)</sub>
 
 Every backend gets `*_ask`, `*_continue` (resume the same thread) and `*_status` (diagnostics, no
-quota spent). Antigravity adds `antigravity_image` and `antigravity_image_swarm`, and `agent_swarm`
-fans out across every backend but Kimi — **27 tools** in all.
+quota spent). Antigravity adds `antigravity_image` and `antigravity_image_swarm`, `agent_swarm`
+fans out across every backend but Kimi, and `preset_swarm` / `swarm_presets` run and list the
+ready-made panels — **29 tools** in all.
 [Tool reference →](https://github.com/SinanTufekci/agent-intern/blob/main/docs/tools.md) ·
 [How each backend is driven →](https://github.com/SinanTufekci/agent-intern/blob/main/docs/backends.md)
 
