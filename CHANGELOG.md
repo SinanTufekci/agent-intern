@@ -10,6 +10,34 @@ summary.
 
 ## [Unreleased]
 
+## [0.30.3] - 2026-09-24
+
+### Security
+
+- **On Windows, a prompt could run shell commands through the cursor and opencode backends —
+  upgrade if you use either there.** Both install as `.cmd` shims (the Cursor installer's
+  `cursor-agent.CMD`, npm's `opencode.cmd`), and Windows runs a `.cmd` by handing the whole command
+  line to `cmd.exe`, which re-parses every argument: `%var%` and `!var!` expansion, and `&`, `|`,
+  `<`, `>` as command separators. Python quotes arguments for the C runtime, not for `cmd.exe`, so a
+  prompt that closed a quote and continued with `& <command>` ran that command on the host —
+  **before the agent started, so no `sandbox` setting applied**. The prompt can carry text Claude
+  read from an untrusted file or page, which is what makes it exploitable rather than theoretical.
+  Verified live against both real shims with a harmless payload: the injected command ran on 0.30.2
+  and does not on 0.30.3. codex, copilot, kimi, grok and agy resolve to real executables and were
+  not affected in practice.
+
+  Two defences, since correct escaping for `cmd.exe` is only possible for some inputs (Rust's fix
+  for the same class, CVE-2024-24576, refuses the rest):
+  - **The shims are bypassed.** opencode's npm shim is resolved to the native `opencode.exe` it wraps,
+    and cursor is launched as the `node.exe index.js` its own PowerShell launcher would pick, with the
+    environment that launcher sets. Same program, no `cmd.exe`.
+  - **Whatever is left is refused, not run.** `proc_tree.check_args` rejects any `cmd.exe`
+    metacharacter bound for a `.cmd`/`.bat` with an error that names the backend's `*_BIN` override.
+    It runs inside `run_captured` and the new `proc_tree.popen`, every direct `subprocess.Popen` in
+    the bridge now goes through `popen`, and an AST test fails the build if a new one doesn't.
+
+  Details in [docs/security.md](https://github.com/SinanTufekci/agent-intern/blob/main/docs/security.md#windows-batch-file-shims-and-the-prompt).
+
 ### Added
 
 - **A Claude Code plugin.** This repo is now a plugin marketplace, so
@@ -1629,7 +1657,8 @@ caller might copy becomes a guaranteed rejected call.
 
 - **BREAKING:** `antigravity_ask_stream` (superseded by watch mode).
 
-[Unreleased]: https://github.com/SinanTufekci/agent-intern/compare/v0.30.2...HEAD
+[Unreleased]: https://github.com/SinanTufekci/agent-intern/compare/v0.30.3...HEAD
+[0.30.3]: https://github.com/SinanTufekci/agent-intern/compare/v0.30.2...v0.30.3
 [0.30.2]: https://github.com/SinanTufekci/agent-intern/compare/v0.30.1...v0.30.2
 [0.30.1]: https://github.com/SinanTufekci/agent-intern/compare/v0.30.0...v0.30.1
 [0.30.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.29.1...v0.30.0

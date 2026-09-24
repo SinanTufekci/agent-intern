@@ -7,12 +7,12 @@
     "url": "https://github.com/SinanTufekci/agent-intern",
     "source": "github"
   },
-  "version": "0.30.2",
+  "version": "0.30.3",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "agent-intern",
-      "version": "0.30.2",
+      "version": "0.30.3",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"
