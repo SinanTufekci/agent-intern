@@ -182,6 +182,7 @@ the same thread. No private APIs, no token handling: it only bridges what the CL
 
 The CLIs behind this bridge update themselves, so most breakage is upstream drift rather than a bug
 in the bridge. A report that includes the relevant `*_status` output usually pins it down in one go.
+[Contributing guide](https://github.com/SinanTufekci/agent-intern/blob/main/CONTRIBUTING.md) ·
 [Open an issue](https://github.com/SinanTufekci/agent-intern/issues/new/choose) ·
 [Start a discussion](https://github.com/SinanTufekci/agent-intern/discussions) · Developed on Windows —
 confirmations from macOS and Linux are very welcome.
