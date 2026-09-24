@@ -364,6 +364,7 @@ DOCUMENTED_CURSOR_MODELS = [
 ]
 
 
+@pytest.mark.real_cli
 def test_documented_cursor_models_still_accepted_by_live_cli(monkeypatch):
     monkeypatch.setattr(cursor_bridge, "_MODELS_CACHE", None)  # force a fresh read
     live = cursor_bridge.list_models()

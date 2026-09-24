@@ -421,6 +421,12 @@ def test_no_module_calls_subprocess_popen_directly():
         ["C:\\Users\\x\\.local\\bin\\agy.exe", "-p", "hi"],
         "copilot -p hi",
         ["cmd", "/c", "cursor-agent.cmd", "-p", "hi"],
+        # cursor-agent on Windows: no file in the argv is named after it
+        [
+            "C:\\Users\\x\\AppData\\Local\\cursor-agent\\versions\\2026.08.11-e8db854\\node.exe",
+            "C:\\Users\\x\\AppData\\Local\\cursor-agent\\versions\\2026.08.11-e8db854\\index.js",
+            "models",
+        ],
         ["node", "C:/npm/opencode.js", "run"],
         ["muse-bin-1.3.0.exe", "exec"],
         ["C:/Program Files/Google/Chrome/Application/chrome.exe", "--app=http://x"],
@@ -439,6 +445,22 @@ def test_the_tripwire_stops_agent_clis_and_browsers(args):
 def test_the_tripwire_lets_other_programs_run():
     out = subprocess.run([sys.executable, "-c", "print('ok')"], capture_output=True, text=True)
     assert out.stdout.strip() == "ok"
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        # a directory named like a CLI doesn't block an ordinary program
+        ["/home/u/codex/.venv/bin/python", "-c", "pass"],
+        ["C:\\work\\opencode\\tool.exe", "--help"],
+        # a launcher running something unrelated
+        ["node", "C:/work/site/build.js"],
+    ],
+)
+def test_the_tripwire_does_not_flag_look_alikes(args):
+    import conftest
+
+    assert conftest._forbidden(args) == ""
 
 
 def test_the_tripwire_catches_an_attempt_the_code_swallowed():

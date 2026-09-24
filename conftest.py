@@ -51,9 +51,16 @@ _REAL_POPEN = subprocess.Popen
 _trips: list[str] = []
 
 
-def _stem(arg) -> str:
-    name = os.fsdecode(arg).replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
-    return os.path.splitext(name)[0].lower()
+def _components(arg) -> list[str]:
+    """Every path component of `arg`, lowercased, the last without its extension."""
+    parts = [p for p in os.fsdecode(arg).replace("\\", "/").split("/") if p]
+    if parts:
+        parts[-1] = os.path.splitext(parts[-1])[0]
+    return [p.lower() for p in parts]
+
+
+def _hit(name: str) -> bool:
+    return name in _FORBIDDEN or name.startswith("muse-bin")
 
 
 def _forbidden(args) -> str:
@@ -63,18 +70,31 @@ def _forbidden(args) -> str:
         parts = text.split()[:1] if text else []
     else:
         parts = list(args)[:4]
-    names = [_stem(p) for p in parts]
-    if not names:
+    if not parts:
         return ""
-    for n in names if names[0] in _LAUNCHERS else names[:1]:
-        if n in _FORBIDDEN or n.startswith("muse-bin"):
-            return n
+    first = _components(parts[0])
+    if first and _hit(first[-1]):
+        return first[-1]
+    if first and first[-1] in _LAUNCHERS:
+        # A launcher runs the real program, and the program's name may only be in
+        # its path: on Windows cursor-agent is `...\cursor-agent\versions\<v>\
+        # node.exe ...\index.js`, where no file is called cursor-agent. So look at
+        # every directory too, but only here, where a false match can't block an
+        # ordinary program.
+        for p in parts:
+            for c in _components(p):
+                if _hit(c):
+                    return c
     return ""
 
 
 class _GuardedPopen(_REAL_POPEN):
     """subprocess.Popen, except for the programs above. A subclass, so isinstance
     checks and Popen[str] annotations keep working."""
+
+    # Set before __init__ can raise, so pytest can print the half-made object.
+    args = None
+    returncode = None
 
     def __init__(self, args, *a, **k):
         hit = _forbidden(args)
