@@ -14,10 +14,13 @@ summary.
 
 - **`server.py` is split by backend.** This is for contributors; nothing changes for users. Codex,
   Copilot, Cursor, Grok, Kimi, opencode and Muse each get a `<name>_tools.py` for their MCP tools,
-  next to their `<name>_bridge.py`. `server.py` drops from 5,114 to 3,686 lines and keeps
-  Antigravity, the watch server and the shared helpers. Every function moved verbatim; the one edit
-  is that names used from `server` became `server.<name>`, and a script checked each moved
-  function's AST against the original apart from that. The MCP surface is unchanged: every tool's
+  next to their `<name>_bridge.py`, and the single-run watch viewer moves to `watch_server.py`.
+  `server.py` drops from 5,114 to 3,179 lines and keeps Antigravity and the shared helpers. Every
+  function, class and constant moved verbatim; the one edit is that names used from `server` became
+  `server.<name>`, and a script checked each moved one's AST against the original apart from that.
+  Tests that patched a watch-viewer internal through `server` now patch `watch_server`, where that
+  code reads it; under the tripwire, the stale patches failed loudly (one tried to launch the real
+  Chrome) instead of passing. The MCP surface is unchanged: every tool's
   name, order, schema, description and annotations were compared before and after, and all seven
   backends' `*_status` reports came out byte-identical over stdio.
 - **Unit tests can no longer start a real agent CLI or browser.** A tripwire in `conftest.py` fails

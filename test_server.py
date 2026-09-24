@@ -26,6 +26,7 @@ import copilot_bridge
 import cursor_bridge
 import server
 import swarm
+import watch_server
 
 # --------------------------------------------------------------------------
 # _normalize_workspace
@@ -2483,7 +2484,7 @@ def test_run_agy_watched_browser_failure_is_nonfatal(monkeypatch, brain_dir, las
 
 
 def test_open_watch_window_uses_chromium_app_mode(monkeypatch):
-    monkeypatch.setattr(server, "_chromium_app_browsers", lambda: ["/opt/chrome"])
+    monkeypatch.setattr(watch_server, "_chromium_app_browsers", lambda: ["/opt/chrome"])
     captured = {}
     monkeypatch.setattr(
         server.subprocess, "Popen", lambda args, **k: captured.update(args=args) or object()
@@ -2495,24 +2496,24 @@ def test_open_watch_window_uses_chromium_app_mode(monkeypatch):
 
 
 def test_open_watch_window_falls_back_to_new_window(monkeypatch):
-    monkeypatch.setattr(server, "_chromium_app_browsers", lambda: [])  # no Chromium found
+    monkeypatch.setattr(watch_server, "_chromium_app_browsers", lambda: [])  # no Chromium found
     opened = {}
     monkeypatch.setattr(
-        server.webbrowser, "open", lambda url, new=0: opened.update(url=url, new=new)
+        watch_server.webbrowser, "open", lambda url, new=0: opened.update(url=url, new=new)
     )
     server._open_watch_window("http://x/")
     assert opened == {"url": "http://x/", "new": 1}
 
 
 def test_watch_html_substitutes_window_size(monkeypatch):
-    monkeypatch.setattr(server, "_WATCH_WINDOW_SIZE", "480,640")
+    monkeypatch.setattr(watch_server, "_WATCH_WINDOW_SIZE", "480,640")
     html = server._watch_html()
     assert "window.resizeTo(480,640)" in html
     assert "__WIN_W__" not in html and "__WIN_H__" not in html
 
 
 def test_watch_html_bad_size_falls_back_to_default(monkeypatch):
-    monkeypatch.setattr(server, "_WATCH_WINDOW_SIZE", "garbage")
+    monkeypatch.setattr(watch_server, "_WATCH_WINDOW_SIZE", "garbage")
     html = server._watch_html()
     assert "window.resizeTo(600,820)" in html
 

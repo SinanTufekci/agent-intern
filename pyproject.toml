@@ -67,6 +67,7 @@ py-modules = [
     "swarm_watch",
     "swarm_presets",
     "watch_ui",
+    "watch_server",
     "proc_tree",
     "codex_bridge",
     "codex_tools",

@@ -45,11 +45,14 @@ It's a live script that makes real calls on your own subscription, so run it by 
   `.github/workflows/ci.yml` (and to the pytest command above).
 - **Each backend is two modules.** `<name>_bridge.py` drives the CLI; `<name>_tools.py` holds its MCP
   tools (`*_ask`, `*_continue`, `*_status`) and its watch runner. Antigravity is the exception: its
-  bridge and tools still live in `server.py`, next to the watch server and the helpers everything
-  shares. A tool module calls those helpers as `server.<name>`, looked up at call time, so a test
-  that patches `server.<name>` still reaches it. `server.py` imports the tool modules at its end,
-  in the order clients list the tools, and answers `server.<name>` for everything in their
-  `__all__`. A new tool module goes in `server._TOOL_MODULES`; a test fails if one is missing.
+  bridge and tools still live in `server.py`, next to the helpers everything shares. A tool module
+  calls those helpers as `server.<name>`, looked up at call time, so a test that patches
+  `server.<name>` still reaches it. `server.py` imports the tool modules at its end, in the order
+  clients list the tools, and answers `server.<name>` for everything in their `__all__`. A new tool
+  module goes in `server._TOOL_MODULES`; a test fails if one is missing.
+- **The watch viewer is `watch_server.py`** (its page is `watch_ui.py`). `server.py` re-imports its
+  names, so `server._watch_begin` and the rest still work, but code inside `watch_server.py` calls
+  its own names: to change what it sees, patch `watch_server.<name>`, not `server.<name>`.
 - **Unit tests can't start a real CLI.** `conftest.py` fails any test that starts an agent CLI or
   opens a browser, even if the code under test swallowed the error. A test that runs a real CLI on
   purpose is marked `@pytest.mark.real_cli`.
