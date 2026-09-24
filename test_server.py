@@ -2771,9 +2771,7 @@ def test_codex_status_includes_bridge_version_row(monkeypatch):
     # just via antigravity_status. Stub the backend rows so the test doesn't need
     # codex installed, and pin a newer release so the notice shows.
     monkeypatch.setattr(server, "_fetch_latest_release_version", lambda: (99, 0, 0))
-    monkeypatch.setattr(
-        server.codex_bridge, "status_rows", lambda: [("codex CLI", True, "v0.141.0")]
-    )
+    monkeypatch.setattr(codex_bridge, "status_rows", lambda: [("codex CLI", True, "v0.141.0")])
     out = server.codex_status()
     assert out.startswith("codex bridge status")
     assert "bridge version" in out
@@ -2784,9 +2782,7 @@ def test_codex_status_includes_bridge_version_row(monkeypatch):
 def test_copilot_status_includes_bridge_version_row(monkeypatch):
     # Same guarantee for a Copilot-only install.
     monkeypatch.setattr(server, "_fetch_latest_release_version", lambda: (99, 0, 0))
-    monkeypatch.setattr(
-        server.copilot_bridge, "status_rows", lambda: [("copilot CLI", True, "v1.0.68")]
-    )
+    monkeypatch.setattr(copilot_bridge, "status_rows", lambda: [("copilot CLI", True, "v1.0.68")])
     out = server.copilot_status()
     assert out.startswith("copilot bridge status")
     assert "bridge version" in out
@@ -2797,9 +2793,7 @@ def test_copilot_status_includes_bridge_version_row(monkeypatch):
 def test_cursor_status_includes_bridge_version_row(monkeypatch):
     # Same guarantee for a Cursor-only install.
     monkeypatch.setattr(server, "_fetch_latest_release_version", lambda: (99, 0, 0))
-    monkeypatch.setattr(
-        server.cursor_bridge, "status_rows", lambda: [("cursor CLI", True, "2026.07.08")]
-    )
+    monkeypatch.setattr(cursor_bridge, "status_rows", lambda: [("cursor CLI", True, "2026.07.08")])
     out = server.cursor_status()
     assert out.startswith("cursor bridge status")
     assert "bridge version" in out

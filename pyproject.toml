@@ -71,6 +71,7 @@ py-modules = [
     "codex_bridge",
     "copilot_bridge",
     "cursor_bridge",
+    "cursor_tools",
     "grok_bridge",
     "grok_tools",
     "kimi_bridge",
