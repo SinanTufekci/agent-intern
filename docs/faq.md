@@ -101,7 +101,7 @@ default has since moved three times**: 1.1.6 added the `gemini-3.6-flash` family
 `gemini-3.8-flash` and moved the default onto that** (verified through the bridge: a call passing no
 `model` answers as Gemini 3.8 Flash). The same release also **dropped the whole `gemini-3.5-flash`
 family, which no changelog entry mentions** — a 3.5 slug from older docs is now rejected up front.
-The full list, re-checked live on 1.1.25:
+The full list, re-checked live on 1.2.10 (unchanged since 1.1.25):
 `gemini-3.8-flash-low|medium|high`, `gemini-3.7-flash-low|medium|high`,
 `gemini-3.6-flash-low|medium|high`, `gemini-3.1-pro-low|high`,
 `claude-sonnet-4-6`, `claude-opus-4-6-thinking`, `gpt-oss-120b-medium`. Note the slug bakes in the

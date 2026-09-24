@@ -266,6 +266,33 @@ def _read_isolated_response(home: Path, conv_id: str) -> str:
     return chunks[-1]
 
 
+def _print_timeout_result(index, timeout_s, stdout, home, t0, workspace) -> WorkerResult:
+    """The failed result for a worker agy cut off at --print-timeout.
+
+    agy 1.2.0+ exits 0 on that, so without this the worker would report the partial
+    answer as a success — see server._print_timeout_error. Callers RETURN this rather
+    than raise it: the message carries the model's partial answer, and their except
+    handlers match exception text against _AUTH_FAILURE_MARKERS, which must never
+    see an answer.
+    """
+    import server
+
+    partial = (stdout or "").strip()
+    if not partial:
+        conv = _only_conv(home)
+        try:
+            partial = _read_isolated_response(home, conv) if conv else ""
+        except RuntimeError:
+            pass
+    return WorkerResult(
+        index,
+        False,
+        error=str(server._print_timeout_error(timeout_s, partial)),
+        elapsed=round(time.time() - t0, 1),
+        workspace=workspace,
+    )
+
+
 class _Feed:
     """Pumps a worker's isolated transcript into its watch channel as step events."""
 
@@ -400,6 +427,8 @@ def _run_text_worker(index, prompt, workspace, model, timeout_s, plan=False) -> 
         )
         if proc.returncode != 0:
             raise RuntimeError(f"agy exited {proc.returncode}: {proc.stderr[-300:]}")
+        if server._print_timed_out(proc.stderr):
+            return _print_timeout_result(index, timeout_s, proc.stdout, home, t0, workspace)
         deadline = time.time() + 5.0
         while True:
             conv = _only_conv(home)
@@ -515,7 +544,7 @@ def _run_text_worker_watched(
         # Drain stdout/stderr on threads so a large answer can't fill the pipe buffer
         # and hang agy into a false timeout (see server._drain_pipe); the answer still
         # comes from this worker's isolated transcript.
-        out_t, _out = server._drain_pipe(proc.stdout)
+        out_t, out_chunks = server._drain_pipe(proc.stdout)
         err_t, err_chunks = server._drain_pipe(proc.stderr)
         hard = start + timeout_s + 30
         while proc.poll() is None:
@@ -530,6 +559,12 @@ def _run_text_worker_watched(
         err_t.join(timeout=5)
         if proc.returncode != 0:
             raise RuntimeError(f"agy exited {proc.returncode}: {''.join(err_chunks)[-300:]}")
+        if server._print_timed_out("".join(err_chunks)):
+            res = _print_timeout_result(
+                index, timeout_s, "".join(out_chunks), home, start, workspace
+            )
+            swarm_watch.worker_finish(index, "error", res.error or "", time.time() - start)
+            return res
         deadline = time.time() + 5.0
         while True:
             conv = _only_conv(home)

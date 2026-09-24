@@ -10,6 +10,30 @@ summary.
 
 ## [Unreleased]
 
+### Fixed
+
+- **On agy 1.2.0+, an Antigravity task that ran out of time came back as a finished answer.**
+  1.2.0 changed what an expired `--print-timeout` does: instead of failing, agy returns the partial
+  output it has, exits 0 and reports `"status":"SUCCESS"`. The only sign is a stderr line (*"print
+  timeout after 20s with turn in progress; returning partial output"*). The bridge passes
+  `timeout_s` as that flag and trusted the exit code, so `antigravity_ask`, `antigravity_continue`,
+  watch mode and `agent_swarm`'s Antigravity workers all returned answers that simply stopped
+  mid-sentence. Reproduced through the bridge before the fix: 5629 characters ending *"…when an
+  artisan"*, returned as the answer. A cut turn is now an error again, as it was before 1.2.0, and
+  the partial text comes along in the message, labelled as cut off. Verified live on
+  `antigravity_ask`, watch mode and a swarm worker; the watched swarm worker is covered by unit tests
+  only.
+
+### Changed
+
+- **Re-verified against agy 1.2.10 (from 1.1.25).** `VERIFIED_AGY_VERSION` → `(1, 2, 10)`. Apart from
+  the timeout above, everything the bridge depends on held across the eleven releases: ask on the
+  default model and on an explicit `--model`, continue pinning the same conversation, the
+  `--output-format json` object, the transcript read, `agy models` (catalog unchanged) and the
+  `/usage` quota table. 1.2.6's structured `AGY_ERROR` stderr line and 1.2.10's exit code 3 for a
+  turn that dies on a model error needed no change: both are non-zero exits, which already raise
+  with the stderr tail attached.
+
 ## [0.31.0] - 2026-09-24
 
 ### Added

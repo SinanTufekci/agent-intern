@@ -6,6 +6,22 @@ Version-by-version compatibility notes: what changed upstream, what the bridge d
 
 ## Status & caveats
 
+- 🐛 **agy 1.2.0+ passed a timed-out answer off as a finished one — fixed, and re-verified on agy
+  1.2.10.** 1.2.0 changed what an expired `--print-timeout` does: instead of failing, agy returns
+  whatever it has written so far, exits 0 and reports `"status":"SUCCESS"`. The only sign is one
+  stderr line (*"print timeout after 20s with turn in progress; returning partial output"*). The
+  bridge passes `timeout_s` as that flag and trusted the exit code, so a long task that ran out of
+  time came back as an ordinary answer that simply stops. Reproduced through the bridge before the
+  fix: 5629 characters ending *"…when an artisan"*, returned as the answer. Now a cut turn is an
+  error again, as it was before 1.2.0, and the partial text comes along in the message, labelled as
+  cut off, rather than being thrown away. Verified live on `antigravity_ask`, watch mode and a swarm
+  worker. The fix doesn't suggest `antigravity_continue` to finish the answer: the conversation
+  resumes, but the history agy keeps for the cut turn isn't the text it printed (asked for its last
+  words, it quoted a sentence from well before where the output stopped).
+
+  Everything else held across the eleven releases from 1.1.25: ask on the default model and on an
+  explicit `--model`, continue pinning the same conversation, the `--output-format json` object, the
+  transcript read, `agy models` (unchanged catalog) and the `/usage` table.
 - 🆓 **opencode is the first backend verified end-to-end without a subscription.** Its free hosted
   models answer with `0 credentials`, so the answer path, the session-id resume, the per-directory
   `-c` scoping and the failure envelopes were all *observed* on opencode 1.18.29 rather than taken

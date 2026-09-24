@@ -1677,6 +1677,46 @@ def test_run_agy_json_failure_status_with_response_still_returns_it(fake_agy_jso
     assert out == "partial answer"
 
 
+# agy 1.2.10's stderr when --print-timeout expires mid-turn (verified live).
+_PRINT_TIMEOUT_STDERR = (
+    "[agy] print timeout after 10s with turn in progress; returning partial output\n"
+)
+
+
+def test_run_agy_print_timeout_is_an_error_not_a_truncated_answer(fake_agy_json, last_conv_file):
+    """agy 1.2.0+ reports an expired --print-timeout as exit 0 + status SUCCESS.
+
+    Verified on 1.2.10 — only stderr says the turn was cut. Returning `response`
+    would hand the caller a truncated answer as if it were the whole one.
+    """
+    last_conv_file.write_text(json.dumps({}), encoding="utf-8")
+    fake_agy_json["stdout"] = _json_result(response="The hurdle of Western movable", conv="cut")
+    fake_agy_json["stderr"] = _PRINT_TIMEOUT_STDERR
+    with pytest.raises(RuntimeError, match="10s timeout") as exc:
+        server._run_agy("hi", "C:\\ws", continue_conv=False, timeout_s=10)
+    assert "Western movable" in str(exc.value)  # the partial rides along, labelled as cut
+    # Still this workspace's newest thread, so a later continue must follow it.
+    assert server._recorded_conv_id("C:\\ws") == "cut"
+
+
+def test_run_agy_print_timeout_unpinned_leaves_the_continue_slot(fake_agy_json, last_conv_file):
+    last_conv_file.write_text(json.dumps({}), encoding="utf-8")
+    fake_agy_json["stdout"] = _json_result(response="half", conv="swarm-worker")
+    fake_agy_json["stderr"] = _PRINT_TIMEOUT_STDERR
+    with pytest.raises(RuntimeError, match="timeout"):
+        server._run_agy("hi", "C:\\ws", continue_conv=False, timeout_s=10, pin=False)
+    assert server._recorded_conv_id("C:\\ws") is None
+
+
+def test_run_agy_print_timeout_on_the_plain_text_path(fake_agy, last_conv_file):
+    last_conv_file.write_text(json.dumps({}), encoding="utf-8")
+    fake_agy["stdout"] = "half an answ"
+    fake_agy["stderr"] = _PRINT_TIMEOUT_STDERR
+    with pytest.raises(RuntimeError, match="10s timeout") as exc:
+        server._run_agy("hi", "C:\\ws", continue_conv=False, timeout_s=10)
+    assert "half an answ" in str(exc.value)
+
+
 def test_run_agy_json_empty_response_falls_back_to_transcript(
     fake_agy_json, brain_dir, last_conv_file
 ):
@@ -1905,6 +1945,10 @@ def fake_watched_agy(monkeypatch):
     monkeypatch.setattr(server.time, "sleep", lambda *a, **k: None)
     monkeypatch.setattr(server, "_RESPONSE_POLL_DEADLINE_S", 0.0)
     monkeypatch.setattr(server, "_AGY_JSON_SUPPORT", True)
+    # Pinned like fake_agy does: otherwise the gate resolves from a real `agy
+    # --version`, which lands on the fake Popen above whenever no earlier test in
+    # the run happened to warm the cache (e.g. under -k).
+    monkeypatch.setattr(server, "_AGY_SLASH_GATE", False)
     return cfg
 
 
@@ -1950,6 +1994,19 @@ def test_watched_stream_failure_status_raises(fake_watched_agy, brain_dir, last_
     with pytest.raises(RuntimeError, match="status=ERROR"):
         server._run_agy_watched("hi", "C:\\ws", continue_conv=False, timeout_s=10)
     assert server._watch_snapshot()["status"] == "error"
+
+
+def test_watched_print_timeout_is_an_error_not_a_truncated_answer(
+    fake_watched_agy, brain_dir, last_conv_file
+):
+    last_conv_file.write_text(json.dumps({}), encoding="utf-8")
+    fake_watched_agy["stdout"] = _stream_lines(response="cut mid-sent", conv="wc-cut")
+    fake_watched_agy["stderr"] = _PRINT_TIMEOUT_STDERR
+    with pytest.raises(RuntimeError, match="10s timeout") as exc:
+        server._run_agy_watched("hi", "C:\\ws", continue_conv=False, timeout_s=10)
+    assert "cut mid-sent" in str(exc.value)
+    assert server._watch_snapshot()["status"] == "error"
+    assert server._recorded_conv_id("C:\\ws") == "wc-cut"
 
 
 def test_watched_stream_without_result_event_falls_back_to_transcript(

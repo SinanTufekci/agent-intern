@@ -6,6 +6,7 @@ AI Pro quota. The live parallel round-trip is in test_smoke.py.
     pytest test_swarm.py
 """
 
+import io
 import os
 
 import pytest
@@ -493,6 +494,54 @@ def test_run_text_worker_exit0_without_transcript_surfaces_stderr(monkeypatch, t
     res = swarm._run_text_worker(0, "hi", str(tmp_path), None, 10)
     assert res.ok is False
     assert "no readable transcript" in res.error and "auto-denied" in res.error
+
+
+_PRINT_TIMEOUT_STDERR = (
+    "[agy] print timeout after 10s with turn in progress; returning partial output"
+)
+# A partial ANSWER that happens to contain a sign-in marker: the timeout message
+# carries it, so it must never reach the auth-failure matcher.
+_PARTIAL_ANSWER = "To reset it, please sign in to the admin pan"
+
+
+def test_run_text_worker_print_timeout_fails_with_the_partial(monkeypatch, tmp_path):
+    """agy 1.2.0+ exits 0 when --print-timeout cuts a turn; the worker must fail."""
+
+    class _Cut:
+        returncode = 0
+        stdout = _PARTIAL_ANSWER
+        stderr = _PRINT_TIMEOUT_STDERR
+
+    monkeypatch.setattr(swarm.proc_tree, "run_captured", lambda *a, **k: _Cut())
+    monkeypatch.setattr(server, "_run_agy", lambda *a, **k: pytest.fail("must not retry"))
+    res = swarm._run_text_worker(0, "hi", str(tmp_path), None, 10)
+    assert res.ok is False
+    assert "10s timeout" in res.error and _PARTIAL_ANSWER in res.error
+    assert swarm._ISOLATION_OK is True  # the answer's "please sign in" did not latch
+
+
+def test_run_text_worker_watched_print_timeout_fails_with_the_partial(monkeypatch, tmp_path):
+    class _Popen:
+        returncode = 0
+
+        def __init__(self, *a, **k):
+            self.stdout = io.StringIO(_PARTIAL_ANSWER)
+            self.stderr = io.StringIO(_PRINT_TIMEOUT_STDERR)
+
+        def poll(self):
+            return 0
+
+    finished = []
+    monkeypatch.setattr(swarm.proc_tree, "popen", lambda *a, **k: _Popen())
+    monkeypatch.setattr(server, "_run_agy", lambda *a, **k: pytest.fail("must not retry"))
+    monkeypatch.setattr(swarm_watch, "worker_update", lambda i, **kw: None)
+    monkeypatch.setattr(
+        swarm_watch, "worker_finish", lambda i, s, a, e, **kw: finished.append((s, a))
+    )
+    res = swarm._run_text_worker_watched(0, "hi", str(tmp_path), None, 10)
+    assert res.ok is False and _PARTIAL_ANSWER in res.error
+    assert finished == [("error", res.error)]
+    assert swarm._ISOLATION_OK is True
 
 
 # --------------------------------------------------------------------------

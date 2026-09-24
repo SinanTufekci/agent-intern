@@ -44,11 +44,11 @@ unchecked. `agy models` itself must be
 run with stdin closed (it blocks on an interactive terminal otherwise), same as
 -p is spawned with DEVNULL stdin.
 
-Model SLUGS (agy 1.1.5, list re-checked live on 1.1.25) — the label format CHANGED
+Model SLUGS (agy 1.1.5, list re-checked live on 1.2.10) — the label format CHANGED
 and every old example is now invalid. 1.1.5 introduced "stable, user-facing model
 slugs" that the /model picker shows and --model accepts, and `agy models` emits
 those slugs (bare through 1.1.10; as `<slug>\t<human label>` from 1.1.11 on — see
-_parse_models_output). The live list (re-read on 1.1.25) is:
+_parse_models_output). The live list (re-read on 1.2.10, unchanged since 1.1.25) is:
 gemini-3.8-flash-{low,medium,high}, gemini-3.7-flash-{low,medium,high},
 gemini-3.6-flash-{low,medium,high}, gemini-3.1-pro-{low,high}, claude-sonnet-4-6,
 claude-opus-4-6-thinking, gpt-oss-120b-medium — 1.1.6 ADDED the gemini-3.6-flash
@@ -601,6 +601,19 @@ _AGY_LOCK = threading.Lock()
 # Newer agy releases may change paths/schemas (the SQLite migration is the known
 # risk), so we warn at startup if the installed agy is newer than this.
 #
+# 1.2.10 re-verification (live, Windows): eleven releases and a minor bump, and one
+# REAL break. 1.2.0 made an expired --print-timeout return its partial output with
+# exit 0 and status SUCCESS, so every runner here was handing back truncated
+# answers as whole ones — reproduced through _run_agy before the fix (5629 chars
+# ending "when an artisan", returned as the answer). _print_timeout_error restores
+# the old contract; verified after the fix on _run_agy, _run_agy_watched and an
+# isolated swarm worker. Everything else held: ask on the default model and on
+# `--model gemini-3.8-flash-low`, continue pinning the same conversation, the json
+# result object, the JSONL transcript read, `agy models` <slug>\t<label> with an
+# unchanged catalog, and the `/usage` table. 1.2.6's AGY_ERROR stderr line and
+# 1.2.10's exit 3 for a turn that dies on a model error need nothing: both are
+# non-zero exits, which already raise with the stderr tail attached.
+#
 # 1.1.25 re-verification (live, Windows): ask round-tripped through _run_agy with
 # the real argv on both the default-model path and `--model gemini-3.8-flash-high`,
 # the `--output-format json` object still carries conversation_id/status/response,
@@ -627,7 +640,7 @@ _AGY_LOCK = threading.Lock()
 # for it. The read path was fine -- the very next bridge call wrote a real
 # transcript and status went green -- so an empty newest-conversation is a stale
 # artifact, not a regression.
-VERIFIED_AGY_VERSION = (1, 1, 25)
+VERIFIED_AGY_VERSION = (1, 2, 10)
 
 # First agy version whose print mode understands `--output-format json` (1.1.8).
 # Below this the flag is unknown to agy's parser, so the bridge must not pass it
@@ -1990,6 +2003,43 @@ def _agy_base_args(timeout_s: int, plan: bool = False) -> list[str]:
     return args
 
 
+# What agy 1.2.0+ prints on stderr when --print-timeout expires with the turn still
+# running — "[agy] print timeout after 25s with turn in progress; returning partial
+# output" (verified on 1.2.10). It is the ONLY sign the turn was cut short.
+_PRINT_TIMEOUT_MARK = "print timeout after"
+
+
+def _print_timed_out(stderr: Optional[str]) -> bool:
+    """True if agy's stderr says --print-timeout expired before the turn finished."""
+    return _PRINT_TIMEOUT_MARK in (stderr or "")
+
+
+def _print_timeout_error(timeout_s: int, partial: str = "") -> RuntimeError:
+    """The error for a turn agy cut off at --print-timeout.
+
+    agy 1.2.0 changed what an expired --print-timeout does: instead of failing, it
+    hands back whatever partial output it has, exits 0, and reports status SUCCESS.
+    Verified on 1.2.10: a 25 s timeout on a long essay came back as 9177 characters
+    ending mid-sentence, exit 0, `"status":"SUCCESS"` — only stderr said otherwise.
+    Taken at face value that is a truncated answer passed off as a whole one, so the
+    bridge keeps its pre-1.2.0 contract instead: a timeout is an error. The partial
+    text rides along in the message rather than being thrown away, labelled as cut.
+
+    It does not point the caller at antigravity_continue. Resuming the conversation
+    works, but verified on 1.2.10 that the history agy keeps for the cut turn is not
+    the text it printed — asked for its last words, it quoted a sentence from well
+    before where stdout ended — so "pick up where it stopped" is not on offer.
+    """
+    msg = (
+        f"agy hit its {timeout_s}s timeout before finishing, so it returned only part "
+        "of an answer. Raise timeout_s, or split the task into smaller ones."
+    )
+    partial = (partial or "").strip()
+    if partial:
+        msg += f"\n\n--- partial answer, cut off mid-turn ({len(partial)} chars) ---\n{partial}"
+    return RuntimeError(msg)
+
+
 def _build_agy_args(
     prompt: str,
     workspace: str,
@@ -2124,6 +2174,16 @@ def _run_agy(
         # A None result means agy gave us plain text after all (an agy that ignored
         # the flag), which falls through to the text path below unchanged.
         result = _parse_json_result(stdout_answer) if use_json else None
+        if _print_timed_out(proc.stderr):
+            # Exit 0 and status SUCCESS, but the turn was cut — see _print_timeout_error.
+            # Still record the conversation: it is this workspace's newest thread, and
+            # leaving the previous id in place would point a later continue at an
+            # older one.
+            conv_id = (result or {}).get("conversation_id") or ""
+            if conv_id and pin:
+                _record_conv_id(workspace, conv_id)
+            partial = (result.get("response") or "") if result is not None else stdout_answer
+            raise _print_timeout_error(timeout_s, partial)
         if schema is not None and result is None:
             raise RuntimeError(
                 "agy produced no structured result object for a --json-schema run "
@@ -3145,6 +3205,13 @@ def _run_agy_watched(
             _watch_finish(rid, "error", f"(agy exited {proc.returncode})", time.time() - start)
             stderr_tail = "".join(err_chunks)[-1000:]
             raise RuntimeError(f"agy exited {proc.returncode}\nstderr: {stderr_tail}")
+        if _print_timed_out("".join(err_chunks)):
+            # Same cut-short-but-exit-0 turn as _run_agy — see _print_timeout_error.
+            if stream is not None and stream.conv_id:
+                _record_conv_id(workspace, stream.conv_id)
+            partial = ((stream.result or {}).get("response") or "") if stream is not None else ""
+            _watch_finish(rid, "error", "(timed out)", time.time() - start)
+            raise _print_timeout_error(timeout_s, partial)
 
         # The stream's terminal `result` event is the answer, and its conversation_id
         # is agy naming its own conversation — record it so a later continue pins to
