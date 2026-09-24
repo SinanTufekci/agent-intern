@@ -130,7 +130,7 @@ def _policy_note(blocked: int, sandbox: str) -> str:
         "not mention this in its answer. If those were the commands it needed to read "
         "your files, the answer above is not based on them -- codex falls back to its "
         "own knowledge or a web search instead. On Windows this currently affects every "
-        "sandboxed run (see the README's codex section); a single refusal under "
+        "sandboxed run (see docs/security.md in the agent-intern repo); a single refusal under "
         "'read-only' may just be a blocked write, which is the sandbox working."
     )
 

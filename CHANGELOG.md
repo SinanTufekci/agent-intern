@@ -72,7 +72,7 @@ summary.
   `-c` scoping (the same `-c` from a different directory starts a fresh session, not a resume), the
   `Session not found` failure, the unknown-model error envelope, and the `opencode models` /
   `providers list` output the status view parses. Grok and Kimi remain
-  [unverified](https://github.com/SinanTufekci/agent-intern#experimental-backends); this one is not.
+  [unverified](https://github.com/SinanTufekci/agent-intern/blob/main/docs/backends.md#experimental-backends); this one is not.
 
   Where the flags could not be observed they were **read off opencode's own source** rather than its
   docs: it ships as a compiled Bun binary whose bundle still embeds the JS, so the `run` command's
