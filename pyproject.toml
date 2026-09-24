@@ -74,6 +74,7 @@ py-modules = [
     "grok_bridge",
     "kimi_bridge",
     "muse_bridge",
+    "muse_tools",
     "opencode_bridge",
 ]
 
