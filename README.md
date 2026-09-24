@@ -55,9 +55,9 @@ one or the other, since doing both gives Claude every tool twice.
 **3. Restart Claude Code and just ask.** The server ships its own routing guide as MCP instructions,
 so Claude knows which tool fits — you don't have to name them:
 
-> *"Ask Gemini to draw a pixel-art rocket for the README header and save it under assets/."*
-> *"Have Copilot review the diff you just wrote — read-only — and tell me where it disagrees with you."*
-> *"Summarise each of the six files in src/handlers in parallel with a swarm."*
+- *"Ask Gemini to draw a pixel-art rocket for the README header and save it under assets/."*
+- *"Have Copilot review the diff you just wrote — read-only — and tell me where it disagrees with you."*
+- *"Summarise each of the six files in src/handlers in parallel with a swarm."*
 
 With the plugin you also get three slash commands:
 
@@ -77,14 +77,12 @@ spending quota.
 
 ## What it's for
 
-| | |
-|---|---|
-| 🎨 **Images, inside Claude Code** | `antigravity_image` has Gemini draw it and returns the saved file — no extra API key, no extra tool. |
-| 🧠 **A second opinion** | A different model family reviews what Claude just wrote. Their blind spots rarely overlap. |
-| 🐝 **Parallel fan-out** | `agent_swarm` runs N tasks at once and can mix backends in a single call (~2.8× at 3 Gemini workers). |
-| 💸 **Cheaper grunt work** | Bulk renames, boilerplate and first-pass ports burn *their* quota instead of Claude's tokens. |
-| 🆓 **No subscription? Still works** | opencode's free models answer with zero credentials — slow, but free. |
-| 🔌 **Zero new auth** | Piggybacks the CLI logins you already have. The bridge manages no keys of its own. |
+- 🎨 **Images, inside Claude Code** — `antigravity_image` has Gemini draw it and returns the saved file — no extra API key, no extra tool.
+- 🧠 **A second opinion** — A different model family reviews what Claude just wrote. Their blind spots rarely overlap.
+- 🐝 **Parallel fan-out** — `agent_swarm` runs N tasks at once and can mix backends in a single call (~2.8× at 3 Gemini workers).
+- 💸 **Cheaper grunt work** — Bulk renames, boilerplate and first-pass ports burn *their* quota instead of Claude's tokens.
+- 🆓 **No subscription? Still works** — opencode's free models answer with zero credentials — slow, but free.
+- 🔌 **Zero new auth** — Piggybacks the CLI logins you already have. The bridge manages no keys of its own.
 
 ### Watch it work
 
