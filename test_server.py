@@ -3166,7 +3166,64 @@ def test_version_is_the_same_everywhere_a_release_writes_it():
     assert server.__version__ == version
     assert manifest["version"] == version
     assert [p["version"] for p in manifest["packages"]] == [version]
+    plugin = json.loads((root / "plugin/.claude-plugin/plugin.json").read_text(encoding="utf-8"))
+    # Claude Code only offers a plugin update when this string changes.
+    assert plugin["version"] == version
     # The registry proves we own the PyPI package by finding this line in the
     # README that PyPI renders; drop it and the next registry publish fails.
     readme = (root / "README.md").read_text(encoding="utf-8")
     assert f"mcp-name: {manifest['name']}" in readme
+
+
+# --------------------------------------------------------------------------
+# Claude Code plugin (plugin/): its skills steer Claude by tool name
+# --------------------------------------------------------------------------
+
+
+def _registered_tool_names():
+    # fastmcp 3 exposes list_tools() (a list of Tool); 2.x had get_tools() (a dict).
+    lister = getattr(server.mcp, "list_tools", None)
+    if lister is not None:
+        return {t.name for t in asyncio.run(lister())}
+    return set(asyncio.run(server.mcp.get_tools()))
+
+
+def _plugin_root():
+    return Path(__file__).parent / "plugin"
+
+
+def test_plugin_skills_only_name_tools_the_server_registers():
+    # A skill is prose, so nothing else notices when a tool it tells Claude to
+    # call is renamed or removed — the skill just starts steering at nothing.
+    tools = _registered_tool_names()
+    named = set()
+    for skill in _plugin_root().glob("skills/*/SKILL.md"):
+        text = skill.read_text(encoding="utf-8")
+        named |= set(re.findall(r"`((?:[a-z]+_)+(?:ask|continue|status|image|swarm))`", text))
+    assert named, "found no tool names in the plugin skills; did the layout move?"
+    assert named - tools == set(), f"skills name unregistered tools: {sorted(named - tools)}"
+
+
+def test_doctor_skill_preapproves_exactly_the_status_tools():
+    # doctor pre-approves the *_status tools (they spend no quota) by their
+    # plugin-scoped names, mcp__plugin_<plugin>_<server>__<tool>. Derive that
+    # prefix from the manifests so a rename can't strand the grants, and require
+    # the set to be exactly the status tools: a new backend's status tool left
+    # out means a surprise prompt, and an *_ask let in would spend quota unasked.
+    root = _plugin_root()
+    plugin = json.loads((root / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))
+    servers = json.loads((root / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"]
+    assert len(servers) == 1
+    prefix = f"mcp__plugin_{plugin['name']}_{next(iter(servers))}__"
+    text = (root / "skills/doctor/SKILL.md").read_text(encoding="utf-8")
+    approved = set(re.findall(re.escape(prefix) + r"(\w+)", text))
+    assert approved == {t for t in _registered_tool_names() if t.endswith("_status")}
+
+
+def test_plugin_launches_the_published_package_unpinned():
+    # Same update posture as the documented manual install: uvx caches the
+    # first version it resolves and never upgrades behind the user's back.
+    # Pinning a version here would silently strand plugin users on it.
+    servers = json.loads((_plugin_root() / ".mcp.json").read_text(encoding="utf-8"))
+    (entry,) = servers["mcpServers"].values()
+    assert entry == {"command": "uvx", "args": ["agent-intern"]}

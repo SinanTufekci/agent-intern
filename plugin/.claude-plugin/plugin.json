@@ -1,0 +1,24 @@
+{
+  "name": "agent-intern",
+  "displayName": "Agent Intern",
+  "version": "0.30.2",
+  "description": "Delegate to Gemini, Codex, Copilot, Cursor and opencode as sub-agents from Claude Code, on subscriptions you already pay for. Adds /agent-intern:second-opinion, :image and :doctor.",
+  "author": {
+    "name": "Sinan Tüfekçi",
+    "url": "https://github.com/SinanTufekci"
+  },
+  "homepage": "https://github.com/SinanTufekci/agent-intern",
+  "repository": "https://github.com/SinanTufekci/agent-intern",
+  "license": "MIT",
+  "keywords": [
+    "mcp",
+    "sub-agents",
+    "gemini",
+    "codex",
+    "copilot",
+    "cursor",
+    "opencode",
+    "second-opinion",
+    "image-generation"
+  ]
+}

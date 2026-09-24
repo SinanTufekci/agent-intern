@@ -31,11 +31,16 @@ file path.
 
 ## Quick start
 
-**1. Register the server** (needs [uv](https://docs.astral.sh/uv/)):
+**1. Install it** (needs [uv](https://docs.astral.sh/uv/)). The plugin is the recommended way, because
+it adds three slash commands on top of the server:
 
 ```bash
-claude mcp add -s user agent-intern -- uvx agent-intern
+claude plugin marketplace add SinanTufekci/agent-intern
+claude plugin install agent-intern@agent-intern
 ```
+
+Or register just the MCP server: `claude mcp add -s user agent-intern -- uvx agent-intern`. Pick
+one or the other, since doing both gives Claude every tool twice.
 
 **2. Install at least one backend CLI and sign in once.** Any one of them works on its own:
 
@@ -54,7 +59,16 @@ so Claude knows which tool fits — you don't have to name them:
 > *"Have Copilot review the diff you just wrote — read-only — and tell me where it disagrees with you."*
 > *"Summarise each of the six files in src/handlers in parallel with a swarm."*
 
-Any `*_status` tool (say, *"run antigravity_status"*) checks a backend's setup without spending quota.
+With the plugin you also get three slash commands:
+
+| Command | What it does |
+|---|---|
+| `/agent-intern:second-opinion [--council]` | Sends your diff to a reviewer from another model family, or to 2–3 of them in parallel. Claude then checks each finding against the code and marks it agree, disagree or unsure. |
+| `/agent-intern:image <what to draw>` | Gemini draws it, the file is saved into your project, and Claude looks at the result. |
+| `/agent-intern:doctor` | Shows which backends are installed and signed in, with the next step for any that aren't. Spends no quota. |
+
+Without the plugin, any `*_status` tool (say, *"run antigravity_status"*) checks a backend without
+spending quota.
 
 > [!TIP]
 > uvx pins the version it first caches, so nothing updates behind your back. Every `*_status` call

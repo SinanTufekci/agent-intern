@@ -1,0 +1,16 @@
+{
+  "name": "agent-intern",
+  "owner": {
+    "name": "Sinan Tüfekçi",
+    "url": "https://github.com/SinanTufekci"
+  },
+  "description": "The agent-intern plugin: other coding CLIs as Claude Code sub-agents.",
+  "plugins": [
+    {
+      "name": "agent-intern",
+      "source": "./plugin",
+      "description": "Delegate to Gemini, Codex, Copilot, Cursor and opencode as sub-agents from Claude Code, on subscriptions you already pay for. Adds /agent-intern:second-opinion, :image and :doctor.",
+      "category": "development"
+    }
+  ]
+}

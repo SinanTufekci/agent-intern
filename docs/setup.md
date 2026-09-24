@@ -21,7 +21,25 @@ Every install path, per-backend prerequisites, and the `*_BIN` overrides for CLI
 You don't need all seven — the tools for a missing CLI simply report "not found" via their `*_status`
 tool. If you have no subscriptions at all, start with opencode.
 
-### Recommended — no clone, you control updates
+### Recommended — the Claude Code plugin
+
+This repo is also a Claude Code plugin marketplace. The plugin registers the same server (through
+`uvx agent-intern`, so updates work exactly as described in the next section) and adds three
+skills: `/agent-intern:second-opinion`, `/agent-intern:image` and `/agent-intern:doctor`.
+
+```bash
+claude plugin marketplace add SinanTufekci/agent-intern
+claude plugin install agent-intern@agent-intern
+```
+
+Inside a session, `/plugin marketplace add SinanTufekci/agent-intern` then
+`/plugin install agent-intern@agent-intern` does the same. The plugin's tools are namespaced
+`mcp__plugin_agent-intern_intern__*`. Use the plugin **or** one of the registrations below, not
+both, since both would give Claude every tool twice. When a new plugin version ships,
+`/plugin update agent-intern@agent-intern` picks up the new skills, and the server itself upgrades
+the same way the uvx install does.
+
+### No plugin — register the server yourself, you control updates
 
 With [`uv`](https://docs.astral.sh/uv/) installed, register the bridge straight from
 [PyPI](https://pypi.org/project/agent-intern/) — no path to hardcode, no `git pull` to remember:

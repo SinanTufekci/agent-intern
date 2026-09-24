@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "intern": {
+      "command": "uvx",
+      "args": [
+        "agent-intern"
+      ]
+    }
+  }
+}

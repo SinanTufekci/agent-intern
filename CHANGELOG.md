@@ -10,6 +10,29 @@ summary.
 
 ## [Unreleased]
 
+### Added
+
+- **A Claude Code plugin.** This repo is now a plugin marketplace, so
+  `claude plugin marketplace add SinanTufekci/agent-intern` then
+  `claude plugin install agent-intern@agent-intern` installs the server — through the same unpinned
+  `uvx agent-intern`, so updates stay deliberate — plus three skills:
+  - **`/agent-intern:second-opinion [--council]`** — sends the diff to a reviewer from another model
+    family, or to 2–3 in parallel through `agent_swarm`. It inlines the diff rather than trusting the
+    reviewer to read files, because Codex's read-only sandbox currently can't on Windows. Claude
+    then checks each finding against the code (agree / disagree / unsure) and ends with a verdict.
+    Where the reviewers agree independently, that comes first.
+  - **`/agent-intern:image <what to draw>`** — `antigravity_image` with a sensible save path, the
+    returned (extension-corrected) path, and a look at the result before calling it done.
+  - **`/agent-intern:doctor`** — every `*_status` in parallel, rendered as one ready / not-ready
+    table with the next step per backend. The status tools are pre-approved for it, since they spend
+    no quota.
+
+  Three tests keep the plugin honest, because skills are prose that nothing else checks:
+  every tool a skill names must be registered, `doctor`'s pre-approvals must be exactly the
+  `*_status` tools under their plugin-scoped names (derived from the manifests, not hard-coded), and
+  the plugin must launch the unpinned published package. The plugin's version joins the release
+  version-sync test, since Claude Code only offers a plugin update when that string changes.
+
 ## [0.30.2] - 2026-09-24
 
 ### Fixed
