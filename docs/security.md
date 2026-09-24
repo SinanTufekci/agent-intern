@@ -4,6 +4,20 @@
 
 What each backend's `sandbox` really enforces — read this before pointing a sub-agent at anything you don't trust.
 
+## Reporting a vulnerability
+
+Please **don't open a public issue** for a security problem. Use
+[**Report a vulnerability**](https://github.com/SinanTufekci/agent-intern/security/advisories/new) on
+the repository's Security tab instead: only the maintainer sees the report, and the fix can ship before
+the details are public. Include the bridge version (`*_status` prints it), your OS, the backend, and
+the smallest prompt or setup that reproduces it.
+
+Fixed vulnerabilities are published as
+[security advisories](https://github.com/SinanTufekci/agent-intern/security/advisories) once a release
+contains the fix — for example
+[GHSA-8m7x-pmcf-hcjq](https://github.com/SinanTufekci/agent-intern/security/advisories/GHSA-8m7x-pmcf-hcjq)
+(Windows command injection through the cursor/opencode `.cmd` shims, fixed in 0.30.3).
+
 <a id="security"></a>
 
 ## ⚠️ Security
