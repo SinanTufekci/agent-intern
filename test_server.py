@@ -15,6 +15,7 @@ import re
 import secrets
 import sqlite3
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -3221,6 +3222,49 @@ def test_server_instructions_tell_the_host_to_relay_an_available_update():
 # --------------------------------------------------------------------------
 # Packaging: every runtime module ships in the wheel
 # --------------------------------------------------------------------------
+
+
+def test_every_tool_module_is_wired_into_server():
+    """A <backend>_tools.py that server never imports registers no tools, and one
+    left out of _TOOL_MODULES loses its server.<name> aliases, which tests and
+    swarm.py call. Neither shows until something calls them."""
+    on_disk = {p.stem for p in Path(__file__).parent.glob("*_tools.py")}
+    assert on_disk == {m.__name__ for m in server._TOOL_MODULES}
+    tools = {t.name for t in asyncio.run(server.mcp.list_tools())}
+    for mod in server._TOOL_MODULES:
+        for name in mod.__all__:
+            assert getattr(server, name) is getattr(mod, name), f"server.{name}"
+        assert tools & set(mod.__all__), f"{mod.__name__} registers no tools"
+
+
+def test_running_server_py_as_a_script_serves_every_tool(tmp_path):
+    """`python server.py` makes server __main__. Without its sys.modules alias the
+    tool modules' `import server` would load a second copy and register their tools
+    on that copy's mcp, so the one actually serving would list Antigravity's only."""
+    expected = len(asyncio.run(server.mcp.list_tools()))
+    code = (
+        "import asyncio, runpy, sys, fastmcp\n"
+        "def run(self, *a, **k):\n"
+        "    print(len(asyncio.run(self.list_tools())))\n"
+        "fastmcp.FastMCP.run = run\n"
+        "sys.argv = ['server.py']\n"
+        "runpy.run_path('server.py', run_name='__main__')\n"
+    )
+    env = dict(
+        os.environ,
+        AGY_BRIDGE_NO_UPDATE_CHECK="1",  # main()'s startup checks: no network
+        AGY_BIN=str(tmp_path / "no-agy"),  # ... and no real agy
+    )
+    out = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=Path(__file__).parent,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert out.returncode == 0, out.stderr[-2000:]
+    assert out.stdout.strip().splitlines()[-1] == str(expected)
 
 
 def test_every_runtime_module_is_listed_in_py_modules():

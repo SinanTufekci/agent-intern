@@ -43,6 +43,16 @@ It's a live script that makes real calls on your own subscription, so run it by 
   that way and could not start. `test_every_runtime_module_is_listed_in_py_modules` catches it now.
 - **CI lists test files one by one.** A new `test_*.py` won't run in CI until you add it to
   `.github/workflows/ci.yml` (and to the pytest command above).
+- **Each backend is two modules.** `<name>_bridge.py` drives the CLI; `<name>_tools.py` holds its MCP
+  tools (`*_ask`, `*_continue`, `*_status`) and its watch runner. Antigravity is the exception: its
+  bridge and tools still live in `server.py`, next to the watch server and the helpers everything
+  shares. A tool module calls those helpers as `server.<name>`, looked up at call time, so a test
+  that patches `server.<name>` still reaches it. `server.py` imports the tool modules at its end,
+  in the order clients list the tools, and answers `server.<name>` for everything in their
+  `__all__`. A new tool module goes in `server._TOOL_MODULES`; a test fails if one is missing.
+- **Unit tests can't start a real CLI.** `conftest.py` fails any test that starts an agent CLI or
+  opens a browser, even if the code under test swallowed the error. A test that runs a real CLI on
+  purpose is marked `@pytest.mark.real_cli`.
 - **The bridges are near-parallel.** There are nine modules that spawn a CLI: `server.py`,
   `swarm.py` and the seven `*_bridge.py` files. They share their spawn, timeout and parse shapes, so a
   bug in one is usually in all of them. Fix it everywhere, and prefer hoisting the fix into a shared

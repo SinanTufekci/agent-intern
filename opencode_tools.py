@@ -1,4 +1,4 @@
-"""MCP tools for the opencode backend: opencode_ask, opencode_continue, opencode_status.
+"""MCP tools for opencode: opencode_ask, opencode_continue, opencode_status.
 
 The tool layer only; opencode_bridge.py drives the CLI. This was a section of
 server.py. It registers its tools on server.mcp when server imports it, at the

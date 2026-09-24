@@ -10,6 +10,21 @@ summary.
 
 ## [Unreleased]
 
+### Changed
+
+- **`server.py` is split by backend.** This is for contributors; nothing changes for users. Codex,
+  Copilot, Cursor, Grok, Kimi, opencode and Muse each get a `<name>_tools.py` for their MCP tools,
+  next to their `<name>_bridge.py`. `server.py` drops from 5,114 to 3,686 lines and keeps
+  Antigravity, the watch server and the shared helpers. Every function moved verbatim; the one edit
+  is that names used from `server` became `server.<name>`, and a script checked each moved
+  function's AST against the original apart from that. The MCP surface is unchanged: every tool's
+  name, order, schema, description and annotations were compared before and after, and all seven
+  backends' `*_status` reports came out byte-identical over stdio.
+- **Unit tests can no longer start a real agent CLI or browser.** A tripwire in `conftest.py` fails
+  the test, even when the code under test swallows the error. On its first run it found seven argv
+  tests that ran the real `agy --version` wherever agy was installed, so their result depended on
+  the machine; they now pin "agy not installed", as on CI.
+
 ## [0.32.0] - 2026-09-24
 
 ### Added

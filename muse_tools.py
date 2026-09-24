@@ -1,4 +1,4 @@
-"""MCP tools for the Muse Code (Meta, experimental) backend: muse_ask, muse_continue, muse_status.
+"""MCP tools for Muse Code: muse_ask, muse_continue, muse_status.
 
 The tool layer only; muse_bridge.py drives the CLI. This was a section of
 server.py. It registers its tools on server.mcp when server imports it, at the
