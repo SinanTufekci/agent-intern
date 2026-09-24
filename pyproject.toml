@@ -63,6 +63,7 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools]
 py-modules = [
     "server",
+    "antigravity_tools",
     "swarm",
     "swarm_watch",
     "swarm_presets",

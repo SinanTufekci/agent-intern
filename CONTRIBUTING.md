@@ -44,9 +44,10 @@ It's a live script that makes real calls on your own subscription, so run it by 
 - **CI lists test files one by one.** A new `test_*.py` won't run in CI until you add it to
   `.github/workflows/ci.yml` (and to the pytest command above).
 - **Each backend is two modules.** `<name>_bridge.py` drives the CLI; `<name>_tools.py` holds its MCP
-  tools (`*_ask`, `*_continue`, `*_status`) and its watch runner. Antigravity is the exception: its
-  bridge and tools still live in `server.py`, next to the helpers everything shares. A tool module
-  calls those helpers as `server.<name>`, looked up at call time, so a test that patches
+  tools (`*_ask`, `*_continue`, `*_status`) and its watch runner. Antigravity's tools are in
+  `antigravity_tools.py`, but its bridge (everything that drives agy) is still in `server.py`, next
+  to the helpers everything shares; the cross-backend swarm tools are in `swarm_tools.py`. A tool
+  module calls those helpers as `server.<name>`, looked up at call time, so a test that patches
   `server.<name>` still reaches it. `server.py` imports the tool modules at its end, in the order
   clients list the tools, and answers `server.<name>` for everything in their `__all__`. A new tool
   module goes in `server._TOOL_MODULES`; a test fails if one is missing.

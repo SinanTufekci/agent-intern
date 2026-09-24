@@ -12,17 +12,21 @@ summary.
 
 ### Changed
 
-- **`server.py` is split by backend.** This is for contributors; nothing changes for users. Codex,
-  Copilot, Cursor, Grok, Kimi, opencode and Muse each get a `<name>_tools.py` for their MCP tools,
-  next to their `<name>_bridge.py`, and the single-run watch viewer moves to `watch_server.py`.
-  `server.py` drops from 5,114 to 3,179 lines and keeps Antigravity and the shared helpers. Every
+- **The tool list is grouped by backend.** The three swarm tools used to sit between
+  `antigravity_image` and `antigravity_image_swarm`; now the five `antigravity_*` tools come first,
+  then `agent_swarm`, `preset_swarm` and `swarm_presets`, then each other backend's. Only the order
+  changed.
+- **`server.py` is split by backend.** This is for contributors; nothing else changes for users.
+  Every backend gets a `<name>_tools.py` for its MCP tools (Antigravity's is `antigravity_tools.py`),
+  the swarm tools go to `swarm_tools.py`, and the single-run watch viewer to `watch_server.py`.
+  `server.py` drops from 5,114 to 2,673 lines and keeps the agy bridge and the shared helpers. Every
   function, class and constant moved verbatim; the one edit is that names used from `server` became
   `server.<name>`, and a script checked each moved one's AST against the original apart from that.
   Tests that patched a watch-viewer internal through `server` now patch `watch_server`, where that
   code reads it; under the tripwire, the stale patches failed loudly (one tried to launch the real
-  Chrome) instead of passing. The MCP surface is unchanged: every tool's
-  name, order, schema, description and annotations were compared before and after, and all seven
-  backends' `*_status` reports came out byte-identical over stdio.
+  Chrome) instead of passing. Apart from the regrouping above, the MCP surface is unchanged: every
+  tool's name, schema, description and annotations were compared before and after, and the seven
+  other backends' `*_status` reports came out byte-identical over stdio.
 - **Unit tests can no longer start a real agent CLI or browser.** A tripwire in `conftest.py` fails
   the test, even when the code under test swallows the error. On its first run it found seven argv
   tests that ran the real `agy --version` wherever agy was installed, so their result depended on
