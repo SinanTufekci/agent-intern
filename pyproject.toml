@@ -69,6 +69,7 @@ py-modules = [
     "watch_ui",
     "proc_tree",
     "codex_bridge",
+    "codex_tools",
     "copilot_bridge",
     "copilot_tools",
     "cursor_bridge",
