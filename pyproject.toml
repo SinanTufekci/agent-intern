@@ -1,12 +1,12 @@
 [project]
 name = "agent-intern"
 version = "0.30.3"
-description = "MCP server bridging the Antigravity (agy), OpenAI Codex, GitHub Copilot, Cursor, opencode, Grok Build, and Kimi Code CLIs so Claude Code can drive them as sub-agents"
+description = "MCP server bridging the Antigravity (agy), OpenAI Codex, GitHub Copilot, Cursor, opencode, Grok Build, Kimi Code, and Muse Code CLIs so Claude Code can drive them as sub-agents"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Sinan Tüfekçi" }]
-keywords = ["mcp", "claude", "claude-code", "antigravity", "gemini", "agy", "codex", "copilot", "github-copilot", "cursor", "cursor-agent", "grok", "grok-build", "xai", "kimi", "kimi-code", "moonshot", "opencode", "sst", "llm", "ai"]
+keywords = ["mcp", "claude", "claude-code", "antigravity", "gemini", "agy", "codex", "copilot", "github-copilot", "cursor", "cursor-agent", "grok", "grok-build", "xai", "kimi", "kimi-code", "moonshot", "opencode", "sst", "muse", "muse-code", "meta", "llm", "ai"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -71,6 +71,7 @@ py-modules = [
     "cursor_bridge",
     "grok_bridge",
     "kimi_bridge",
+    "muse_bridge",
     "opencode_bridge",
 ]
 

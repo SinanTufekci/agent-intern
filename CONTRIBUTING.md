@@ -2,8 +2,8 @@
 
 Thanks for helping. Here are the most useful contributions, roughly in order of impact:
 
-1. **Verify a backend nobody has verified.** Grok Build and Kimi Code have never completed an
-   authenticated round-trip. If you have either subscription, filing
+1. **Verify a backend nobody has verified.** No real model has answered through Grok Build, Kimi
+   Code or Muse Code yet. If you have any of those subscriptions, filing
    [one verification issue](https://github.com/SinanTufekci/agent-intern/issues/new?template=backend_verification.yml)
    takes about a minute and is worth more than any code change.
 2. **Report upstream drift.** The CLIs behind the bridge update themselves, so most breakage is a CLI
@@ -28,7 +28,7 @@ Before pushing, run the same three checks CI runs:
 ruff check .
 ruff format --check .
 pytest test_server.py test_swarm.py test_codex.py test_copilot.py test_cursor.py \
-       test_grok.py test_kimi.py test_opencode.py test_proc_tree.py -q
+       test_grok.py test_kimi.py test_opencode.py test_proc_tree.py test_muse.py -q
 ```
 
 These unit tests are offline: they use fake CLIs and spend no quota. `test_smoke.py` is different.
@@ -42,8 +42,8 @@ It's a live script that makes real calls on your own subscription, so run it by 
   that way and could not start. `test_every_runtime_module_is_listed_in_py_modules` catches it now.
 - **CI lists test files one by one.** A new `test_*.py` won't run in CI until you add it to
   `.github/workflows/ci.yml` (and to the pytest command above).
-- **The bridges are near-parallel.** There are eight modules that spawn a CLI: `server.py`,
-  `swarm.py` and the six `*_bridge.py` files. They share their spawn, timeout and parse shapes, so a
+- **The bridges are near-parallel.** There are nine modules that spawn a CLI: `server.py`,
+  `swarm.py` and the seven `*_bridge.py` files. They share their spawn, timeout and parse shapes, so a
   bug in one is usually in all of them. Fix it everywhere, and prefer hoisting the fix into a shared
   module, the way `proc_tree.py` holds the process-tree kill.
 - **Test on three OSes.** CI runs Ubuntu, macOS and Windows. Watch for POSIX-only assumptions in

@@ -2,12 +2,12 @@
 
 <sub>[← back to the README](../README.md) · [all docs](README.md)</sub>
 
-How the bridge drives each CLI, how it reads the answer back, how `*_continue` finds the right session, model selection and auth — plus the two experimental backends.
+How the bridge drives each CLI, how it reads the answer back, how `*_continue` finds the right session, model selection and auth — plus the three experimental backends.
 
 ## The backends at a glance
 
 The bridge normalizes every CLI into the same shape, but they differ where it matters. Pick per task.
-The five verified backends first; the [two experimental ones](#experimental-backends) follow.
+The five verified backends first; the [three experimental ones](#experimental-backends) follow.
 
 | | 🛰️ **Antigravity** (`agy`) | 🤖 **Codex** (`codex exec`) | 🐙 **Copilot** (`copilot -p`) | ✳️ **Cursor** (`cursor-agent -p`) | 🧩 **opencode** (`opencode run`) |
 |---|---|---|---|---|---|
@@ -22,7 +22,7 @@ The five verified backends first; the [two experimental ones](#experimental-back
 
 ## How it works
 
-All seven backends run **headless** and one-shot per call; the bridge's job is to get a clean answer
+All eight backends run **headless** and one-shot per call; the bridge's job is to get a clean answer
 out of each and hand it to Claude Code as a plain string.
 
 ```mermaid
@@ -35,6 +35,7 @@ flowchart LR
     B -- "opencode_*" --> G[opencode run]
     B -- "grok_* (experimental)" --> H[grok -p]
     B -- "kimi_* (experimental)" --> I[kimi -p]
+    B -- "muse_* (experimental)" --> J[muse exec]
     C -- "json / stream-json (1.1.8+)<br/>else stdout or transcript.jsonl / .db" --> B
     D -- "output-last-message file" --> B
     E -- "stdout (-s silent)" --> B
@@ -42,6 +43,7 @@ flowchart LR
     G -- "--format json events" --> B
     H -- "--output-format json" --> B
     I -- "stdout (--output-format text)" --> B
+    J -- "--json events (run_terminal)" --> B
     B -- "plain text" --> A
 ```
 
@@ -406,13 +408,51 @@ Set **`KIMI_BIN`** to override the executable path; `KIMI_CODE_HOME` relocates t
 **No swarm or watch support**, deliberately — both would depend on Kimi's `stream-json` envelope,
 which no one has confirmed. They'll follow a successful verification report.
 
+<a id="muse-bridge"></a>
+
+## 🎼 Muse Code bridge — the experimental one that's verified furthest
+
+Muse Code is Meta's terminal coding agent (Muse Spark models). `muse exec --json` runs one prompt to
+completion and writes JSONL events to stdout; the answer is the `text` of the single `run_terminal`
+event. What sets it apart from Grok and Kimi is a built-in `--provider echo` that runs the **whole**
+exec pipeline offline, with no account — so the argv, the event stream, the answer, session resume and
+the restart fallback were all observed on Muse Code 1.3.0, not taken from docs. Only a real Muse Spark
+answer, and what real tool calls look like in the stream, remain unverified.
+
+- **How it's launched.** On Windows the installer's `muse.cmd` runs a PowerShell 5.1 launcher that
+  runs `muse-bin-<version>.exe`, named in `.muse-version`. The bridge runs that binary directly: a
+  `.cmd` hands its arguments to `cmd.exe` (the [injection class](security.md#windows-batch-file-shims-and-the-prompt)
+  0.30.3 fixed for cursor and opencode), and Windows PowerShell 5.1 started from a PowerShell 7
+  environment can't load `Get-FileHash`, which breaks the launcher's self-update. The trade-off: calls
+  through the bridge never trigger that self-update — running `muse` yourself does. On macOS/Linux the
+  launcher is a bash script and is used as-is.
+- **The prompt** always goes in a file (`--prompt-file`), never in argv. No argument the bridge passes
+  contains user text, and a prompt starting with `-` can't be mistaken for a flag.
+- **Continue.** The bridge names each session itself with `--session-id <uuid>` (muse both creates and
+  resumes by that flag — verified) and pins it to the workspace. After a server restart it asks muse
+  for the workspace's most recent session with `muse export --last` instead of reading muse's binary
+  session store. Muse refuses to resume a session from a different workspace, which is why pins are
+  per workspace.
+- **Every run also passes** `--no-foreign-personal-context` (muse otherwise imports Claude Code's own
+  skills and rules — including this bridge's plugin), `--trust-workspace` (the repo's AGENTS.md /
+  CLAUDE.md load, like the other backends), `--user-input-auto-resolve` (a question nobody can answer is
+  cancelled rather than hung on) and `--worktree off`.
+- **Auth.** `muse login` (browser device code) or `META_API_KEY`, which takes priority. There is no free
+  auth probe, so `muse_status` reports whether credentials exist, not whether they're still valid.
+  Logged out, a run exits 1 with no events and the line "missing meta credentials: run `muse login`
+  or set META_API_KEY" — which the bridge surfaces as is.
+- **Swarm and watch** are supported. Four concurrent runs were verified not to contend. Watch mode
+  shows muse's task stream; since the echo provider calls no tools, tool calls render by task kind
+  only until someone reports what real ones look like.
+
 <a id="experimental-backends"></a>
 
-## 🧪 The two experimental backends — and how you can help
+## 🧪 The three experimental backends — and how you can help
 
-**Grok Build** and **Kimi Code** are wired in exactly like the other five, with one honest difference:
-**no authenticated round-trip has ever run against either.** I don't have a SuperGrok / X Premium+
-subscription or a Kimi plan, so I cannot prove they answer. They ship anyway because a bridge nobody
+**Grok Build**, **Kimi Code** and **Muse Code** are wired in exactly like the other five, with one
+honest difference: **no real model has ever answered through them.** I don't have a SuperGrok / X
+Premium+ subscription, a Kimi plan or a Muse plan, so I cannot prove they answer. Muse goes furthest —
+its offline echo provider let the entire pipeline be exercised (see [Muse Code bridge](#muse-bridge)). They ship anyway because a bridge nobody
 can install is a bridge nobody can verify — and because the parts that usually rot are already pinned
 down.
 
@@ -444,18 +484,19 @@ down.
 
 ### How to help
 
-If you have either subscription, please **[open a verification issue](https://github.com/SinanTufekci/agent-intern/issues/new?template=backend_verification.yml)**.
+If you have any of these subscriptions, please **[open a verification issue](https://github.com/SinanTufekci/agent-intern/issues/new?template=backend_verification.yml)**.
 The template is a checklist — tick only what you actually saw. The first box (*"a fresh ask returned a
 real answer"*) is worth more than all the others combined, and takes about a minute:
 
 ```bash
 # 1. Does the setup look right? (spends no quota)
-#    -> call grok_status / kimi_status from Claude Code
+#    -> call grok_status / kimi_status / muse_status from Claude Code
 # 2. Does it answer?
-#    -> call grok_ask("say hi") / kimi_ask("say hi")
+#    -> call grok_ask("say hi") / kimi_ask("say hi") / muse_ask("say hi")
 # 3. If it fails, does the raw CLI fail the same way?
 grok -p "say hi" --output-format json
 kimi -p "say hi" --output-format text
+muse exec --json -- "say hi"
 ```
 
 That last command is the one I can't run from here, and it's what separates *"the bridge is wrong"*

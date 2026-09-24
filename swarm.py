@@ -867,10 +867,13 @@ _BACKEND_ALIASES = {
     "opencode": "opencode",
     "oc": "opencode",
     "sst": "opencode",
+    "muse": "muse",
+    "muse-code": "muse",
+    "meta": "muse",
 }
 
 # Backends the swarm can dispatch to, in the order the error message lists them.
-_BACKEND_NAMES = ("antigravity", "codex", "copilot", "cursor", "grok", "opencode")
+_BACKEND_NAMES = ("antigravity", "codex", "copilot", "cursor", "grok", "opencode", "muse")
 
 
 def _normalize_tasks(tasks) -> list[dict]:
@@ -938,6 +941,12 @@ def _normalize_tasks(tasks) -> list[dict]:
             sandbox = t.get("sandbox") or opencode_bridge.DEFAULT_SANDBOX
             opencode_bridge.validate_sandbox(sandbox)  # fail fast on a bad policy
             model = opencode_bridge.validate_model(t.get("model") or None)  # fail fast on a typo
+        elif backend == "muse":
+            import muse_bridge
+
+            sandbox = t.get("sandbox") or muse_bridge.DEFAULT_SANDBOX
+            muse_bridge.validate_sandbox(sandbox)  # fail fast on a bad policy
+            model = muse_bridge.validate_model(t.get("model") or None)  # lenient: any id
         else:  # antigravity
             import server
 
@@ -1332,6 +1341,76 @@ def _run_opencode_worker_watched(
         )
 
 
+def _run_muse_worker(index, prompt, workspace, sandbox, model, timeout_s) -> WorkerResult:
+    # NOTE: no HOME/XDG isolation, for the same reason as the grok workers: muse's
+    # login lives in ~/.config/muse/auth.json, which a relocated home would hide.
+    # Isolation isn't needed either: each worker gets a fresh muse-minted session
+    # (pin=False), and four concurrent `muse exec` runs were verified not to contend.
+    import muse_bridge
+
+    start = time.time()
+    try:
+        os.makedirs(workspace, exist_ok=True)
+        ans = muse_bridge.run_muse(prompt, workspace, sandbox, model, False, timeout_s, pin=False)
+        return WorkerResult(
+            index,
+            True,
+            answer=ans,
+            elapsed=round(time.time() - start, 1),
+            workspace=workspace,
+            backend="muse",
+        )
+    except Exception as e:  # noqa: BLE001 — error isolation: one worker must not sink the swarm
+        return WorkerResult(
+            index,
+            False,
+            error=str(e),
+            elapsed=round(time.time() - start, 1),
+            workspace=workspace,
+            backend="muse",
+        )
+
+
+def _run_muse_worker_watched(index, prompt, workspace, sandbox, model, timeout_s) -> WorkerResult:
+    import muse_bridge
+    import swarm_watch
+
+    start = time.time()
+    swarm_watch.worker_update(index, status="working", started=start)
+    to_lines = muse_bridge.watch_mapper()
+
+    def on_event(ev: dict) -> None:
+        lines = to_lines(ev)
+        if lines:
+            t = round(time.time() - start, 1)
+            swarm_watch.worker_append(index, [{"kind": k, "text": x, "t": t} for k, x in lines])
+
+    try:
+        os.makedirs(workspace, exist_ok=True)
+        ans = muse_bridge.run_muse_streaming(
+            prompt, workspace, sandbox, model, False, timeout_s, on_event, pin=False
+        )
+        swarm_watch.worker_finish(index, "done", ans, time.time() - start)
+        return WorkerResult(
+            index,
+            True,
+            answer=ans,
+            elapsed=round(time.time() - start, 1),
+            workspace=workspace,
+            backend="muse",
+        )
+    except Exception as e:  # noqa: BLE001
+        swarm_watch.worker_finish(index, "error", str(e), time.time() - start)
+        return WorkerResult(
+            index,
+            False,
+            error=str(e),
+            elapsed=round(time.time() - start, 1),
+            workspace=workspace,
+            backend="muse",
+        )
+
+
 def swarm_agents(
     tasks,
     max_concurrency: int = DEFAULT_MAX_CONCURRENCY,
@@ -1372,6 +1451,9 @@ def swarm_agents(
             return fn(i, t["prompt"], t["workspace"], t["sandbox"], t["model"], timeout_s)
         if t["backend"] == "opencode":
             fn = _run_opencode_worker_watched if watch else _run_opencode_worker
+            return fn(i, t["prompt"], t["workspace"], t["sandbox"], t["model"], timeout_s)
+        if t["backend"] == "muse":
+            fn = _run_muse_worker_watched if watch else _run_muse_worker
             return fn(i, t["prompt"], t["workspace"], t["sandbox"], t["model"], timeout_s)
         fn = _run_text_worker_watched if watch else _run_text_worker
         return fn(i, t["prompt"], t["workspace"], t["model"], timeout_s, t["plan"])

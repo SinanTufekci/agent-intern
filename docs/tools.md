@@ -2,7 +2,7 @@
 
 <sub>[← back to the README](../README.md) · [all docs](README.md)</sub>
 
-All 24 tools, their arguments and defaults.
+All 27 tools, their arguments and defaults.
 
 ## Tools
 
@@ -64,11 +64,19 @@ All 24 tools, their arguments and defaults.
 | `kimi_continue(prompt, workspace?, timeout_s?=180)` | Continue the Kimi session **rooted at `workspace`** (`-c`). Kimi scopes sessions per working directory, so there's no id to track — and no restart problem either. |
 | `kimi_status()` | Setup diagnostics: bridge version + update check, kimi version, whether a provider is configured (`kimi provider list` — the auth proxy), and the data dir. Spends no quota. |
 
+### 🎼 Muse Code *(experimental — [real model unverified](backends.md#experimental-backends))*
+
+| Tool | Purpose |
+|---|---|
+| `muse_ask(prompt, workspace?, sandbox?="read-only", model?, timeout_s?=180, watch?=false)` | Start a **new** Muse session (`muse exec --json`). The prompt travels in a file (`--prompt-file`), never argv. `sandbox`: `read-only` switches muse's write, shell and web tools off — it can only read and answer, on every OS; `workspace-write` lets the shell run inside muse's OS sandbox; `danger-full-access` is `--yolo` (see [Muse bridge](backends.md#muse-bridge)). `model` is a lenient pass-through (`--model`) — muse accepts any id. `watch=true` opens the live view, rendering muse's task events. |
+| `muse_continue(prompt, workspace?, sandbox?="read-only", timeout_s?=180, watch?=false)` | Continue the Muse session **rooted at `workspace`** — the bridge names each session itself (`--session-id`), and after a server restart recovers the workspace's most recent session with `muse export --last`. With no session there it errors instead of silently starting fresh. `sandbox` applies here too. |
+| `muse_status()` | Setup diagnostics: bridge version + update check, which muse binary the bridge runs, whether credentials exist (`META_API_KEY` or a `muse login`), any cached model catalog, the Windows OS sandbox state, and the data dir. Spends no quota. |
+
 ### 🐝 Shared
 
 | Tool | Purpose |
 |---|---|
-| `agent_swarm(tasks, max_concurrency?=4, timeout_s?=180, watch?=false)` | Run **several tasks in parallel across six backends** — each task names its `backend` (`antigravity`, `codex`, `copilot`, `cursor`, `opencode`, or `grok`) plus a `prompt` (an optional `model` and `sandbox` for any backend — on Antigravity `sandbox: "read-only"` means **plan mode**). Every answer comes back in one block; `watch=true` opens the live dashboard ([Swarm](watch-and-swarm.md#swarm)). Kimi is not available here — see [Experimental backends](backends.md#experimental-backends). |
+| `agent_swarm(tasks, max_concurrency?=4, timeout_s?=180, watch?=false)` | Run **several tasks in parallel across seven backends** — each task names its `backend` (`antigravity`, `codex`, `copilot`, `cursor`, `opencode`, `grok`, or `muse`) plus a `prompt` (an optional `model` and `sandbox` for any backend — on Antigravity `sandbox: "read-only"` means **plan mode**). Every answer comes back in one block; `watch=true` opens the live dashboard ([Swarm](watch-and-swarm.md#swarm)). Kimi is not available here — see [Experimental backends](backends.md#experimental-backends). |
 
 `workspace` defaults to the MCP server's current working directory. Point it at a real project dir
 for context-aware answers — every backend gives the model access to files under that root (Codex,

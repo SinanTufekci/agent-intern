@@ -1,6 +1,6 @@
 ---
 name: doctor
-description: Check which agent-intern backends (Antigravity, Codex, Copilot, Cursor, opencode, Grok, Kimi) are installed, signed in and ready, without spending any quota. Use when setting up agent-intern, when a delegation fails, or when the user asks which sub-agents they can use.
+description: Check which agent-intern backends (Antigravity, Codex, Copilot, Cursor, opencode, Grok, Kimi, Muse) are installed, signed in and ready, without spending any quota. Use when setting up agent-intern, when a delegation fails, or when the user asks which sub-agents they can use.
 allowed-tools:
   - mcp__plugin_agent-intern_intern__antigravity_status
   - mcp__plugin_agent-intern_intern__codex_status
@@ -9,6 +9,7 @@ allowed-tools:
   - mcp__plugin_agent-intern_intern__opencode_status
   - mcp__plugin_agent-intern_intern__grok_status
   - mcp__plugin_agent-intern_intern__kimi_status
+  - mcp__plugin_agent-intern_intern__muse_status
 ---
 
 Call every agent-intern status tool in parallel. None of them spends quota:
@@ -20,6 +21,7 @@ Call every agent-intern status tool in parallel. None of them spends quota:
 - `opencode_status`
 - `grok_status`
 - `kimi_status`
+- `muse_status`
 
 Report one table with a row per backend and these columns: Backend, Ready, Version, Next step.
 
@@ -36,8 +38,8 @@ After the table:
   upgrade command it names.
 - **No backend ready:** recommend opencode. `npm i -g opencode-ai` needs no account, and its free
   models answer with zero credentials, just slowly.
-- **Grok and Kimi:** mark them experimental, because their answer path has never been verified. If
-  the user has one of those subscriptions, point them to
+- **Grok, Kimi and Muse:** mark them experimental, because no real model has ever answered through
+  them. If the user has one of those subscriptions, point them to
   https://github.com/SinanTufekci/agent-intern/issues/new?template=backend_verification.yml.
 
 Don't call any `*_ask`, `*_continue` or image tool from this skill.

@@ -118,6 +118,7 @@ its narration, the real commands it runs, then the answer or the finished image.
 | 🧩 **opencode** | working with no subscription (free models take minutes) | ⚠️ agent-enforced, identical on every OS | nothing |
 | 🧪 **Grok Build** (xAI) | *experimental — unverified* | ✅ on Linux/macOS only | SuperGrok / X Premium+ |
 | 🌙 **Kimi Code** (Moonshot) | *experimental — unverified* | ❌ none | a Kimi plan |
+| 🎼 **Muse Code** (Meta) | *experimental — pipeline verified offline, real model not* | ⚠️ read-only switches write/shell/web tools off; OS sandbox for writes | a Muse plan or `META_API_KEY` |
 
 <sub>¹ On Windows, codex 0.149.1's sandbox refuses every command — reads included — so a sandboxed Codex
 can't see your files there. The bridge flags it with a visible warning instead of passing on a
@@ -125,7 +126,7 @@ confident, unsourced answer. [Details →](https://github.com/SinanTufekci/agent
 
 Every backend gets `*_ask`, `*_continue` (resume the same thread) and `*_status` (diagnostics, no
 quota spent). Antigravity adds `antigravity_image` and `antigravity_image_swarm`, and `agent_swarm`
-fans out across every backend but Kimi — **24 tools** in all.
+fans out across every backend but Kimi — **27 tools** in all.
 [Tool reference →](https://github.com/SinanTufekci/agent-intern/blob/main/docs/tools.md) ·
 [How each backend is driven →](https://github.com/SinanTufekci/agent-intern/blob/main/docs/backends.md)
 
@@ -135,10 +136,12 @@ opencode 1.18.29**. These CLIs update themselves, so
 changed upstream and what the bridge does about it.
 
 > [!IMPORTANT]
-> **Have a Grok or Kimi subscription?** Neither backend has ever completed an authenticated round-trip,
-> because I don't have either plan. Everything up to each CLI's auth wall is verified live; behind it,
-> nothing is. One [verification issue](https://github.com/SinanTufekci/agent-intern/issues/new?template=backend_verification.yml)
-> — about a minute: call `grok_ask("say hi")` — is the most useful contribution you can make.
+> **Have a Grok, Kimi or Muse subscription?** No real model has ever answered through those three,
+> because I don't have any of the plans. Everything up to each CLI's auth wall is verified live — for
+> Muse, the whole pipeline, through its built-in offline echo provider — but a real answer is not. One
+> [verification issue](https://github.com/SinanTufekci/agent-intern/issues/new?template=backend_verification.yml)
+> — about a minute: call `grok_ask("say hi")` or `muse_ask("say hi")` — is the most useful
+> contribution you can make.
 > [Details →](https://github.com/SinanTufekci/agent-intern/blob/main/docs/backends.md#experimental-backends)
 
 ## How it works
@@ -147,7 +150,7 @@ changed upstream and what the bridge does about it.
 flowchart LR
     U([You]) --> CC([Claude Code])
     CC -- "MCP tool call" --> B["agent-intern<br/>(MCP server)"]
-    B -- "headless, one-shot,<br/>your own login" --> CLI["agy · codex · copilot · cursor-agent<br/>opencode · grok · kimi"]
+    B -- "headless, one-shot,<br/>your own login" --> CLI["agy · codex · copilot · cursor-agent<br/>opencode · grok · kimi · muse"]
     CLI -- "answer or file" --> B
     B -- "plain text" --> CC
 ```

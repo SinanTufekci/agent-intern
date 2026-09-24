@@ -14,11 +14,12 @@ staying within them.
 </details>
 
 <details>
-<summary><b>Do I need all seven CLIs?</b></summary>
+<summary><b>Do I need all eight CLIs?</b></summary>
 
 No. Each backend is independent — install only the CLI(s) you want. The tools for a missing backend
 report "not found" via their `*_status` tool (`antigravity_status` / `codex_status` /
-`copilot_status` / `cursor_status` / `opencode_status` / `grok_status` / `kimi_status`) and never
+`copilot_status` / `cursor_status` / `opencode_status` / `grok_status` / `kimi_status` /
+`muse_status`) and never
 crash the server. If you hold no subscriptions at all, opencode is the one that still answers.
 </details>
 

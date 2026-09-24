@@ -471,6 +471,7 @@ import copilot_bridge
 import cursor_bridge
 import grok_bridge
 import kimi_bridge
+import muse_bridge
 import opencode_bridge
 import proc_tree
 
@@ -483,9 +484,9 @@ import proc_tree
 # value content here is what a model can't infer from tool schemas alone —
 # proactive triggers, which backend to pick, and the workspace footgun.
 SERVER_INSTRUCTIONS = """\
-This server bridges seven external coding CLIs — Antigravity (Gemini), OpenAI \
-Codex, GitHub Copilot, Cursor, opencode (any model, incl. FREE ones), and the \
-two EXPERIMENTAL ones, Grok Build (xAI) and Kimi Code (Moonshot) — into your \
+This server bridges eight external coding CLIs — Antigravity (Gemini), OpenAI \
+Codex, GitHub Copilot, Cursor, opencode (any model, incl. FREE ones), and three \
+EXPERIMENTAL ones, Grok Build (xAI), Kimi Code (Moonshot) and Muse Code (Meta) — into your \
 session as sub-agents that run on the USER'S OWN quota. Delegating here spends \
 that quota instead of your tokens, gets a second model-family opinion, or \
 generates images.
@@ -536,7 +537,10 @@ same on every platform. Free models are SLOW — allow minutes, not seconds.
 - kimi_* (Kimi Code, Moonshot — EXPERIMENTAL, never live-verified) — Kimi K2 \
 family; like antigravity it has NO sandbox and auto-executes tools, so trusted \
 prompts only. Needs `kimi login` or an API key.
-Both experimental backends are unproven end-to-end: run their *_status first, and \
+- muse_* (Muse Code, Meta — EXPERIMENTAL; real model never live-verified) — Muse \
+Spark models; needs a Muse plan (`muse login`) or META_API_KEY. read-only switches \
+its write/shell/web tools off, so it holds on every OS.
+The experimental backends are unproven end-to-end: run their *_status first, and \
 tell the user plainly if one fails rather than retrying blindly.
 
 Mechanics:
@@ -3586,7 +3590,7 @@ def agent_swarm(
     """Run SEVERAL tasks IN PARALLEL across ALL backends in a single swarm.
 
     Each task is its own worker and names the backend to run on, so one swarm can
-    mix Antigravity (Gemini), Codex, Copilot, Cursor, Grok and opencode workers —
+    mix Antigravity (Gemini), Codex, Copilot, Cursor, Grok, opencode and Muse workers —
     they run truly concurrently (capped at `max_concurrency`) and every answer comes
     back in one labelled block. A worker that fails is reported in place; the others
     still return.
@@ -3600,16 +3604,18 @@ def agent_swarm(
                - backend: "antigravity" (alias "agy"/"gemini"), "codex",
                           "copilot" (alias "gh"/"github"), "cursor", "opencode"
                           (alias "oc" — the one backend that needs no
-                          subscription; see opencode_ask), or "grok" (alias
-                          "xai"; EXPERIMENTAL — see grok_ask) (required)
+                          subscription; see opencode_ask), "grok" (alias
+                          "xai"; EXPERIMENTAL — see grok_ask), or "muse" (alias
+                          "meta"; EXPERIMENTAL — see muse_ask) (required)
                - prompt:  the question or instruction (required)
                - workspace: working dir for that worker (default: server cwd)
                - sandbox: "read-only" (default), "workspace-write", or
                           "danger-full-access". Codex's is an enforced OS sandbox
                           everywhere; Grok's is enforced on Linux/macOS only;
                           Copilot's, Cursor's and opencode's are agent/tool-level,
-                          not OS boundaries — see copilot_ask / cursor_ask /
-                          grok_ask / opencode_ask.
+                          not OS boundaries; Muse's read-only switches its write,
+                          shell and web tools off — see copilot_ask / cursor_ask /
+                          grok_ask / opencode_ask / muse_ask.
                           ANTIGRAVITY is the odd one: "read-only" maps to agy's
                           plan mode (it investigates and writes a plan instead of
                           editing files or running commands — see antigravity_ask's
@@ -3621,7 +3627,7 @@ def agent_swarm(
                           long-standing default, unlike every other backend here,
                           so fence it explicitly if you want it fenced.
                - model:   optional model override for ANY backend — Codex's `-m`,
-                          Copilot's/Cursor's `--model`, Grok's/opencode's `-m`
+                          Copilot's/Cursor's/Muse's `--model`, Grok's/opencode's `-m`
                           (opencode wants "provider/model"), or Antigravity's
                           `--model` (an agy slug like "claude-sonnet-4-6";
                           validated against each backend's model list). Omit for
@@ -5004,6 +5010,189 @@ def opencode_status() -> str:
         lines.append(f"  {label.ljust(width)}  [{mark}] {detail}")
     lines.append("Overall: " + ("OK" if all(ok for _, ok, _ in rows) else "PROBLEMS FOUND"))
     return "\n".join(lines)
+
+
+# ============================================================ Muse tools
+# EXPERIMENTAL — see muse_bridge's module docstring. The whole exec pipeline is
+# live-verified on Muse Code 1.3.0 through muse's own offline `echo` provider; a
+# real Muse Spark answer (and the event shapes of real tool calls) is not.
+@mcp.tool(
+    annotations={
+        "title": "Ask Muse Code (new session) [experimental]",
+        "readOnlyHint": False,  # muse may edit files / run commands per sandbox
+        "idempotentHint": False,
+        "openWorldHint": True,  # talks to Meta's model API
+    }
+)
+async def muse_ask(
+    prompt: str,
+    workspace: Optional[str] = None,
+    sandbox: str = muse_bridge.DEFAULT_SANDBOX,
+    model: Optional[str] = None,
+    timeout_s: int = 180,
+    watch: bool = False,
+    ctx: Optional[Context] = None,
+) -> str:
+    """Ask Meta's Muse Code (`muse exec`) a question or task in a NEW session. EXPERIMENTAL.
+
+    ⚠️ The real model has never answered through this bridge — the author has no
+    Muse plan. Muse's built-in offline `echo` provider verified everything else
+    end to end (argv, event stream, answer, session resume), so a failure here is
+    most likely auth or the model itself. If it misbehaves, say so plainly and
+    please report it.
+
+    Needs a Muse Code plan (`muse login`) or a META_API_KEY; run `muse_status`
+    first. Returns the agent's final message (the `run_terminal` event of
+    `muse exec --json`). Point `workspace` at a project dir for repo context.
+
+    Args:
+        prompt: Question or instruction for Muse. Passed in a file, never argv.
+        workspace: Working root (`--workspace`). Defaults to the server cwd.
+        sandbox: "read-only" (default — muse's write, shell and web tools switched
+                 off, so it can only read and answer; holds on every OS),
+                 "workspace-write" (shell runs inside muse's OS sandbox, network
+                 proxy-only; on Windows that sandbox needs a one-time elevated
+                 setup — see muse_status), or "danger-full-access" (`--yolo`: no
+                 approval, no sandbox — avoid).
+        model: Optional model id (`--model`, e.g. "muse-spark-1.3"). Muse accepts
+               any id, so this is not validated. Omit for muse's default.
+        timeout_s: Max seconds to wait for muse to complete. Default 180.
+        watch: If true, open a live "watch" view of muse's task stream. Same final
+               text is returned. Best-effort. Default false.
+    """
+    ws = muse_bridge.normalize_workspace(workspace)
+    muse_bridge.validate_sandbox(sandbox)
+    model = muse_bridge.validate_model(model)
+    if watch:
+        return await asyncio.to_thread(
+            _run_muse_watched, prompt, ws, sandbox, model, False, timeout_s
+        )
+    return await _run_with_progress(
+        muse_bridge.run_muse,
+        (prompt, ws, sandbox, model, False, timeout_s),
+        ctx,
+        timeout_s,
+        label="muse",
+    )
+
+
+@mcp.tool(
+    annotations={
+        "title": "Continue Muse Code session [experimental]",
+        "readOnlyHint": False,
+        "idempotentHint": False,
+        "openWorldHint": True,
+    }
+)
+async def muse_continue(
+    prompt: str,
+    workspace: Optional[str] = None,
+    sandbox: str = muse_bridge.DEFAULT_SANDBOX,
+    timeout_s: int = 180,
+    watch: bool = False,
+    ctx: Optional[Context] = None,
+) -> str:
+    """Continue the Muse session rooted at this workspace. EXPERIMENTAL.
+
+    Resumes the exact session the last muse_ask in this workspace created (the
+    bridge names each session itself with `--session-id`). After a server restart
+    it falls back to muse's own record of the workspace's most recent session
+    (`muse export --last`); with no session there at all it errors rather than
+    silently starting a fresh one. Muse applies safety flags per run, so `sandbox`
+    takes effect here too. Same experimental caveat and auth needs as muse_ask.
+
+    Args:
+        prompt: Follow-up message for the existing session.
+        workspace: Working root used by the prior session. Defaults to the server cwd.
+        sandbox: Policy for THIS turn (default "read-only"); same values as muse_ask.
+        timeout_s: Max seconds to wait for muse to complete. Default 180.
+        watch: If true, open the live "watch" view (same viewer as muse_ask).
+    """
+    ws = muse_bridge.normalize_workspace(workspace)
+    muse_bridge.validate_sandbox(sandbox)
+    if watch:
+        return await asyncio.to_thread(
+            _run_muse_watched, prompt, ws, sandbox, None, True, timeout_s
+        )
+    return await _run_with_progress(
+        muse_bridge.run_muse,
+        (prompt, ws, sandbox, None, True, timeout_s),
+        ctx,
+        timeout_s,
+        label="muse",
+    )
+
+
+@mcp.tool(
+    annotations={
+        "title": "Muse bridge diagnostics",
+        "readOnlyHint": True,  # runs `muse --version` / `sandbox windows check` + reads state
+        "idempotentHint": True,
+        "openWorldHint": False,
+    }
+)
+def muse_status() -> str:
+    """Report diagnostics for the Muse Code bridge setup (spends no quota).
+
+    Reports the bridge's own version and any newer release, then whether `muse` is
+    found (and which binary the bridge runs), whether credentials are present
+    (META_API_KEY or a `muse login`), any cached model catalog, the Windows OS
+    sandbox state, and where muse keeps its data. Muse has no free auth probe, so a
+    green auth row means credentials exist, not that they are still valid. This
+    backend is EXPERIMENTAL: green here means the setup looks right, not that a real
+    answer has ever been confirmed.
+    """
+    rows = [_bridge_version_status()] + muse_bridge.status_rows()
+    width = max(len(label) for label, _, _ in rows)
+    lines = ["muse bridge status  (EXPERIMENTAL — community-verified only)"]
+    for label, ok, detail in rows:
+        mark = "ok" if ok else "!!"
+        lines.append(f"  {label.ljust(width)}  [{mark}] {detail}")
+    lines.append("Overall: " + ("OK" if all(ok for _, ok, _ in rows) else "PROBLEMS FOUND"))
+    return "\n".join(lines)
+
+
+def _run_muse_watched(
+    prompt: str,
+    workspace: str,
+    sandbox: str,
+    model: Optional[str],
+    continue_conv: bool,
+    timeout_s: int,
+) -> str:
+    """Like muse_bridge.run_muse, but stream muse's task events to the watch window.
+
+    Return value is identical to muse_ask. Unknown events render nothing, and tool
+    calls show by task kind only (their payloads were never observed).
+    """
+    start = time.time()
+    title = prompt.strip().splitlines()[0] if prompt.strip() else ""
+    if len(title) > 200:
+        title = title[:200].rsplit(" ", 1)[0] + "…"
+    history = muse_bridge.read_history(workspace, continue_conv)
+    rid = _watch_begin(title, start, timeout_s, backend="muse", prompt=prompt, history=history)
+    try:
+        port = _ensure_watch_server()
+        _open_watch_window(_watch_url(port, rid), rid)
+    except Exception:  # noqa: BLE001 — the viewer is best-effort, never fatal
+        pass
+    to_lines = muse_bridge.watch_mapper()
+
+    def on_event(ev: dict) -> None:
+        watch_lines = to_lines(ev)
+        if watch_lines:
+            t = round(time.time() - start, 1)
+            _watch_append(rid, [{"kind": k, "text": x, "t": t} for k, x in watch_lines])
+
+    try:
+        answer = muse_bridge.run_muse_streaming(
+            prompt, workspace, sandbox, model, continue_conv, timeout_s, on_event
+        )
+    except Exception as e:  # noqa: BLE001 — show the failure in the window, then re-raise
+        _watch_finish(rid, "error", f"({e})"[:200], time.time() - start)
+        raise
+    _watch_finish(rid, "done", answer, time.time() - start)
+    return answer
 
 
 def main() -> None:

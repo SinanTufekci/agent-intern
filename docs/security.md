@@ -8,7 +8,7 @@ What each backend's `sandbox` really enforces — read this before pointing a su
 
 ## ⚠️ Security
 
-All seven backends run the model as an **autonomous agent**. The difference is whether you get a real
+All eight backends run the model as an **autonomous agent**. The difference is whether you get a real
 boundary: Codex enforces one everywhere and Grok on Linux/macOS only; Copilot, Cursor and opencode
 offer best-effort, agent-enforced ones (opencode's is the only one that behaves identically on every
 platform); Antigravity and Kimi offer none.
@@ -164,6 +164,24 @@ malformed policy is silently ignored by opencode, so the bridge always serialize
 no approval gate — the same posture as Antigravity, and verified live on 0.29.1 in the sense that `-p`
 *rejects* `--auto`/`--yolo` precisely because it is already self-approving. No flag makes it safe.
 Assume every `kimi_ask` runs arbitrary code with your privileges.
+
+### Muse — tools switched off, not sandboxed
+
+Muse has its own approval gate and an OS sandbox, both on by default. Headless runs can't answer
+approval prompts, so every mode disables approval; the containment comes from what is switched off:
+
+- **`read-only`** (default) — `--disable-write --disable-shell --disable-web-tools`. Nothing that could
+  write, run a command or reach the web is left, so this needs no OS sandbox and **holds on every
+  platform**. It is still agent-enforced — muse declining its own disabled tools — and MCP servers
+  configured in muse's own settings stay available.
+- **`workspace-write`** — shell commands run inside muse's OS sandbox (network `proxy-only`). On Windows
+  that sandbox needs a one-time elevated setup (`muse sandbox windows setup`; it creates local
+  `muse-sbx-*` accounts). `muse_status` shows its state. What an unprepared sandbox does to a headless
+  shell call is unverified — read-only never needs it.
+- **`danger-full-access`** — `--yolo`: no approval, no sandbox. Avoid.
+
+⚠️ This backend is [experimental](backends.md#experimental-backends): the real model has never
+answered through the bridge, so none of this has been observed under a real tool call.
 
 ### Windows: batch-file shims and the prompt
 

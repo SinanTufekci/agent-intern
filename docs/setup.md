@@ -18,7 +18,7 @@ Every install path, per-backend prerequisites, and the `*_BIN` overrides for CLI
   models answer with no account. Run `opencode auth login` only if you want to point it at your own
   Anthropic/OpenAI/… key.
 
-You don't need all seven — the tools for a missing CLI simply report "not found" via their `*_status`
+You don't need all eight — the tools for a missing CLI simply report "not found" via their `*_status`
 tool. If you have no subscriptions at all, start with opencode.
 
 ### Recommended — the Claude Code plugin
@@ -111,7 +111,7 @@ Then point Claude Code at the absolute path to `server.py` under `mcpServers` in
 </td></tr>
 </table>
 
-Restart Claude Code. **Twenty-four tools** appear, each prefixed `mcp__agent-intern__`:
+Restart Claude Code. **Twenty-seven tools** appear, each prefixed `mcp__agent-intern__`:
 
 - **Antigravity (5):** `antigravity_ask`, `antigravity_continue`, `antigravity_image`,
   `antigravity_image_swarm`, `antigravity_status`
@@ -120,8 +120,9 @@ Restart Claude Code. **Twenty-four tools** appear, each prefixed `mcp__agent-int
 - **Cursor (3):** `cursor_ask`, `cursor_continue`, `cursor_status`
 - **Grok (3, experimental):** `grok_ask`, `grok_continue`, `grok_status`
 - **opencode (3):** `opencode_ask`, `opencode_continue`, `opencode_status`
+- **Muse (3, experimental):** `muse_ask`, `muse_continue`, `muse_status`
 - **Kimi (3, experimental):** `kimi_ask`, `kimi_continue`, `kimi_status`
-- **Shared (1):** `agent_swarm` — fans a list of tasks out across **six** backends in one run
+- **Shared (1):** `agent_swarm` — fans a list of tasks out across **seven** backends in one run
   (everything but Kimi)
 
 The single-prompt tools — Antigravity, Codex, Copilot, Cursor, **and** Grok — take a **`watch=true`**
@@ -148,6 +149,7 @@ do the same.
 - **For the Cursor tools:** [`cursor-agent`](https://cursor.com/cli) on `PATH` and logged in (`cursor-agent login`, or a `CURSOR_API_KEY` env) — verified on **cursor-agent 2026.07.23**
 - **For the opencode tools:** [`opencode`](https://opencode.ai/) on `PATH` (`npm i -g opencode-ai`) — **no login needed** for its free `opencode/*` models; `opencode auth login` (or a provider env var) for everything else — verified end-to-end on **opencode 1.18.29**
 - **For the Grok tools (experimental):** [`grok`](https://docs.x.ai/build/overview) on `PATH` and logged in (`grok login`, or an `XAI_API_KEY` env) plus a SuperGrok / X Premium+ subscription — flag surface verified on **grok 1.0.3**, [answer path unverified](backends.md#experimental-backends)
+- **For the Muse tools (experimental):** [`muse`](https://dev.meta.ai/docs/muse-code) installed and logged in (`muse login`, or a `META_API_KEY` env) with a Muse Code plan — the whole exec pipeline verified on **Muse Code 1.3.0** through its offline echo provider, [real model unverified](backends.md#experimental-backends)
 - **For the Kimi tools (experimental):** [`kimi`](https://github.com/MoonshotAI/kimi-code) on `PATH` and logged in (`kimi login`, or an API key in `~/.kimi-code/config.toml`) — flag surface verified on **kimi 0.29.1**, [answer path unverified](backends.md#experimental-backends)
 
 Each backend is independent — install only the CLI(s) you plan to use; the other tools simply report "not found" via their `*_status` tool.
@@ -161,10 +163,11 @@ Each backend is independent — install only the CLI(s) you plan to use; the oth
 > `%LOCALAPPDATA%\Microsoft\WinGet\Packages\GitHub.Copilot_*\copilot.exe`). Finally, set
 > **`CURSOR_BIN`** if `cursor-agent` isn't reliably on `PATH` (the installer drops a `cursor-agent.CMD`
 > shim a bare name can't launch on Windows), and **`OPENCODE_BIN`** if `opencode` isn't (npm drops an
-> `opencode.CMD` shim with exactly the same problem). **`GROK_BIN`** and **`KIMI_BIN`** do the same for
-> the two experimental backends — though the Grok bridge already falls back to the installer's own
-> `~/.grok/bin` on a `PATH` miss, which matters because that installer appends to the user PATH and
-> the change never reaches an already-running server.
+> `opencode.CMD` shim with exactly the same problem). **`GROK_BIN`**, **`KIMI_BIN`** and **`MUSE_BIN`** do
+> the same for the experimental backends — though the Grok and Muse bridges already fall back to their
+> installer's own directory (`~/.grok/bin`; `%LOCALAPPDATA%\Programs\muse` or `~/.local/bin`) on a
+> `PATH` miss, which matters because those installers edit the user PATH and the change never reaches
+> an already-running server.
 
 The bridge uses only cross-platform Python (`Path.home()`, `subprocess`) and reads paths under
 `~/.gemini/antigravity-cli/`, `~/.codex/`, `~/.copilot/`, `~/.cursor/`, `~/.grok/`, `~/.kimi-code/`,

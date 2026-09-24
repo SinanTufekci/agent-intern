@@ -1,6 +1,6 @@
-name: Verify an experimental backend (Grok Build / Kimi Code)
-description: You have a Grok or Kimi subscription and can confirm (or disprove) that the bridge actually works.
-title: "verify: <grok|kimi> <cli version> on <OS>"
+name: Verify an experimental backend (Grok Build / Kimi Code / Muse Code)
+description: You have a Grok, Kimi or Muse subscription and can confirm (or disprove) that the bridge actually works.
+title: "verify: <grok|kimi|muse> <cli version> on <OS>"
 labels: ["verification", "help wanted"]
 body:
   - type: markdown
@@ -8,11 +8,14 @@ body:
       value: |
         **Thank you — this is the single most useful thing you can contribute.**
 
-        The Grok Build and Kimi Code backends ship EXPERIMENTAL because I don't
-        have a subscription for either, so no authenticated round-trip has ever
-        run against them. Everything up to each CLI's auth wall is verified live
-        (flag surface, error shapes, model list, on-disk layout); everything
-        *behind* it is derived from the vendor's docs and could be wrong.
+        The Grok Build, Kimi Code and Muse Code backends ship EXPERIMENTAL because I
+        don't have a subscription for any of them, so no real model has ever
+        answered through them. Everything up to each CLI's auth wall is verified
+        live (flag surface, error shapes, model list, on-disk layout); everything
+        *behind* it is derived from the vendor's docs and could be wrong. Muse is
+        the exception that goes furthest: its built-in offline `echo` provider
+        let the whole pipeline be verified, so only a real Muse Spark answer (and
+        what real tool calls look like in its event stream) is left.
 
         You don't have to do all of this. **Even one checked box helps** — the
         first one especially. Report what you tried, including partial results,
@@ -28,6 +31,7 @@ body:
       options:
         - Grok Build (grok)
         - Kimi Code (kimi)
+        - Muse Code (muse)
     validations:
       required: true
 
@@ -35,7 +39,7 @@ body:
     id: cli-version
     attributes:
       label: CLI version
-      description: "`grok --version` or `kimi --version`."
+      description: "`grok --version`, `kimi --version` or `muse --version`."
       placeholder: "grok 1.0.3 (1a29d5bc12)"
     validations:
       required: true
@@ -66,7 +70,7 @@ body:
     attributes:
       label: Status output
       description: |
-        Paste the full output of the `grok_status` / `kimi_status` tool. This
+        Paste the full output of the `grok_status` / `kimi_status` / `muse_status` tool. This
         spends no quota and is the fastest way to tell a setup problem from a
         bridge bug.
       render: text
@@ -79,14 +83,14 @@ body:
       label: What actually worked
       description: Tick only what you personally observed. Leave the rest blank.
       options:
-        - label: "**A fresh ask returned a real answer** (`grok_ask` / `kimi_ask`) — the one that matters most"
-        - label: "Continue preserved context (`grok_continue` / `kimi_continue` recalled something from the first turn)"
+        - label: "**A fresh ask returned a real answer** (`grok_ask` / `kimi_ask` / `muse_ask`) — the one that matters most"
+        - label: "Continue preserved context (`grok_continue` / `kimi_continue` / `muse_continue` recalled something from the first turn)"
         - label: "Continue still worked after restarting the MCP server (this exercises the fallback path, not the in-memory pin)"
         - label: "A `model` override was accepted and visibly used"
-        - label: "`sandbox=\"workspace-write\"` actually edited a file (Grok only)"
-        - label: "`sandbox=\"read-only\"` REFUSED to edit a file (Grok only — please say which OS, this is enforced differently per platform)"
-        - label: "`watch=true` opened the live view and showed real steps (Grok only)"
-        - label: "`agent_swarm` ran 2+ `grok` workers in parallel and all returned (Grok only)"
+        - label: "`sandbox=\"workspace-write\"` actually edited a file (Grok / Muse)"
+        - label: "`sandbox=\"read-only\"` REFUSED to edit a file (Grok / Muse — please say which OS, this is enforced differently per platform)"
+        - label: "`watch=true` opened the live view and showed real steps (Grok / Muse — for Muse, please paste a few of the tool-call lines it showed)"
+        - label: "`agent_swarm` ran 2+ `grok` or `muse` workers in parallel and all returned (Grok / Muse)"
 
   - type: textarea
     id: broke
@@ -98,6 +102,7 @@ body:
 
         - `grok produced no JSON result on stdout` / `grok returned an empty answer`
         - `kimi produced no output on stdout`
+        - `muse produced no run_terminal event` / `muse run failed: ...`
         - a continue that silently starts a brand-new conversation
 
         If you can, re-run the same prompt against the raw CLI and paste that too:
@@ -105,6 +110,7 @@ body:
         ```
         grok -p "say hi" --output-format json
         kimi -p "say hi" --output-format text
+        muse exec --json -- "say hi"
         ```
 
         That one command separates "the bridge is wrong" from "the CLI changed",

@@ -10,7 +10,8 @@ The live **Agent Intern** window, and `agent_swarm` for running many agents in p
 
 Pass **`watch=true`** to **any single-prompt tool** — `antigravity_ask`, `antigravity_continue`,
 `antigravity_image`, `codex_ask`, `codex_continue`, `copilot_ask`, `copilot_continue`, `cursor_ask`,
-`cursor_continue`, `opencode_ask`, `opencode_continue`, `grok_ask`, or `grok_continue` — to **watch
+`cursor_continue`, `opencode_ask`, `opencode_continue`, `grok_ask`, `grok_continue`, `muse_ask`, or
+`muse_continue` — to **watch
 the agent work live in a little chat-style browser window** called **Agent Intern**. The agent
 still runs headless; alongside it the bridge serves a tiny page on `127.0.0.1` and opens it in a
 small, chromeless app window that renders the exchange as a **conversation**: your prompt shows as a
@@ -86,7 +87,7 @@ watched `grok_continue` or `opencode_continue` opens without history for the sam
 `agent_swarm` fans a list of **tasks** out to workers that run **truly
 concurrently** (capped at `max_concurrency`, default 4), then returns every
 worker's result in one block. Each task names its own `backend`, so a **single
-swarm can mix Antigravity (Gemini), Codex, Copilot, Cursor, opencode and Grok**
+swarm can mix Antigravity (Gemini), Codex, Copilot, Cursor, opencode, Grok and Muse**
 workers — hand the reasoning-heavy jobs to Codex, Copilot, or Cursor, the quick ones to
 Gemini, and the ones you'd rather not spend a paid quota on to opencode, all at once. Good for independent sub-tasks: summarise N files, ask the same question
 about N repos, fix N bugs. (`antigravity_image_swarm` stays separate — it
@@ -129,8 +130,8 @@ so file access is unchanged. Measured ~**2.8× speedup at 3 agy workers** (the A
 backend does not serialize per-account); higher `max_concurrency` trades
 quota/rate-limit pressure for wall-clock.
 
-- **Per-task fields** — `backend` (`antigravity`/`codex`/`copilot`/`cursor`/`opencode`/`grok`, with
-  `oc` as an alias for opencode) and `prompt` are required; `workspace` defaults to the server cwd;
+- **Per-task fields** — `backend` (`antigravity`/`codex`/`copilot`/`cursor`/`opencode`/`grok`/`muse`,
+  with `oc` as an alias for opencode and `meta` for muse) and `prompt` are required; `workspace` defaults to the server cwd;
   `sandbox` and `model` apply to **Codex, Copilot, Cursor, opencode and Grok** (on Antigravity
   `sandbox: "read-only"` means plan mode). Swarm workers are
   **one-shot** — there is no `*_continue` for a swarm worker's session.

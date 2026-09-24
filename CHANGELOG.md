@@ -10,6 +10,34 @@ summary.
 
 ## [Unreleased]
 
+### Added
+
+- **Muse Code (Meta) as an eighth backend — experimental, and the best-verified of the three.**
+  `muse_ask`, `muse_continue` and `muse_status`, plus `muse` workers in `agent_swarm` (aliases `meta`,
+  `muse-code`) and watch mode. Muse needs a paid plan or `META_API_KEY`, which the author doesn't have,
+  so a real Muse Spark answer has never come through the bridge. Unlike Grok and Kimi, though, muse
+  ships a built-in offline `--provider echo`, and with it the whole pipeline was exercised on Muse Code
+  1.3.0 rather than read off docs: the JSONL envelope and its single `run_terminal` answer, every argv
+  in all three sandbox modes, `--session-id` creating *and* resuming a session, the cross-workspace
+  resume refusal, `muse export --last` as the restart-proof continue fallback, the logged-out error,
+  and four concurrent runs. `test_muse.py` re-runs all of it against the real binary when muse is
+  installed (skipped in CI, which has none), on top of offline unit tests with fixtures copied from
+  real output.
+
+  Design choices worth knowing:
+  - **On Windows the bridge runs `muse-bin-<version>.exe` directly**, not the installer's `muse.cmd` →
+    PowerShell launcher chain. A `.cmd` hands its arguments to `cmd.exe` (the injection class 0.30.3
+    fixed), and Windows PowerShell 5.1 started from a PowerShell 7 environment can't load
+    `Get-FileHash`, which breaks the launcher's self-update (verified both ways). The cost: calls
+    through the bridge don't trigger muse's background self-update; running `muse` yourself does.
+  - **The prompt always travels in a file** (`--prompt-file`) — no argument ever carries user text,
+    and a prompt starting with `-` can't be read as a flag.
+  - **`read-only` switches the write, shell and web tools off** instead of relying on muse's OS
+    sandbox, so it holds on every platform — including Windows, where that sandbox needs a one-time
+    elevated setup that `muse_status` reports.
+  - **`--no-foreign-personal-context` on every run.** By default muse imports Claude Code's personal
+    skills and rules, which would include this bridge's own plugin.
+
 ## [0.30.3] - 2026-09-24
 
 ### Security
