@@ -55,14 +55,17 @@ Sponsor = "https://github.com/sponsors/SinanTufekci"
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
-# Flat layout: the distributable is the server module plus its swarm + codex +
-# copilot helpers. Without this, setuptools auto-discovery aborts because the repo
-# root also holds test_*.py.
+# Flat layout: the distributable is the server module plus every helper module
+# at the repo root. Without this, setuptools auto-discovery aborts because the
+# root also holds test_*.py. Nothing adds a new root module here for you — 0.30.1
+# shipped without proc_tree and could not start — so
+# test_every_runtime_module_is_listed_in_py_modules compares this list to disk.
 [tool.setuptools]
 py-modules = [
     "server",
     "swarm",
     "swarm_watch",
+    "proc_tree",
     "codex_bridge",
     "copilot_bridge",
     "cursor_bridge",

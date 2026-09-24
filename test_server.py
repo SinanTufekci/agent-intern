@@ -11,6 +11,7 @@ import asyncio
 import io
 import json
 import os
+import re
 import secrets
 import sqlite3
 import subprocess
@@ -3126,3 +3127,26 @@ def test_server_instructions_tell_the_host_to_relay_an_available_update():
     instr = server.mcp.instructions.lower()
     assert "bridge version" in instr, "instructions no longer point at the update row"
     assert "upgrade" in instr, "instructions no longer ask the host to relay the upgrade"
+
+
+# --------------------------------------------------------------------------
+# Packaging: every runtime module ships in the wheel
+# --------------------------------------------------------------------------
+
+
+def test_every_runtime_module_is_listed_in_py_modules():
+    # 0.30.1 shipped a wheel that could not start: proc_tree.py was new, every
+    # bridge imported it at module level, and nobody added it to py-modules. The
+    # suite stayed green because tests import from the repo root, where the file
+    # exists — only a clean install sees the wheel's contents. So compare the
+    # two lists directly: any non-test module at the root is a runtime module
+    # (the flat layout has no other place to put one) and must be in the wheel.
+    root = Path(__file__).parent
+    block = (root / "pyproject.toml").read_text(encoding="utf-8").split("py-modules = [", 1)[1]
+    listed = set(re.findall(r'"([A-Za-z_][A-Za-z0-9_]*)"', block.split("]", 1)[0]))
+    on_disk = {p.stem for p in root.glob("*.py") if not p.stem.startswith("test_")}
+    assert on_disk - listed == set(), (
+        f"not in pyproject py-modules, so missing from the published wheel: "
+        f"{sorted(on_disk - listed)}"
+    )
+    assert listed - on_disk == set(), f"py-modules lists missing files: {sorted(listed - on_disk)}"

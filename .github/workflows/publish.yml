@@ -41,5 +41,16 @@ jobs:
           echo "pyproject=$PKG  tag=$TAG"
           test "$PKG" = "$TAG" || { echo "::error::tag $TAG != pyproject version $PKG"; exit 1; }
 
+      # Last gate before an upload that can't be taken back: install the wheel
+      # into a clean venv and import it from outside the checkout. 0.30.1 went
+      # out missing a module and could not start; this is the check that would
+      # have stopped it (ci.yml runs the same one on every push).
+      - name: Import the server from a clean install
+        run: |
+          python -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install dist/*.whl
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/venv/bin/python" -c "import server; print('agent-intern', server.__version__, 'imports cleanly')"
+
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
