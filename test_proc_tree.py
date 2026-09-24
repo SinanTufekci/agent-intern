@@ -331,23 +331,20 @@ def test_no_module_kills_a_bare_process_on_timeout():
 INJECTION = 'summarise this" & echo INJECTED_MARKER & rem "'
 
 
-def test_check_args_refuses_metacharacters_for_a_batch_shim(monkeypatch):
-    monkeypatch.setattr(proc_tree.os, "name", "nt")
+def test_check_args_refuses_metacharacters_for_a_batch_shim():
     for bad in (INJECTION, "100%", "wow!", "a|b", "a > b", "a ^ b", "line1\nline2"):
         with pytest.raises(ValueError, match="batch-file shim"):
-            proc_tree.check_args([r"C:\tools\agent.CMD", "-p", bad])
+            proc_tree.check_args([r"C:\tools\agent.CMD", "-p", bad], windows=True)
 
 
-def test_check_args_allows_plain_arguments_and_real_executables(monkeypatch):
-    monkeypatch.setattr(proc_tree.os, "name", "nt")
-    proc_tree.check_args([r"C:\tools\agent.cmd", "--version", r"C:\work\repo"])
-    proc_tree.check_args([r"C:\tools\agent.exe", "-p", INJECTION])  # no cmd.exe involved
-    proc_tree.check_args([])
+def test_check_args_allows_plain_arguments_and_real_executables():
+    proc_tree.check_args([r"C:\tools\agent.cmd", "--version", r"C:\work\repo"], windows=True)
+    proc_tree.check_args([r"C:\tools\agent.exe", "-p", INJECTION], windows=True)  # no cmd.exe
+    proc_tree.check_args([], windows=True)
 
 
-def test_check_args_is_a_no_op_off_windows(monkeypatch):
-    monkeypatch.setattr(proc_tree.os, "name", "posix")
-    proc_tree.check_args(["/usr/local/bin/agent.cmd", "-p", INJECTION])
+def test_check_args_is_a_no_op_off_windows():
+    proc_tree.check_args(["/usr/local/bin/agent.cmd", "-p", INJECTION], windows=False)
 
 
 @pytest.mark.skipif(os.name != "nt", reason="cmd.exe argument parsing is Windows-only")

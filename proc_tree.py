@@ -124,14 +124,17 @@ def is_batch_file(executable: str) -> bool:
     return str(executable).lower().endswith(BATCH_SUFFIXES)
 
 
-def check_args(args: list[str]) -> None:
+def check_args(args: list[str], windows: Optional[bool] = None) -> None:
     """Refuse to pass cmd.exe metacharacters to a batch-file shim. Never mutates.
 
     A no-op off Windows and for real executables. Raises ValueError naming the
     offending characters, so the caller fails loudly instead of running whatever the
     argument smuggled in. See the note above for why escaping is not attempted.
+    `windows` defaults to the real platform; tests pass it rather than faking os.name.
     """
-    if os.name != "nt" or not args or not is_batch_file(args[0]):
+    if windows is None:
+        windows = os.name == "nt"
+    if not windows or not args or not is_batch_file(args[0]):
         return
     for arg in args[1:]:
         bad = sorted(set(str(arg)) & CMD_METACHARS)

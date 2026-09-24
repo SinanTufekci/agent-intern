@@ -104,7 +104,7 @@ CURSOR_BIN = _resolve_bin()
 _VERSION_DIR_RE = re.compile(r"^(\d{4})\.(\d{1,2})\.(\d{1,2})(-\d{2}-\d{2}-\d{2})?-[a-f0-9]+$")
 
 
-def _launch_prefix(bin_path: str) -> list[str]:
+def _launch_prefix(bin_path: str, windows: Optional[bool] = None) -> list[str]:
     """argv prefix that runs cursor-agent, bypassing cmd.exe when it is the Windows shim.
 
     The installer's `cursor-agent.CMD` hands its arguments to cmd.exe (`%*`, with
@@ -116,9 +116,12 @@ def _launch_prefix(bin_path: str) -> list[str]:
     directly is the same program with cmd.exe and PowerShell taken out. Verified
     live: `--version` and `status` answer identically both ways. Anything we can't
     resolve falls back to the shim, where proc_tree.check_args refuses a dangerous
-    prompt instead of running it.
+    prompt instead of running it. `windows` defaults to the real platform; tests pass
+    it explicitly, since faking os.name breaks pathlib off Windows.
     """
-    if os.name != "nt" or not proc_tree.is_batch_file(bin_path):
+    if windows is None:
+        windows = os.name == "nt"
+    if not windows or not proc_tree.is_batch_file(bin_path):
         return [bin_path]
     base = Path(bin_path).parent
     flat = (base / "node.exe", base / "index.js")
