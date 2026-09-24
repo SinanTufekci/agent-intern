@@ -10,6 +10,8 @@ summary.
 
 ## [Unreleased]
 
+## [0.31.1] - 2026-09-24
+
 ### Fixed
 
 - **On agy 1.2.0+, an Antigravity task that ran out of time came back as a finished answer.**
@@ -1711,7 +1713,8 @@ caller might copy becomes a guaranteed rejected call.
 
 - **BREAKING:** `antigravity_ask_stream` (superseded by watch mode).
 
-[Unreleased]: https://github.com/SinanTufekci/agent-intern/compare/v0.31.0...HEAD
+[Unreleased]: https://github.com/SinanTufekci/agent-intern/compare/v0.31.1...HEAD
+[0.31.1]: https://github.com/SinanTufekci/agent-intern/compare/v0.31.0...v0.31.1
 [0.31.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.30.3...v0.31.0
 [0.30.3]: https://github.com/SinanTufekci/agent-intern/compare/v0.30.2...v0.30.3
 [0.30.2]: https://github.com/SinanTufekci/agent-intern/compare/v0.30.1...v0.30.2
