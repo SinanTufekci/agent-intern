@@ -1,7 +1,7 @@
 {
   "name": "agent-intern",
   "displayName": "Agent Intern",
-  "version": "0.31.1",
+  "version": "0.32.0",
   "description": "Delegate to Gemini, Codex, Copilot, Cursor and opencode as sub-agents from Claude Code, on subscriptions you already pay for. Adds /agent-intern:second-opinion, :image and :doctor.",
   "author": {
     "name": "Sinan Tüfekçi",

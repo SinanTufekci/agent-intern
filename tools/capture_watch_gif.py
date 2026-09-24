@@ -174,9 +174,21 @@ def _build_gif(frames: list, out_path: str, label: str) -> None:
     # at the end (the answer, the image) all get palette entries.
     picks = [images[0], images[len(images) // 2], images[-1]]
     w, h = picks[0].size
-    stack = Image.new("RGB", (w, h * len(picks)))
+    # Median cut weighs colours by pixel count, so a 26px logo loses every slot to
+    # the dark UI and comes out grey. Append a band holding each distinct colour
+    # once, repeated to about a third of the frames' weight, so rare saturated
+    # colours get entries too.
+    tall = Image.new("RGB", (w, h * len(picks)))
     for k, im in enumerate(picks):
-        stack.paste(im, (0, h * k))
+        tall.paste(im, (0, h * k))
+    colors = [c for _, c in tall.getcolors(maxcolors=1 << 24)]
+    band_h = max(1, (w * h * len(picks)) // (3 * len(colors)))
+    band = Image.new("RGB", (len(colors), 1))
+    band.putdata(colors)
+    band = band.resize((len(colors), band_h), Image.NEAREST)
+    stack = Image.new("RGB", (max(w, len(colors)), h * len(picks) + band_h))
+    stack.paste(tall, (0, 0))
+    stack.paste(band, (0, h * len(picks)))
     master = stack.quantize(colors=COLORS, method=Image.MEDIANCUT)
     pal = [im.quantize(palette=master, dither=Image.Dither.NONE) for im in images]
 

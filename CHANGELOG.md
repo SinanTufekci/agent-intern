@@ -10,6 +10,8 @@ summary.
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-09-24
+
 ### Added
 
 - **Preset swarms: ready-made panels of agents, run with one call.** `preset_swarm(preset,
@@ -58,7 +60,9 @@ summary.
   budget of at least 300 s that the worker actually gets. The bar pinned near full and would have
   read as about to time out while opencode still had minutes left.
 - **`tools/capture_watch_gif.py` could no longer record.** It opened the viewer without the access
-  token that 0.23.1 made mandatory, so every frame it captured was a 403.
+  token that 0.23.1 made mandatory, so every frame it captured was a 403. Its GIF palette also
+  weighed colours by pixel count, which turned the small backend logos grey; it now keeps a slot for
+  every colour on screen. The README's three GIFs are re-recorded with the new windows.
 
 ## [0.31.1] - 2026-09-24
 
@@ -1763,7 +1767,8 @@ caller might copy becomes a guaranteed rejected call.
 
 - **BREAKING:** `antigravity_ask_stream` (superseded by watch mode).
 
-[Unreleased]: https://github.com/SinanTufekci/agent-intern/compare/v0.31.1...HEAD
+[Unreleased]: https://github.com/SinanTufekci/agent-intern/compare/v0.32.0...HEAD
+[0.32.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.31.1...v0.32.0
 [0.31.1]: https://github.com/SinanTufekci/agent-intern/compare/v0.31.0...v0.31.1
 [0.31.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.30.3...v0.31.0
 [0.30.3]: https://github.com/SinanTufekci/agent-intern/compare/v0.30.2...v0.30.3
