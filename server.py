@@ -557,7 +557,7 @@ with trusted prompts on trusted content."""
 # installed package metadata, which goes stale on editable installs). Keep in
 # sync with pyproject.toml's version. Compared at startup against the latest
 # tag on GitHub so a long-lived clone learns when to `git pull`.
-__version__ = "0.32.0"
+__version__ = "0.32.1"
 
 # Passed explicitly: without it the MCP handshake's serverInfo.version reports
 # fastmcp's own version, not the bridge's.
