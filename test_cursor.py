@@ -618,3 +618,31 @@ def test_launch_prefix_leaves_real_executables_alone(tmp_path):
     assert cursor_bridge._launch_prefix("/usr/local/bin/cursor-agent", windows=False) == [
         "/usr/local/bin/cursor-agent"
     ]
+
+
+def _git_bash_host_env(monkeypatch):
+    # What Claude Code on Windows hands the MCP server (issue #6).
+    monkeypatch.setenv("SHELL", r"C:\Program Files\Git\bin\bash.exe")
+    monkeypatch.setenv("MSYSTEM", "MINGW64")
+    monkeypatch.setenv("EXEPATH", r"C:\Program Files\Git\bin")
+    monkeypatch.setenv("AGENT_INTERN_TEST_KEEP", "1")
+
+
+def test_env_drops_the_git_bash_markers_cursor_picks_its_shell_from(monkeypatch):
+    # Any one of these makes cursor-agent run its Shell tool and hooks in Git Bash
+    # while it writes PowerShell, so every shell step fails.
+    _git_bash_host_env(monkeypatch)
+    env = cursor_bridge._env()
+    for key in ("SHELL", "MSYSTEM", "EXEPATH"):
+        assert key not in env
+    assert env["AGENT_INTERN_TEST_KEEP"] == "1"
+    assert env["CURSOR_INVOKED_AS"]
+    # A copy: the server's own environment keeps them.
+    assert os.environ["SHELL"] == r"C:\Program Files\Git\bin\bash.exe"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="the env override is Windows-only")
+def test_windows_spawn_kwargs_launch_cursor_without_the_git_bash_markers(monkeypatch):
+    _git_bash_host_env(monkeypatch)
+    env = cursor_bridge._spawn_kwargs()["env"]
+    assert not {"SHELL", "MSYSTEM", "EXEPATH"} & env.keys()

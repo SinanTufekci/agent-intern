@@ -198,15 +198,28 @@ def _spawn_kwargs() -> dict:
     return {"start_new_session": True}
 
 
+# Git Bash markers cursor-agent reads to pick its shell on Windows. Claude Code
+# starts MCP servers with SHELL=...\Git\bin\bash.exe (sometimes MSYSTEM/EXEPATH
+# too), and cursor-agent then runs its Shell tool and hooks in Git Bash while still
+# generating PowerShell syntax, so every shell step fails (issue #6). In the
+# 2026.09.28 bundle, a SHELL matching git…bash.exe or any MSYSTEM selects bash, and
+# the hook runner spawns `$SHELL -c`; with all three gone it falls back to pwsh,
+# the same as a cursor-agent started from a PowerShell terminal.
+_GIT_BASH_ENV_KEYS = ("SHELL", "MSYSTEM", "EXEPATH")
+
+
 def _env() -> dict:
     """Process env carrying what cursor-agent.ps1 would have set.
 
     Needed now that _launch_prefix runs node directly instead of the ps1: the
     launcher records how it was invoked and points node's compile cache at a fixed
     dir (without it every call recompiles). Both are setdefault, so a value the user
-    exported still wins.
+    exported still wins. The Git Bash markers inherited from the host are dropped
+    (see _GIT_BASH_ENV_KEYS).
     """
     env = dict(os.environ)
+    for key in _GIT_BASH_ENV_KEYS:
+        env.pop(key, None)
     env.setdefault("CURSOR_INVOKED_AS", os.path.basename(CURSOR_BIN))
     local = env.get("LOCALAPPDATA")
     if local:

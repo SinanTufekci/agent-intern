@@ -32,6 +32,18 @@ summary.
   tests that ran the real `agy --version` wherever agy was installed, so their result depended on
   the machine; they now pin "agy not installed", as on CI.
 
+### Fixed
+
+- **On Windows, every Cursor shell step failed when the bridge ran under Claude Code**
+  ([#6](https://github.com/SinanTufekci/agent-intern/issues/6)).
+  Claude Code starts MCP servers with `SHELL` set to Git Bash (`C:\Program Files\Git\bin\bash.exe`,
+  sometimes with `MSYSTEM`/`EXEPATH` too), and cursor-agent inherited it. cursor-agent picks its
+  shell from those variables, so it ran its Shell tool and hooks in Git Bash while still writing
+  PowerShell: shell steps came back with no output or exit status, and hooks failed with
+  `eval: syntax error near unexpected token '&'`. The bridge now drops the three variables before
+  launching cursor-agent, so it falls back to pwsh, as it does when started from a PowerShell
+  terminal. Other backends are unchanged.
+
 ## [0.32.0] - 2026-09-24
 
 ### Added
