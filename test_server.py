@@ -3180,6 +3180,12 @@ def test_server_wires_instructions_into_the_mcp_object():
     assert instr == server.SERVER_INSTRUCTIONS
 
 
+def test_server_reports_the_bridge_version_in_the_handshake():
+    # Without version= FastMCP puts its own version in serverInfo.version, so a
+    # client would see e.g. "3.3.1" instead of the bridge release it's running.
+    assert server.mcp.version == server.__version__
+
+
 def test_server_instructions_cover_all_backends():
     instr = server.mcp.instructions.lower()
     for backend in ("antigravity", "codex", "copilot", "cursor"):

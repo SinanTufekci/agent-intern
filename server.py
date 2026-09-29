@@ -553,13 +553,15 @@ boundary everywhere; grok's is a real one too, but only on Linux/macOS; \
 opencode's is agent-enforced, but behaves the same on every platform. Use only \
 with trusted prompts on trusted content."""
 
-mcp = FastMCP("agent-intern", instructions=SERVER_INSTRUCTIONS)
-
 # The running bridge's version — the source of truth is THIS file (not the
 # installed package metadata, which goes stale on editable installs). Keep in
 # sync with pyproject.toml's version. Compared at startup against the latest
 # tag on GitHub so a long-lived clone learns when to `git pull`.
 __version__ = "0.32.0"
+
+# Passed explicitly: without it the MCP handshake's serverInfo.version reports
+# fastmcp's own version, not the bridge's.
+mcp = FastMCP("agent-intern", instructions=SERVER_INSTRUCTIONS, version=__version__)
 
 # Logs go to stderr (stdout is the MCP protocol channel). Quiet by default;
 # set AGY_BRIDGE_DEBUG=1 for per-call diagnostics. See _configure_logging.

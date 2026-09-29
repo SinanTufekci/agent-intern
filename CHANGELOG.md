@@ -43,6 +43,8 @@ summary.
   `eval: syntax error near unexpected token '&'`. The bridge now drops the three variables before
   launching cursor-agent, so it falls back to pwsh, as it does when started from a PowerShell
   terminal. Other backends are unchanged.
+- **The MCP handshake reported fastmcp's version instead of the bridge's.** `serverInfo.version` read
+  e.g. `3.3.1`; it now carries the bridge release.
 
 ## [0.32.0] - 2026-09-24
 
