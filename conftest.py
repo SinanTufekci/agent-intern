@@ -47,6 +47,11 @@ _FORBIDDEN = {
 # Programs that start another one named in their next few arguments.
 _LAUNCHERS = {"cmd", "node", "powershell", "pwsh", "sh", "bash", "npx", "uvx"}
 
+# test_smoke.py is a live script (`python test_smoke.py`), not a pytest module:
+# collecting it rewraps sys.stdout at import, which closes pytest's capture file
+# and crashes a bare `pytest` run before it can report anything.
+collect_ignore = ["test_smoke.py"]
+
 _REAL_POPEN = subprocess.Popen
 _trips: list[str] = []
 

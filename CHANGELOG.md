@@ -45,6 +45,9 @@ summary.
   terminal. Other backends are unchanged.
 - **The MCP handshake reported fastmcp's version instead of the bridge's.** `serverInfo.version` read
   e.g. `3.3.1`; it now carries the bridge release.
+- **A bare `pytest` in the repo root crashed before reporting anything.** It collected the live
+  `test_smoke.py`, whose stdout rewrap closed pytest's capture file. `conftest.py` now leaves it out;
+  run it by hand as before.
 
 ## [0.32.0] - 2026-09-24
 
