@@ -24,6 +24,15 @@ summary.
   matched no backend; if none matches, every backend stays on rather than none.
   [How →](docs/setup.md#load-only-the-backends-you-use)
 
+### Fixed
+
+- **The docs named Antigravity models agy no longer has.** By agy 1.3.5 the 3.7 and 3.6 Flash
+  families, Gemini 3.1 Pro, `claude-sonnet-4-6` and `claude-opus-4-6-thinking` are gone and Claude
+  Opus 5.5 and Sonnet 5.5 are in, with no changelog entry for either. A model copied from the
+  `antigravity_ask` description was rejected before it ran. The examples now name live slugs,
+  such as `claude-sonnet-5-5-high`. The bridge is re-verified on agy 1.3.5 with no code change,
+  plan mode included. [Details →](docs/status.md#status--caveats)
+
 ### Changed
 
 - **The routing guide no longer compares the backends' sandboxes in its closing security note.**

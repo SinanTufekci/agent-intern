@@ -6,6 +6,23 @@ Version-by-version compatibility notes: what changed upstream, what the bridge d
 
 ## Status & caveats
 
+- ✅ **Re-verified on agy 1.3.5. No code change was needed, but the model catalog moved again.**
+  Thirteen releases from 1.2.10, and nothing on the bridge's path broke. These held: ask on the
+  default model, continue in the same conversation, a swarm worker, and the `/usage` table. Two
+  changelog entries looked like risks and turned out not to be:
+  - **1.3.2:** `--dangerously-skip-permissions` stopped approving plans in `/plan` mode. `plan=true`
+    still answers headlessly (58 s), writes its plan and leaves the worktree untouched.
+  - **1.2.14:** `--json-schema` now refuses a schema whose root isn't `"type": "object"`. agy
+    exits 1 before any model call, with a one-line reason the bridge passes on.
+
+  The catalog is the drift. **No changelog entry mentions it**:
+  - Gone: `gemini-3.7-flash`, `gemini-3.6-flash`, `gemini-3.1-pro`, `claude-sonnet-4-6` and
+    `claude-opus-4-6-thinking`.
+  - New: `claude-opus-5-5` and `claude-sonnet-5-5`, each with low, medium and high variants.
+  - The default stays Gemini 3.8 Flash (High).
+
+  The docs' examples now name live slugs. `claude-sonnet-5-5-high` passes the bridge's check and
+  reaches agy, but its answer is unverified: the test account's Claude quota was spent.
 - 🐛 **agy 1.2.0+ passed a timed-out answer off as a finished one — fixed, and re-verified on agy
   1.2.10.** 1.2.0 changed what an expired `--print-timeout` does: instead of failing, agy returns
   whatever it has written so far, exits 0 and reports `"status":"SUCCESS"`. The only sign is one

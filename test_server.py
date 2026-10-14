@@ -1196,13 +1196,14 @@ def test_validate_model_skips_when_list_unavailable(monkeypatch):
 # family and DROPPED the gemini-3.5-flash one, and only the first of those appears
 # in any changelog entry. This pair of tests is the only thing in the repo that
 # fired on either.
+#
+# And a third time, on 1.3.5: gemini-3.7-flash, gemini-3.6-flash, gemini-3.1-pro,
+# claude-sonnet-4-6 and claude-opus-4-6-thinking all gone, claude-sonnet-5-5 and
+# claude-opus-5-5 in, and no changelog entry from 1.2.11 on mentions any of it.
 DOCUMENTED_AGY_MODELS = [
     "gemini-3.8-flash-high",  # the default as of 1.1.25 (added the 3.8 family)
-    "gemini-3.7-flash-high",  # 1.1.16's default
-    "gemini-3.6-flash-high",  # 1.1.6's default (added the gemini-3.6-flash family)
-    "gemini-3.1-pro-high",
-    "claude-sonnet-4-6",
-    "claude-opus-4-6-thinking",
+    "claude-sonnet-5-5-high",
+    "claude-opus-5-5-high",
     "gpt-oss-120b-medium",
 ]
 

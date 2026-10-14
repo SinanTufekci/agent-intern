@@ -44,18 +44,21 @@ unchecked. `agy models` itself must be
 run with stdin closed (it blocks on an interactive terminal otherwise), same as
 -p is spawned with DEVNULL stdin.
 
-Model SLUGS (agy 1.1.5, list re-checked live on 1.2.10) — the label format CHANGED
+Model SLUGS (agy 1.1.5, list re-checked live on 1.3.5) — the label format CHANGED
 and every old example is now invalid. 1.1.5 introduced "stable, user-facing model
 slugs" that the /model picker shows and --model accepts, and `agy models` emits
 those slugs (bare through 1.1.10; as `<slug>\t<human label>` from 1.1.11 on — see
-_parse_models_output). The live list (re-read on 1.2.10, unchanged since 1.1.25) is:
-gemini-3.8-flash-{low,medium,high}, gemini-3.7-flash-{low,medium,high},
-gemini-3.6-flash-{low,medium,high}, gemini-3.1-pro-{low,high}, claude-sonnet-4-6,
-claude-opus-4-6-thinking, gpt-oss-120b-medium — 1.1.6 ADDED the gemini-3.6-flash
-family and moved the settings.json default to it, the gemini-3.7-flash family
-arrived by 1.1.16 and took the default in turn, and 1.1.25 added gemini-3.8-flash
-and moved the default onto THAT (verified live through this bridge: a call passing
-no `model` at all answered "Gemini 3.8 Flash").
+_parse_models_output). The live list (re-read on 1.3.5) is:
+gemini-3.8-flash-{low,medium,high}, claude-opus-5-5-{low,medium,high},
+claude-sonnet-5-5-{low,medium,high}, gpt-oss-120b-medium — 1.1.6 ADDED the
+gemini-3.6-flash family and moved the settings.json default to it, the
+gemini-3.7-flash family arrived by 1.1.16 and took the default in turn, and 1.1.25
+added gemini-3.8-flash and moved the default onto THAT (verified live through this
+bridge: a call passing no `model` at all answered "Gemini 3.8 Flash"). Somewhere
+between 1.2.11 and 1.3.5 the catalog shrank to the list above: gemini-3.7-flash,
+gemini-3.6-flash, gemini-3.1-pro, claude-sonnet-4-6 and claude-opus-4-6-thinking
+went, the two Claude 5.5 families came in, each with three effort variants, and
+no changelog entry says so. The default stayed on Gemini 3.8 Flash (High).
 
 Two things about the 3.8 arrival are worth keeping. Its changelog entry scopes it
 to "when connecting with a `GEMINI_API_KEY`", but it is in the catalog on the
@@ -683,6 +686,20 @@ _AGY_LOCK = threading.Lock()
 # Newer agy releases may change paths/schemas (the SQLite migration is the known
 # risk), so we warn at startup if the installed agy is newer than this.
 #
+# 1.3.5 re-verification (live, Windows): thirteen releases and a minor bump, no
+# break. Ask on the default model, continue pinning the same conversation, a
+# one-worker swarm, and `/usage` all held. 1.3.2 stopped
+# --dangerously-skip-permissions from approving the plan in /plan mode, which
+# looked like it could leave `--mode plan` waiting for a review that never comes;
+# it doesn't: plan=True answered in 58 s, wrote its plan to the brain dir and left
+# the worktree untouched. 1.2.14 made `--json-schema` refuse a root other than
+# "type": "object", with exit 1 and a one-line stderr before any model call, so
+# _normalize_json_schema still only demands an object and lets agy name the rule.
+# The only drift is the model catalog again (see the model-slug note above).
+# `--model claude-sonnet-5-5-high` passed validate_model and reached agy, which
+# answered with the account's exhausted Claude quota, so that family's answer path
+# is unverified; the slug itself is not.
+#
 # 1.2.10 re-verification (live, Windows): eleven releases and a minor bump, and one
 # REAL break. 1.2.0 made an expired --print-timeout return its partial output with
 # exit 0 and status SUCCESS, so every runner here was handing back truncated
@@ -722,7 +739,7 @@ _AGY_LOCK = threading.Lock()
 # for it. The read path was fine -- the very next bridge call wrote a real
 # transcript and status went green -- so an empty newest-conversation is a stale
 # artifact, not a regression.
-VERIFIED_AGY_VERSION = (1, 2, 10)
+VERIFIED_AGY_VERSION = (1, 3, 5)
 
 # First agy version whose print mode understands `--output-format json` (1.1.8).
 # Below this the flag is unknown to agy's parser, so the bridge must not pass it

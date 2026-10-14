@@ -77,7 +77,7 @@ def agent_swarm(
                - model:   optional model override for ANY backend — Codex's `-m`,
                           Copilot's/Cursor's/Muse's `--model`, Grok's/opencode's `-m`
                           (opencode wants "provider/model"), or Antigravity's
-                          `--model` (an agy slug like "claude-sonnet-4-6";
+                          `--model` (an agy slug like "claude-sonnet-5-5-high";
                           validated against each backend's model list). Omit for
                           each backend's default.
         max_concurrency: Max workers running at once (default 4). Higher = faster

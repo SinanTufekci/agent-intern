@@ -90,8 +90,8 @@ known-good `agy` version.
 <summary><b>Which model does Antigravity use — can I pick it?</b></summary>
 
 Yes. Pass `model` to `antigravity_ask`/`antigravity_continue` (or per task in `agent_swarm`) — it maps
-to agy's `--model`, taking any slug from `agy models` (e.g. `"gemini-3.1-pro-high"`,
-`"claude-sonnet-4-6"`). Omit it to use the `"model"` field in agy's `settings.json`, which
+to agy's `--model`, taking any slug from `agy models` (e.g. `"claude-sonnet-5-5-high"`,
+`"gemini-3.8-flash-low"`). Omit it to use the `"model"` field in agy's `settings.json`, which
 defaults to **`gemini-3.8-flash-high`** — speed-optimized for cheap tool-calling.
 
 **agy 1.1.5 renamed every model**, replacing the old human labels (`"Gemini 3.1 Pro (High)"`) with
@@ -101,11 +101,13 @@ default has since moved three times**: 1.1.6 added the `gemini-3.6-flash` family
 `gemini-3.8-flash` and moved the default onto that** (verified through the bridge: a call passing no
 `model` answers as Gemini 3.8 Flash). The same release also **dropped the whole `gemini-3.5-flash`
 family, which no changelog entry mentions** — a 3.5 slug from older docs is now rejected up front.
-The full list, re-checked live on 1.2.10 (unchanged since 1.1.25):
-`gemini-3.8-flash-low|medium|high`, `gemini-3.7-flash-low|medium|high`,
-`gemini-3.6-flash-low|medium|high`, `gemini-3.1-pro-low|high`,
-`claude-sonnet-4-6`, `claude-opus-4-6-thinking`, `gpt-oss-120b-medium`. Note the slug bakes in the
-reasoning effort, which is why the flash and pro models appear once per level. agy self-updates in
+**By 1.3.5 the catalog shrank again, and again no changelog entry says so:** the 3.7 and 3.6 Flash
+families, Gemini 3.1 Pro, `claude-sonnet-4-6` and `claude-opus-4-6-thinking` are gone, and Claude
+Opus 5.5 and Sonnet 5.5 arrived. The full list, re-checked live on 1.3.5:
+`gemini-3.8-flash-low|medium|high`, `claude-opus-5-5-low|medium|high`,
+`claude-sonnet-5-5-low|medium|high`, `gpt-oss-120b-medium`. Note the slug bakes in the
+reasoning effort, which is why each family appears once per level. The Claude and GPT models draw on
+a separate quota from the Gemini ones; `antigravity_status` shows both. agy self-updates in
 the background, so treat any list written down here — this one included — as a snapshot; `agy models`
 and `antigravity_status` are the live answer.
 

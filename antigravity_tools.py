@@ -60,17 +60,12 @@ async def antigravity_ask(
         workspace: Working directory for the conversation. Defaults to cwd.
                    Choose an existing project dir for context-aware responses.
         model: Optional model slug to run this conversation on (agy's --model),
-               e.g. "gemini-3.1-pro-high" or "claude-sonnet-4-6". Omit to use the
-               model set in agy's settings.json (gemini-3.8-flash-high as of agy
-               1.1.25). Must be one of `agy models` — an unknown slug is
-               rejected up front (agy would otherwise silently ignore it and fall
-               back to the default). agy 1.1.5 replaced the old human labels
-               ("Gemini 3.1 Pro (High)") with these slugs, and the default has
-               since moved to the gemini-3.8-flash family; the old form is no
-               longer accepted. Note 1.1.25 also DROPPED the gemini-3.5-flash
-               family with no changelog entry, so a 3.5 slug you saw in older
-               docs is now rejected. See antigravity_status / `agy models` for
-               the valid slugs.
+               e.g. "claude-sonnet-5-5-high" or "gemini-3.8-flash-low". Omit to use
+               the model set in agy's settings.json (gemini-3.8-flash-high as of
+               agy 1.3.5). Must be one of `agy models` — an unknown slug is
+               rejected up front. agy renames and drops models between releases,
+               often with no changelog entry, so a slug from older docs may be
+               gone; see antigravity_status / `agy models` for the valid ones.
         timeout_s: Max seconds to wait for agy to complete. Default 180.
         watch: If true, open a live "watch" view in your browser that streams
                agy's steps (narration + the real commands it runs) as it works.
@@ -168,7 +163,7 @@ async def antigravity_continue(
         prompt: Follow-up message.
         workspace: Working directory used by the prior conversation. Defaults to cwd.
         model: Optional model slug for this turn (agy's --model), e.g.
-               "claude-sonnet-4-6". agy's model is per-invocation, not baked into
+               "claude-sonnet-5-5-high". agy's model is per-invocation, not baked into
                the conversation, so a follow-up can run on a different model than
                the original ask — omit to use agy's settings.json default.
                Validated against `agy models`; an unknown slug is rejected (agy
