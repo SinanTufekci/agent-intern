@@ -1481,8 +1481,22 @@ def swarm_agents(
         )
         swarm_watch.open_window(n)
 
+    import server
+
     def runner(i: int) -> WorkerResult:
         t = norm[i]
+        if t["backend"] not in server.ENABLED_BACKENDS:
+            # Fails in place like a backend that isn't installed, so a preset with
+            # one member turned off still runs the rest.
+            error = (
+                f"backend {t['backend']!r} is turned off by AGENT_INTERN_BACKENDS"
+                f" (on: {', '.join(server.ENABLED_BACKENDS)})"
+            )
+            if watch:
+                import swarm_watch
+
+                swarm_watch.worker_finish(i, "error", error, 0.0)
+            return WorkerResult(i, False, error=error, workspace=t["workspace"])
         if t["backend"] == "codex":
             fn = _run_codex_worker_watched if watch else _run_codex_worker
             return fn(i, t["prompt"], t["workspace"], t["sandbox"], t["model"], timeout_s)

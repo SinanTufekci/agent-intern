@@ -167,7 +167,7 @@ def grok_status() -> str:
     backend is EXPERIMENTAL and unverified end-to-end, so a green status here means
     the setup looks right, not that a live answer has ever been confirmed.
     """
-    rows = [server._bridge_version_status()] + grok_bridge.status_rows()
+    rows = server._bridge_status_rows() + grok_bridge.status_rows()
     width = max(len(label) for label, _, _ in rows)
     lines = ["grok bridge status  (EXPERIMENTAL — community-verified only)"]
     for label, ok, detail in rows:

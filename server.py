@@ -471,31 +471,144 @@ import proc_tree
 # detail already lives in each tool's own description/annotations. The highest-
 # value content here is what a model can't infer from tool schemas alone —
 # proactive triggers, which backend to pick, and the workspace footgun.
-SERVER_INSTRUCTIONS = """\
-This server bridges eight external coding CLIs — Antigravity (Gemini), OpenAI \
-Codex, GitHub Copilot, Cursor, opencode (any model, incl. FREE ones), and three \
-EXPERIMENTAL ones, Grok Build (xAI), Kimi Code (Moonshot) and Muse Code (Meta) — into your \
-session as sub-agents that run on the USER'S OWN quota. Delegating here spends \
-that quota instead of your tokens, gets a second model-family opinion, or \
-generates images.
+#
+# The text is assembled from the backends AGENT_INTERN_BACKENDS turns on (see
+# _parse_backends), so it never routes the model to a tool the server dropped.
 
-Reach for these tools when:
+# Every backend, in the order the instructions list them.
+BACKENDS = ("antigravity", "codex", "copilot", "cursor", "grok", "opencode", "kimi", "muse")
+
+# The backends agent_swarm can dispatch to: all but Kimi.
+_SWARM_BACKENDS = frozenset(BACKENDS) - {"kimi"}
+
+_EXPERIMENTAL_BACKENDS = frozenset({"grok", "kimi", "muse"})
+
+# How the opening sentence names each backend.
+_BACKEND_TITLES = {
+    "antigravity": "Antigravity (Gemini)",
+    "codex": "OpenAI Codex",
+    "copilot": "GitHub Copilot",
+    "cursor": "Cursor",
+    "grok": "Grok Build (xAI, EXPERIMENTAL)",
+    "opencode": "opencode (any model, incl. FREE ones)",
+    "kimi": "Kimi Code (Moonshot, EXPERIMENTAL)",
+    "muse": "Muse Code (Meta, EXPERIMENTAL)",
+}
+
+# Each backend's line under "Pick a backend".
+_BACKEND_GUIDES = {
+    "antigravity": """\
+- antigravity_* (Gemini) — fast, cheap tool-calling; the ONLY image model. No \
+real sandbox, so trusted prompts only.""",
+    "codex": """\
+- codex_* (OpenAI) — strongest reasoning and real repo edits behind a REAL \
+enforced sandbox (read-only by default; pass sandbox="workspace-write" to let \
+it edit files).""",
+    "copilot": """\
+- copilot_* (GitHub) — agentic coding on a Copilot plan; sandbox is best-effort, \
+not an OS boundary.""",
+    "cursor": """\
+- cursor_* (Cursor) — agentic coding on a Cursor plan, with a wide model menu \
+(GPT/Claude/Grok/Composer via `model`); sandbox is agent-enforced (read-only = \
+ask mode), not an OS boundary.""",
+    "grok": """\
+- grok_* (Grok Build, xAI — EXPERIMENTAL, never live-verified) — needs SuperGrok \
+/ X Premium+ or XAI_API_KEY. Real OS sandbox, but on LINUX/macOS ONLY: on Windows \
+it silently does not enforce, so read-only there rests on a tool allowlist.""",
+    "opencode": """\
+- opencode_* (opencode, SST) — the ONLY backend that needs no subscription: its \
+free `opencode/*` models answer with zero credentials, so reach for it when the \
+user has no other plan, when you want a model family none of the others cover, \
+or to spare a paid quota. Add a key for Claude/GPT-class models. Sandbox is \
+agent-enforced (a permission policy), not an OS boundary, but it behaves the \
+same on every platform. Free models are SLOW — allow minutes, not seconds.""",
+    "kimi": """\
+- kimi_* (Kimi Code, Moonshot — EXPERIMENTAL, never live-verified) — Kimi K2 \
+family; like antigravity it has NO sandbox and auto-executes tools, so trusted \
+prompts only. Needs `kimi login` or an API key.""",
+    "muse": """\
+- muse_* (Muse Code, Meta — EXPERIMENTAL; real model never live-verified) — Muse \
+Spark models; needs a Muse plan (`muse login`) or META_API_KEY. read-only switches \
+its write/shell/web tools off, so it holds on every OS.""",
+}
+
+
+def _parse_backends(raw: Optional[str]) -> tuple[tuple[str, ...], list[str]]:
+    """The backends AGENT_INTERN_BACKENDS turns on, and the names in it that match none.
+
+    `raw` is a comma- or space-separated list of BACKENDS names, in any case.
+    Unset or blank turns every backend on. So does a list in which no name
+    matches, since a server with no backend has nothing to offer; the caller warns
+    about the unknown names either way.
+    """
+    if not raw or not raw.strip():
+        return BACKENDS, []
+    names = [n.lower() for n in re.split(r"[,\s]+", raw.strip()) if n]
+    unknown = [n for n in names if n not in BACKENDS]
+    enabled = tuple(b for b in BACKENDS if b in names)
+    return (enabled or BACKENDS), unknown
+
+
+def _server_instructions(enabled: tuple[str, ...]) -> str:
+    """The routing guide, covering only the `enabled` backends and their tools."""
+    titles = [_BACKEND_TITLES[b] for b in enabled]
+    named = titles[0] if len(titles) == 1 else ", ".join(titles[:-1]) + " and " + titles[-1]
+    clis = "an external coding CLI" if len(enabled) == 1 else "external coding CLIs"
+    if "antigravity" in enabled:
+        gains = (
+            "spends that quota instead of your tokens, gets a second model-family "
+            "opinion, or generates images"
+        )
+    else:
+        gains = "spends that quota instead of your tokens or gets a second model-family opinion"
+    intro = f"""\
+This server bridges {clis} — {named} — into your session as sub-agents that run \
+on the USER'S OWN quota. Delegating here {gains}."""
+
+    triggers = []
+    if "antigravity" in enabled:
+        triggers.append("""\
 - the user wants an IMAGE — antigravity_image is your only image generator \
-(antigravity_image_swarm for several at once).
+(antigravity_image_swarm for several at once).""")
+    if _SWARM_BACKENDS.intersection(enabled):
+        triggers.append("""\
 - a job splits into many independent sub-tasks — agent_swarm runs them in \
 parallel, mixing any backends in one call.
 - the user wants something JUDGED, RESEARCHED or ATTACKED by several models — \
 preset_swarm runs a ready-made panel in one call: jury (rubric scores, \
-aggregated), research, red-team, council (code review). swarm_presets lists them.
+aggregated), research, red-team, council (code review). swarm_presets lists them.""")
+    triggers.append("""\
 - the work is bulk and mechanical (a rename across 30 files, boilerplate, a \
 first-pass port) — cheap for a sub-agent, expensive in your context.
 - you want a heavier or different-family model's take: a second opinion on a \
-risky diff, or a design call where one model's blind spot is the whole risk.
+risky diff, or a design call where one model's blind spot is the whole risk.""")
 
+    guides = [_BACKEND_GUIDES[b] for b in enabled]
+    if _EXPERIMENTAL_BACKENDS.intersection(enabled):
+        guides.append("""\
+The experimental backends are unproven end-to-end: run their *_status first, and \
+tell the user plainly if one fails rather than retrying blindly.""")
+    pick = "Pick a backend:" if len(enabled) > 1 else "The backend:"
+
+    return f"""\
+{intro}
+
+Reach for these tools when:
+{chr(10).join(triggers)}
+
+{_INSTRUCTIONS_OFFER}
+
+{pick}
+{chr(10).join(guides)}
+
+{_INSTRUCTIONS_MECHANICS}"""
+
+
+_INSTRUCTIONS_OFFER = """\
 OFFER IT — don't wait to be asked. On a task that fits the triggers above, say \
 so in ONE line before you start: name the backend, the reason, and ask. \
-("This is 6 independent files — want me to farm it out to Gemini in parallel \
-instead of grinding through them here?") The user is paying for these plans \
+("This is 6 independent files — want me to farm them out in parallel instead \
+of grinding through them here?") The user is paying for these plans \
 already; a delegation they never hear about is one they can never take. Then \
 respect the answer: ask ONCE per task, never once per turn, and if they decline, \
 drop it for the rest of that task. Delegate without asking only for images, or \
@@ -503,37 +616,9 @@ where the user has already said to delegate this kind of work.
 
 Don't offer, and don't delegate, when the job is a couple of tool calls, when it \
 leans on context only this conversation has, or when the ~10-30s round trip costs \
-more than just doing it. A suggestion on every task is nagging, not help.
+more than just doing it. A suggestion on every task is nagging, not help."""
 
-Pick a backend:
-- antigravity_* (Gemini) — fast, cheap tool-calling; the ONLY image model. No \
-real sandbox, so trusted prompts only.
-- codex_* (OpenAI) — strongest reasoning and real repo edits behind a REAL \
-enforced sandbox (read-only by default; pass sandbox="workspace-write" to let \
-it edit files).
-- copilot_* (GitHub) — agentic coding on a Copilot plan; sandbox is best-effort, \
-not an OS boundary.
-- cursor_* (Cursor) — agentic coding on a Cursor plan, with a wide model menu \
-(GPT/Claude/Grok/Composer via `model`); sandbox is agent-enforced (read-only = \
-ask mode), not an OS boundary.
-- grok_* (Grok Build, xAI — EXPERIMENTAL, never live-verified) — needs SuperGrok \
-/ X Premium+ or XAI_API_KEY. Real OS sandbox, but on LINUX/macOS ONLY: on Windows \
-it silently does not enforce, so read-only there rests on a tool allowlist.
-- opencode_* (opencode, SST) — the ONLY backend that needs no subscription: its \
-free `opencode/*` models answer with zero credentials, so reach for it when the \
-user has no other plan, when you want a model family none of the others cover, \
-or to spare a paid quota. Add a key for Claude/GPT-class models. Sandbox is \
-agent-enforced (a permission policy), not an OS boundary, but it behaves the \
-same on every platform. Free models are SLOW — allow minutes, not seconds.
-- kimi_* (Kimi Code, Moonshot — EXPERIMENTAL, never live-verified) — Kimi K2 \
-family; like antigravity it has NO sandbox and auto-executes tools, so trusted \
-prompts only. Needs `kimi login` or an API key.
-- muse_* (Muse Code, Meta — EXPERIMENTAL; real model never live-verified) — Muse \
-Spark models; needs a Muse plan (`muse login`) or META_API_KEY. read-only switches \
-its write/shell/web tools off, so it holds on every OS.
-The experimental backends are unproven end-to-end: run their *_status first, and \
-tell the user plainly if one fails rather than retrying blindly.
-
+_INSTRUCTIONS_MECHANICS = """\
 Mechanics:
 - Pass `workspace` = the relevant project directory. It defaults to the server's \
 cwd, so WITHOUT it the sub-agent answers with no repo context — this is the most \
@@ -548,10 +633,14 @@ NEWER bridge release is out; if it does, tell the user in one line and give the 
 upgrade command the row names. The startup notice for this only reaches the \
 host's logs, so relaying it is the one way they hear about it.
 
-Security: they all run as autonomous agents. Codex's sandbox is the only hard \
-boundary everywhere; grok's is a real one too, but only on Linux/macOS; \
-opencode's is agent-enforced, but behaves the same on every platform. Use only \
-with trusted prompts on trusted content."""
+Security: every backend here runs as an autonomous agent, and only a real OS \
+sandbox (see each backend above) is a hard boundary. Use only with trusted \
+prompts on trusted content."""
+
+# Read once at import, like AGY_BIN below; the launching process's environment wins.
+ENABLED_BACKENDS, _UNKNOWN_BACKENDS = _parse_backends(os.environ.get("AGENT_INTERN_BACKENDS"))
+
+SERVER_INSTRUCTIONS = _server_instructions(ENABLED_BACKENDS)
 
 # The running bridge's version — the source of truth is THIS file (not the
 # installed package metadata, which goes stale on editable installs). Keep in
@@ -897,6 +986,8 @@ def _startup_checks() -> None:
     locally; the update check polls GitHub (skipped via AGY_BRIDGE_NO_UPDATE_CHECK,
     silent on any network failure).
     """
+    if _UNKNOWN_BACKENDS:
+        log.warning(_backends_status()[2])
     agy_warning = _compat_warning(_parse_agy_version(_get_agy_version() or ""))
     if agy_warning:
         log.warning(agy_warning)
@@ -1364,6 +1455,32 @@ def _bridge_version_status() -> tuple[str, bool, str]:
     return (label, True, f"v{__version__} (latest)")
 
 
+def _backends_status() -> tuple[str, bool, str]:
+    """Status row for AGENT_INTERN_BACKENDS: which backends are on, and any name in
+    it that matched none, which is the one thing that makes the row a problem."""
+    off = [b for b in BACKENDS if b not in ENABLED_BACKENDS]
+    detail = f"on: {', '.join(ENABLED_BACKENDS)}"
+    if off:
+        detail += f"; off: {', '.join(off)}"
+    detail += " (AGENT_INTERN_BACKENDS)"
+    if _UNKNOWN_BACKENDS:
+        detail += (
+            f"; ignored unknown name(s) {', '.join(map(repr, _UNKNOWN_BACKENDS))}"
+            f" — valid: {', '.join(BACKENDS)}"
+        )
+    return ("backends", not _UNKNOWN_BACKENDS, detail)
+
+
+def _bridge_status_rows() -> list[tuple[str, bool, str]]:
+    """The rows every *_status opens with: the bridge's version, then, when
+    AGENT_INTERN_BACKENDS turns a backend off or names an unknown one, the
+    backends row."""
+    rows = [_bridge_version_status()]
+    if ENABLED_BACKENDS != BACKENDS or _UNKNOWN_BACKENDS:
+        rows.append(_backends_status())
+    return rows
+
+
 def _collect_status() -> list[tuple[str, bool, str]]:
     """Gather setup diagnostics as (label, ok, detail) rows.
 
@@ -1373,7 +1490,7 @@ def _collect_status() -> list[tuple[str, bool, str]]:
     AGY_BRIDGE_NO_UPDATE_CHECK is set) makes one best-effort GitHub call to report
     whether a newer bridge release exists.
     """
-    rows: list[tuple[str, bool, str]] = [_bridge_version_status()]
+    rows: list[tuple[str, bool, str]] = _bridge_status_rows()
 
     version = _parse_agy_version(_get_agy_version() or "")
     if version is None:
@@ -2649,6 +2766,26 @@ _TOOL_MODULES = (
     opencode_tools,
     muse_tools,
 )
+
+
+def _dropped_tools(enabled: tuple[str, ...]) -> list[str]:
+    """The tools to drop when only the `enabled` backends are on: every other
+    backend's, plus the swarm tools when no backend left on can be a swarm worker.
+
+    A module's tools are the public names in its __all__; the rest are helpers.
+    """
+    modules = {m.__name__.removesuffix("_tools"): m for m in _TOOL_MODULES}
+    off = [b for b in BACKENDS if b not in enabled]
+    if not _SWARM_BACKENDS.intersection(enabled):
+        off.append("swarm")
+    return [n for b in off for n in modules[b].__all__ if not n.startswith("_")]
+
+
+# AGENT_INTERN_BACKENDS: a backend left off costs no context. Its module stays
+# imported, so swarm.py and server.<name> still reach its code.
+for _name in _dropped_tools(ENABLED_BACKENDS):
+    # fastmcp 3 deprecates mcp.remove_tool for the provider's; 2.x has only mcp's.
+    getattr(mcp, "local_provider", mcp).remove_tool(_name)
 
 
 def __getattr__(name: str):

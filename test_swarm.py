@@ -434,6 +434,42 @@ def test_swarm_agents_empty_returns_empty():
     assert swarm.swarm_agents([]) == []
 
 
+def test_swarm_agents_fails_a_turned_off_backend_in_place(monkeypatch):
+    # AGENT_INTERN_BACKENDS left copilot off: its worker fails without launching
+    # anything, and the codex worker still answers, the way a preset with one
+    # member not installed still runs the rest.
+    monkeypatch.setattr(server, "ENABLED_BACKENDS", ("codex",))
+
+    def fake_codex(index, prompt, workspace, sandbox, model, timeout_s):
+        return swarm.WorkerResult(index, True, answer="cdx:" + prompt, workspace=workspace)
+
+    def no_copilot(*a, **k):
+        raise AssertionError("a turned-off backend must not be launched")
+
+    monkeypatch.setattr(swarm, "_run_codex_worker", fake_codex)
+    monkeypatch.setattr(swarm, "_run_copilot_worker", no_copilot)
+
+    results = swarm.swarm_agents(
+        [{"backend": "codex", "prompt": "p0"}, {"backend": "copilot", "prompt": "p1"}],
+        timeout_s=5,
+    )
+    results.sort(key=lambda r: r.index)
+    assert results[0].ok and results[0].answer == "cdx:p0"
+    assert not results[1].ok and results[1].backend == "copilot"
+    assert "'copilot' is turned off by AGENT_INTERN_BACKENDS (on: codex)" in results[1].error
+
+
+def test_swarm_agents_marks_a_turned_off_backend_failed_on_the_dashboard(monkeypatch):
+    # Without the worker_finish, its card would sit at "queued" forever.
+    monkeypatch.setattr(server, "ENABLED_BACKENDS", ("codex",))
+    monkeypatch.setattr(swarm_watch, "open_window", lambda n: None)
+
+    swarm.swarm_agents([{"backend": "copilot", "prompt": "p0"}], timeout_s=5, watch=True)
+    (worker,) = swarm_watch._snapshot()["workers"]
+    assert worker["status"] == "error"
+    assert "turned off by AGENT_INTERN_BACKENDS" in worker["answer"]
+
+
 def test_format_agent_results_tags_backend():
     results = [
         swarm.WorkerResult(

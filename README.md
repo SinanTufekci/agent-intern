@@ -152,7 +152,8 @@ confident, unsourced answer. [Details →](https://github.com/SinanTufekci/agent
 Every backend gets `*_ask`, `*_continue` (resume the same thread) and `*_status` (diagnostics, no
 quota spent). Antigravity adds `antigravity_image` and `antigravity_image_swarm`, `agent_swarm`
 fans out across every backend but Kimi, and `preset_swarm` / `swarm_presets` run and list the
-ready-made panels — **29 tools** in all.
+ready-made panels — **29 tools** in all. Only use some backends? Set `AGENT_INTERN_BACKENDS` and the
+rest stay out of Claude's context. [How →](https://github.com/SinanTufekci/agent-intern/blob/main/docs/setup.md#load-only-the-backends-you-use)
 [Tool reference →](https://github.com/SinanTufekci/agent-intern/blob/main/docs/tools.md) ·
 [How each backend is driven →](https://github.com/SinanTufekci/agent-intern/blob/main/docs/backends.md)
 

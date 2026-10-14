@@ -160,7 +160,7 @@ def copilot_status() -> str:
     workspace sessions are pinned this run. Use this to debug "copilot not found"
     or auth errors before a call.
     """
-    rows = [server._bridge_version_status()] + copilot_bridge.status_rows()
+    rows = server._bridge_status_rows() + copilot_bridge.status_rows()
     width = max(len(label) for label, _, _ in rows)
     lines = ["copilot bridge status"]
     for label, ok, detail in rows:

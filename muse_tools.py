@@ -158,7 +158,7 @@ def muse_status() -> str:
     backend is EXPERIMENTAL: green here means the setup looks right, not that a real
     answer has ever been confirmed.
     """
-    rows = [server._bridge_version_status()] + muse_bridge.status_rows()
+    rows = server._bridge_status_rows() + muse_bridge.status_rows()
     width = max(len(label) for label, _, _ in rows)
     lines = ["muse bridge status  (EXPERIMENTAL — community-verified only)"]
     for label, ok, detail in rows:

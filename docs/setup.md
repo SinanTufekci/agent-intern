@@ -19,7 +19,8 @@ Every install path, per-backend prerequisites, and the `*_BIN` overrides for CLI
   Anthropic/OpenAI/… key.
 
 You don't need all eight — the tools for a missing CLI simply report "not found" via their `*_status`
-tool. If you have no subscriptions at all, start with opencode.
+tool. If you have no subscriptions at all, start with opencode. To leave the ones you don't use out of
+Claude's context, see [Load only the backends you use](#load-only-the-backends-you-use).
 
 ### Recommended — the Claude Code plugin
 
@@ -111,7 +112,7 @@ Then point Claude Code at the absolute path to `server.py` under `mcpServers` in
 </td></tr>
 </table>
 
-Restart Claude Code. **Twenty-seven tools** appear, each prefixed `mcp__agent-intern__`:
+Restart Claude Code. **Twenty-nine tools** appear, each prefixed `mcp__agent-intern__`:
 
 - **Antigravity (5):** `antigravity_ask`, `antigravity_continue`, `antigravity_image`,
   `antigravity_image_swarm`, `antigravity_status`
@@ -122,8 +123,8 @@ Restart Claude Code. **Twenty-seven tools** appear, each prefixed `mcp__agent-in
 - **opencode (3):** `opencode_ask`, `opencode_continue`, `opencode_status`
 - **Muse (3, experimental):** `muse_ask`, `muse_continue`, `muse_status`
 - **Kimi (3, experimental):** `kimi_ask`, `kimi_continue`, `kimi_status`
-- **Shared (1):** `agent_swarm` — fans a list of tasks out across **seven** backends in one run
-  (everything but Kimi)
+- **Shared (3):** `agent_swarm` — fans a list of tasks out across **seven** backends in one run
+  (everything but Kimi); `preset_swarm` and `swarm_presets` — run and list the ready-made panels
 
 The single-prompt tools — Antigravity, Codex, Copilot, Cursor, **and** Grok — take a **`watch=true`**
 flag for the live browser view ([Watch mode](watch-and-swarm.md#watch-mode)). Kimi has no watch mode yet.
@@ -139,6 +140,33 @@ flag for the live browser view ([Watch mode](watch-and-swarm.md#watch-mode)). Ki
 > prompt through the bridge, agy reads the file under the workspace root, and the answer comes back
 > as a plain string. Swap in `codex_ask`, `copilot_ask`, or `cursor_ask` to have GPT, Copilot, or Cursor
 do the same.
+
+### Load only the backends you use
+
+Every tool's description, and the routing guide, sit in the model's context in every session: about
+15,500 tokens for all 29 tools. List the backends you use in **`AGENT_INTERN_BACKENDS`** and the
+server leaves the rest out, both their tools and their part of the routing guide. With
+`antigravity,codex` that is 11 tools and about 7,500 tokens; with `codex` alone, 6 tools and about
+4,000.
+
+```bash
+claude mcp add -s user agent-intern -e AGENT_INTERN_BACKENDS=antigravity,codex -- uvx agent-intern
+```
+
+The names are `antigravity`, `codex`, `copilot`, `cursor`, `grok`, `opencode`, `kimi` and `muse`,
+separated by commas or spaces. Unset, every backend is on. The plugin's server takes Claude Code's
+own environment, so with the plugin, set the variable in the `env` block of
+`~/.claude/settings.json` or in the shell you start Claude Code from. Restart Claude Code after a
+change.
+
+- A backend that's off has no tools at all, `*_status` included. Every other backend's `*_status`
+  shows a `backends` row with what is on and off.
+- An `agent_swarm` or `preset_swarm` worker on a backend that's off fails in place, as it would if
+  that CLI weren't installed. The rest of the panel still runs.
+- The three shared tools stay while any backend that can be a swarm worker is on (every one but
+  Kimi).
+- A name that matches no backend is ignored, and the `backends` row flags it. If no name matches,
+  every backend stays on.
 
 ## Requirements
 

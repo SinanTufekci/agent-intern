@@ -21,6 +21,12 @@ import webbrowser
 
 import pytest
 
+# server reads this at import and drops the tools of every backend it leaves out,
+# so a developer who set it for their own Claude Code would see tests fail for
+# tools that are simply not registered. Pytest loads this file before any test
+# module imports server.
+os.environ.pop("AGENT_INTERN_BACKENDS", None)
+
 # What a unit test must never start: the agent CLIs, and the browsers the watch
 # window opens in. Matched on the executable's name without its extension.
 _FORBIDDEN = {

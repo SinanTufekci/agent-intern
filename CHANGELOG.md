@@ -10,6 +10,26 @@ summary.
 
 ## [Unreleased]
 
+### Added
+
+- **`AGENT_INTERN_BACKENDS` keeps the backends you don't use out of Claude's context.** All 29
+  tools' descriptions and the routing guide come to about 15,500 tokens in every session, whether
+  or not you have the CLIs behind them. List the backends you use, say
+  `AGENT_INTERN_BACKENDS=antigravity,codex`, and the server leaves the rest out: their tools, and
+  their part of the routing guide, which never names a tool the server dropped. That example comes
+  to 11 tools and about 7,500 tokens; `codex` alone, to 6 tools and about 4,000. Unset, nothing
+  changes. A swarm or preset worker on a backend that's off fails in place without launching it,
+  like one whose CLI isn't installed, so a panel with one member off still runs the rest. Every
+  remaining `*_status` gains a `backends` row with what is on and off, flagging any name that
+  matched no backend; if none matches, every backend stays on rather than none.
+  [How →](docs/setup.md#load-only-the-backends-you-use)
+
+### Changed
+
+- **The routing guide no longer compares the backends' sandboxes in its closing security note.**
+  Each backend's own line already says what its sandbox enforces, and with backends turned off the
+  comparison would name ones that aren't there. Its example offer no longer names Gemini either.
+
 ## [0.32.1] - 2026-09-29
 
 ### Changed

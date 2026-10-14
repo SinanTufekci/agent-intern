@@ -12,7 +12,8 @@ allowed-tools:
   - mcp__plugin_agent-intern_intern__muse_status
 ---
 
-Call every agent-intern status tool in parallel. None of them spends quota:
+Call every agent-intern status tool you have in parallel. None of them spends quota. A backend turned
+off with `AGENT_INTERN_BACKENDS` has no status tool; the `backends` row of the others lists it.
 
 - `antigravity_status`
 - `codex_status`
@@ -29,6 +30,7 @@ Report one table with a row per backend and these columns: Backend, Ready, Versi
   - ✅ installed and signed in
   - ⚠️ installed, but not signed in or misconfigured
   - ❌ CLI not found
+  - ➖ turned off by `AGENT_INTERN_BACKENDS`. Leave its Next step empty.
 - **Next step:** the one thing to do, taken from that backend's status output, such as the login
   command. Keep it under about 12 words, and leave it empty for a backend that's ready.
 
@@ -36,6 +38,8 @@ After the table:
 
 - **A newer agent-intern release:** if any status output reports one, say so once and give the
   upgrade command it names.
+- **An unknown name in `AGENT_INTERN_BACKENDS`:** if a `backends` row flags one, say so once and give
+  the valid names it lists.
 - **No backend ready:** recommend opencode. `npm i -g opencode-ai` needs no account, and its free
   models answer with zero credentials, just slowly.
 - **Grok, Kimi and Muse:** mark them experimental, because no real model has ever answered through

@@ -130,7 +130,7 @@ def kimi_status() -> str:
     Kimi stores its data. This backend is unverified, so expect the auth row to say
     "no providers configured" until you log in.
     """
-    rows = [server._bridge_version_status()] + kimi_bridge.status_rows()
+    rows = server._bridge_status_rows() + kimi_bridge.status_rows()
     width = max(len(label) for label, _, _ in rows)
     lines = ["kimi bridge status  (EXPERIMENTAL — community-verified only)"]
     for label, ok, detail in rows:

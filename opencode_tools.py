@@ -283,7 +283,7 @@ def opencode_status() -> str:
     here — opencode's free `opencode/*` models still answer — so that row stays ok
     as long as models are listed.
     """
-    rows = [server._bridge_version_status()] + opencode_bridge.status_rows()
+    rows = server._bridge_status_rows() + opencode_bridge.status_rows()
     width = max(len(label) for label, _, _ in rows)
     lines = ["opencode bridge status"]
     for label, ok, detail in rows:

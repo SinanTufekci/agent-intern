@@ -513,6 +513,119 @@ def test_collect_status_first_row_is_bridge_version(monkeypatch):
 
 
 # --------------------------------------------------------------------------
+# AGENT_INTERN_BACKENDS  (a backend left off costs no context)
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("raw", [None, "", "  ", " , "])
+def test_parse_backends_unset_turns_every_backend_on(raw):
+    assert server._parse_backends(raw) == (server.BACKENDS, [])
+
+
+def test_parse_backends_keeps_backends_order_and_reports_unknown_names():
+    enabled, unknown = server._parse_backends(" Codex, gemini antigravity,,codex ")
+    assert enabled == ("antigravity", "codex")
+    assert unknown == ["gemini"]
+
+
+def test_parse_backends_with_no_valid_name_keeps_every_backend():
+    # A typo must not leave the server with no tools at all.
+    assert server._parse_backends("codx") == (server.BACKENDS, ["codx"])
+
+
+def test_instructions_for_every_backend_cover_every_tool_family():
+    text = server._server_instructions(server.BACKENDS)
+    for b in server.BACKENDS:
+        assert f"- {b}_* (" in text
+    for tool in ("antigravity_image", "agent_swarm", "preset_swarm"):
+        assert tool in text
+    assert "EXPERIMENTAL" in text
+    assert text == server.SERVER_INSTRUCTIONS  # the test run sets no filter
+
+
+def test_instructions_never_mention_a_backend_that_is_off():
+    # Routing the model to a tool the server dropped is worse than the tokens.
+    text = server._server_instructions(("codex",))
+    assert "- codex_* (" in text
+    for word in ("antigravity", "Gemini", "EXPERIMENTAL", "copilot", "opencode", "kimi"):
+        assert word not in text
+    assert "an external coding CLI — OpenAI Codex —" in text
+    assert "your tokens or gets a second model-family opinion." in text
+    assert "agent_swarm" in text  # codex can be a swarm worker
+
+
+def test_instructions_without_a_swarm_backend_drop_the_swarm_triggers():
+    text = server._server_instructions(("kimi",))
+    assert "agent_swarm" not in text and "preset_swarm" not in text
+    assert "experimental backends are unproven" in text
+
+
+def test_every_tool_belongs_to_one_module_public_all():
+    # _dropped_tools finds a backend's tools by its module's public __all__, so a
+    # tool missing from __all__ would survive its backend being turned off.
+    owned = [n for m in server._TOOL_MODULES for n in m.__all__ if not n.startswith("_")]
+    assert len(owned) == len(set(owned))
+    assert set(owned) == _registered_tool_names()
+
+
+def test_dropped_tools():
+    assert server._dropped_tools(server.BACKENDS) == []
+    kept = _registered_tool_names() - set(server._dropped_tools(("codex", "kimi")))
+    assert kept == {
+        *("codex_ask", "codex_continue", "codex_status"),
+        *("kimi_ask", "kimi_continue", "kimi_status"),
+        *("agent_swarm", "preset_swarm", "swarm_presets"),
+    }
+    # Kimi can't be a swarm worker, so on its own the swarm tools go too.
+    kept = _registered_tool_names() - set(server._dropped_tools(("kimi",)))
+    assert kept == {"kimi_ask", "kimi_continue", "kimi_status"}
+
+
+def test_backends_env_var_filters_the_served_tools_and_instructions():
+    # End to end, in a fresh interpreter: the filter is applied at import.
+    script = (
+        "import asyncio, json, server\n"
+        "tools = sorted(t.name for t in asyncio.run(server.mcp.list_tools()))\n"
+        "print(json.dumps([tools, server.mcp.instructions]))\n"
+    )
+    env = {**os.environ, "AGENT_INTERN_BACKENDS": "codex"}
+    proc = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=Path(__file__).parent,
+        env=env,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+    )
+    assert proc.returncode == 0, proc.stderr
+    tools, instructions = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert tools == sorted(
+        ["codex_ask", "codex_continue", "codex_status", "agent_swarm", "preset_swarm"]
+        + ["swarm_presets"]
+    )
+    assert instructions == server._server_instructions(("codex",))
+
+
+def test_bridge_status_rows_add_the_backends_row_only_when_filtered(monkeypatch):
+    monkeypatch.setattr(server, "_bridge_version_status", lambda: ("bridge version", True, "v"))
+    assert [r[0] for r in server._bridge_status_rows()] == ["bridge version"]
+
+    monkeypatch.setattr(server, "ENABLED_BACKENDS", ("antigravity", "codex"))
+    _, (label, ok, detail) = server._bridge_status_rows()
+    assert label == "backends" and ok is True
+    assert detail.startswith("on: antigravity, codex; off: copilot, cursor, grok,")
+
+
+def test_backends_status_flags_an_unknown_name(monkeypatch):
+    # A typo silently drops the backend the user meant, so it is a problem row.
+    monkeypatch.setattr(server, "_UNKNOWN_BACKENDS", ["codx"])
+    label, ok, detail = server._backends_status()
+    assert ok is False
+    assert "ignored unknown name(s) 'codx'" in detail and "valid: antigravity, codex," in detail
+
+
+# --------------------------------------------------------------------------
 # _run_with_progress  (threaded agy run + best-effort MCP progress notifications)
 # --------------------------------------------------------------------------
 

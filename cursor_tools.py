@@ -158,7 +158,7 @@ def cursor_status() -> str:
     you're logged in (`cursor-agent status`), and where cursor stores its chats.
     Use this to debug "cursor not found" or auth errors before spending quota.
     """
-    rows = [server._bridge_version_status()] + cursor_bridge.status_rows()
+    rows = server._bridge_status_rows() + cursor_bridge.status_rows()
     width = max(len(label) for label, _, _ in rows)
     lines = ["cursor bridge status"]
     for label, ok, detail in rows:

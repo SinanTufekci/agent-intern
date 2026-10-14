@@ -163,7 +163,7 @@ def codex_status() -> str:
     its sessions, and how many workspace sessions are pinned this run. Use this to
     debug "codex not found" or auth errors before spending quota.
     """
-    rows = [server._bridge_version_status()] + codex_bridge.status_rows()
+    rows = server._bridge_status_rows() + codex_bridge.status_rows()
     width = max(len(label) for label, _, _ in rows)
     lines = ["codex bridge status"]
     for label, ok, detail in rows:
