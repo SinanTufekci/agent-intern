@@ -10,6 +10,8 @@ summary.
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-10-14
+
 ### Added
 
 - **`AGENT_INTERN_BACKENDS` keeps the backends you don't use out of Claude's context.** All 29
@@ -42,7 +44,6 @@ summary.
   `antigravity_ask` description was rejected before it ran. The examples now name live slugs,
   such as `claude-sonnet-5-5-high`. The bridge is re-verified on agy 1.3.5 with no code change,
   plan mode included. [Details →](docs/status.md#status--caveats)
-
 - **opencode's default `read-only` mode failed on every free model.** Since early October 2026
   opencode's free tier refuses a request without the `bash` tool (*"OpenCode's free tier can only
   be used from within OpenCode"*). `read-only` denied `bash`, which removes it from the request, so
@@ -1864,7 +1865,8 @@ caller might copy becomes a guaranteed rejected call.
 
 - **BREAKING:** `antigravity_ask_stream` (superseded by watch mode).
 
-[Unreleased]: https://github.com/SinanTufekci/agent-intern/compare/v0.32.1...HEAD
+[Unreleased]: https://github.com/SinanTufekci/agent-intern/compare/v0.33.0...HEAD
+[0.33.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.32.1...v0.33.0
 [0.32.1]: https://github.com/SinanTufekci/agent-intern/compare/v0.32.0...v0.32.1
 [0.32.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.31.1...v0.32.0
 [0.31.1]: https://github.com/SinanTufekci/agent-intern/compare/v0.31.0...v0.31.1
