@@ -524,3 +524,85 @@ def test_run_codex_appends_rather_than_raises(tmp_path, monkeypatch):
     )
     out = codex_bridge.run_codex("p", str(tmp_path), "read-only", None, False, 30, pin=False)
     assert out.startswith("the real answer")
+
+
+# --------------------------------------------------------------------------
+# binary resolution: an npm shim is traded for the native codex.exe
+# --------------------------------------------------------------------------
+
+
+def _npm_node_shim(path: Path, script: str) -> Path:
+    """npm's node-script cmd-shim (as npm 10 writes it), running `script`."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(  # bytes, so Windows text mode can't turn \r\n into \r\r\n
+        (
+            "@ECHO off\r\nGOTO start\r\n:find_dp0\r\nSET dp0=%~dp0\r\nEXIT /b\r\n:start\r\n"
+            "SETLOCAL\r\nCALL :find_dp0\r\n\r\n"
+            'IF EXIST "%dp0%\\node.exe" (\r\n  SET "_prog=%dp0%\\node.exe"\r\n) ELSE (\r\n'
+            '  SET "_prog=node"\r\n  SET PATHEXT=%PATHEXT:;.JS;=;%\r\n)\r\n\r\n'
+            'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  '
+            f'"%dp0%\\{script}" %*\r\n'
+        ).encode("ascii")
+    )
+    return path
+
+
+def _touch(path: Path) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"")
+    return path
+
+
+@pytest.fixture
+def npm_prefix(tmp_path, monkeypatch):
+    """A global npm prefix holding codex as npm installs it on Windows."""
+    monkeypatch.setattr(codex_bridge.proc_tree, "npm_archs", lambda: ["x64", "arm64"])
+    monkeypatch.setattr(codex_bridge, "CODEX_BIN_ENV", "codex")
+    shim = _npm_node_shim(tmp_path / "codex.cmd", r"node_modules\@openai\codex\bin\codex.js")
+    _touch(tmp_path / "node_modules" / "@openai" / "codex" / "bin" / "codex.js")
+    monkeypatch.setattr(codex_bridge.shutil, "which", lambda name: str(shim))
+    return tmp_path
+
+
+def test_resolve_bin_trades_an_npm_shim_for_the_native_exe_and_its_env(npm_prefix):
+    scope = npm_prefix / "node_modules" / "@openai"
+    vendor = scope / "codex-win32-x64" / "vendor" / "x86_64-pc-windows-msvc"
+    exe = _touch(vendor / "bin" / "codex.exe")
+    assert codex_bridge._resolve_bin() == (
+        str(exe),
+        {
+            "CODEX_MANAGED_PACKAGE_ROOT": os.path.realpath(scope / "codex"),
+            "CODEX_MANAGED_BY_NPM": "1",
+        },
+    )
+
+
+def test_resolve_bin_falls_back_to_the_codex_package_vendor_dir(npm_prefix):
+    # codex.js's own fallback when the platform package can't be resolved.
+    package = npm_prefix / "node_modules" / "@openai" / "codex"
+    exe = _touch(package / "vendor" / "aarch64-pc-windows-msvc" / "bin" / "codex.exe")
+    assert codex_bridge._resolve_bin()[0] == str(exe)
+
+
+def test_resolve_bin_keeps_the_shim_path_when_no_native_exe_exists(npm_prefix):
+    assert codex_bridge._resolve_bin() == (str(npm_prefix / "codex.cmd"), {})
+
+
+@pytest.mark.parametrize("found", [None, "C:/Programs/OpenAI/Codex/bin/codex.exe"])
+def test_resolve_bin_leaves_a_native_install_or_a_missing_one_as_named(monkeypatch, found):
+    monkeypatch.setattr(codex_bridge, "CODEX_BIN_ENV", "codex")
+    monkeypatch.setattr(codex_bridge.shutil, "which", lambda name: found)
+    assert codex_bridge._resolve_bin() == ("codex", {})
+
+
+def test_spawn_kwargs_add_the_npm_env_only_for_an_npm_resolved_codex(monkeypatch):
+    monkeypatch.setattr(codex_bridge, "_LAUNCH_ENV", {})
+    assert "env" not in codex_bridge._spawn_kwargs()
+
+    launch = {"CODEX_MANAGED_PACKAGE_ROOT": "/p", "CODEX_MANAGED_BY_NPM": "1"}
+    monkeypatch.setattr(codex_bridge, "_LAUNCH_ENV", launch)
+    monkeypatch.setenv("CODEX_MANAGED_BY_BUN", "1")  # codex.js drops any other one
+    env = codex_bridge._spawn_kwargs()["env"]
+    assert env["CODEX_MANAGED_BY_NPM"] == "1" and env["CODEX_MANAGED_PACKAGE_ROOT"] == "/p"
+    assert "CODEX_MANAGED_BY_BUN" not in env
+    assert env["PATH"] == os.environ["PATH"]

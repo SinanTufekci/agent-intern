@@ -392,6 +392,40 @@ def test_npm_shim_target_leaves_node_script_shims_and_missing_targets_alone(tmp_
     assert proc_tree.npm_shim_target(str(tmp_path / "agent.exe")) is None
 
 
+# npm's node-script shim, verbatim from @github/copilot 1.0.97's node_modules/.bin.
+_NODE_SHIM = (
+    "@ECHO off\r\nGOTO start\r\n:find_dp0\r\nSET dp0=%~dp0\r\nEXIT /b\r\n:start\r\n"
+    "SETLOCAL\r\nCALL :find_dp0\r\n\r\n"
+    'IF EXIST "%dp0%\\node.exe" (\r\n  SET "_prog=%dp0%\\node.exe"\r\n) ELSE (\r\n'
+    '  SET "_prog=node"\r\n  SET PATHEXT=%PATHEXT:;.JS;=;%\r\n)\r\n\r\n'
+    'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  '
+    '"%dp0%\\..\\@github\\copilot\\npm-loader.js" %*\r\n'
+)
+
+
+def test_npm_shim_script_finds_the_script_and_target_ignores_the_interpreter(tmp_path):
+    bin_dir = tmp_path / "node_modules" / ".bin"
+    bin_dir.mkdir(parents=True)
+    shim = bin_dir / "copilot.cmd"
+    shim.write_bytes(_NODE_SHIM.encode("ascii"))
+    script = tmp_path / "node_modules" / "@github" / "copilot" / "npm-loader.js"
+    script.parent.mkdir(parents=True)
+    script.write_text("")
+    # node.exe beside the shim, as in an nvm-windows global prefix: the IF EXIST
+    # line quotes it, and it must not be taken for the program.
+    (bin_dir / "node.exe").write_bytes(b"MZ")
+    assert proc_tree.npm_shim_target(str(shim)) is None
+    assert proc_tree.npm_shim_script(str(shim)) == str(script)
+
+
+def test_npm_shim_script_is_none_for_exe_shims_and_missing_scripts(tmp_path):
+    exe_shim = _write_npm_shim(tmp_path, r'"%dp0%\node_modules\opencode-ai\bin\opencode.exe"')
+    assert proc_tree.npm_shim_script(str(exe_shim)) is None
+    gone = tmp_path / "gone.cmd"
+    gone.write_bytes(_NODE_SHIM.encode("ascii"))  # its npm-loader.js doesn't exist
+    assert proc_tree.npm_shim_script(str(gone)) is None
+
+
 def test_no_module_calls_subprocess_popen_directly():
     """Every spawn must pass proc_tree.check_args, which lives in popen/run_captured.
 

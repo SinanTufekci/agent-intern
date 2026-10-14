@@ -52,13 +52,19 @@ summary.
 - **`cursor_status` called an expired Cursor login ready.** With a stale saved login,
   `cursor-agent status` still prints *"Login successful!"* while every call fails with
   *"Authentication required"*. The auth row now flags it and gives the login command.
+- **On Windows, an npm-installed codex or copilot couldn't take most prompts.** npm installs both
+  as a `.cmd` shim running a node script. By bare name the bridge couldn't find it (Windows looks
+  only for a `.exe`). Named in `CODEX_BIN` or `COPILOT_BIN`, it ran through `cmd.exe`, so the
+  bridge's shim check refused any prompt with `"`, `&` or `%`, which is nearly every diff. The
+  bridge now starts the native binary the shim's script would have started, as it already did for
+  opencode. Verified on codex 0.162.1 and copilot 1.0.97: a prompt with `"`, `&` and `%` answers.
+  The shim parser also now reads only the line that launches the program, so a node shim with
+  `node.exe` beside it (nvm-windows) can't be mistaken for an exe shim.
 - **The watch view of `codex_continue` showed no earlier turns** from codex 0.149.1 on, because
   codex now records turns as `item_completed` items. Both the old and new shapes are read.
-- **Docs: verified versions** are now codex-cli 0.162.1, copilot 1.0.97, cursor-agent 2026.08.11
+- **Docs: verified versions** are now codex-cli 0.162.1, copilot 1.0.97, cursor-agent 2026.10.14
   and opencode 1.19.0. The
-  Windows read-only caveat for codex still holds on 0.162.1. A new note covers npm-installed codex
-  and copilot on Windows, which refuse prompts containing `"` or `&` until `*_BIN` points at the
-  native binary.
+  Windows read-only caveat for codex still holds on 0.162.1.
 
 ## [0.32.1] - 2026-09-29
 

@@ -67,6 +67,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 import threading
 import uuid
@@ -81,7 +82,53 @@ import proc_tree
 #   %LOCALAPPDATA%\Microsoft\WinGet\Packages\GitHub.Copilot_*\copilot.exe
 # and a terminal opened before install won't have it on PATH. Mirrors AGY_BIN /
 # CODEX_BIN. Read once at import; the launching process's env wins.
-COPILOT_BIN = os.environ.get("COPILOT_BIN", "copilot")
+COPILOT_BIN_ENV = os.environ.get("COPILOT_BIN", "copilot")
+
+
+def _npm_native(script: str) -> Optional[str]:
+    """The copilot.exe that npm's `npm-loader.js` would start, or None.
+
+    The loader resolves `@github/copilot-<platform>-<arch>` from its own package
+    and spawns the binary that package exports, with the same arguments, stdio
+    and environment; nothing else. So starting that binary directly is the same
+    program, minus node and minus cmd.exe. Looked up the way node would find it:
+    nested under the copilot package first, then hoisted beside it.
+    """
+    if os.path.basename(script).lower() != "npm-loader.js":
+        return None
+    package = os.path.dirname(script)
+    for arch in proc_tree.npm_archs():
+        for scope in (os.path.join(package, "node_modules", "@github"), os.path.dirname(package)):
+            exe = os.path.join(scope, f"copilot-win32-{arch}", "copilot.exe")
+            if os.path.isfile(exe):
+                return exe
+    return None
+
+
+def _resolve_bin() -> str:
+    """The copilot executable to launch: COPILOT_BIN_ENV, unless that is an npm shim.
+
+    npm installs copilot on Windows as a `copilot.cmd` that runs a node script, and
+    that leaves two problems. Launched by bare name, the shim isn't found at all,
+    because Windows looks only for a .exe. Launched by path, it runs through
+    cmd.exe, so proc_tree.check_args refuses every prompt with `"`, `&` or `%`,
+    which is nearly every diff. So a shim, found on PATH or named in COPILOT_BIN,
+    is traded for the native copilot.exe its script would start (see _npm_native).
+    Anything else, a winget copilot.exe included, launches as given, as before.
+    If the native binary can't be found, the shim's full path is used: it starts,
+    and check_args still refuses a dangerous prompt.
+    """
+    if os.path.sep in COPILOT_BIN_ENV or os.path.isfile(COPILOT_BIN_ENV):
+        found = COPILOT_BIN_ENV
+    else:
+        found = shutil.which(COPILOT_BIN_ENV)
+        if not found or not proc_tree.is_batch_file(found):
+            return COPILOT_BIN_ENV
+    script = proc_tree.npm_shim_script(found)
+    return (_npm_native(script) if script else None) or found
+
+
+COPILOT_BIN = _resolve_bin()
 
 # copilot's state home. It stores per-session state under
 # ~/.copilot/session-state/<id>/ (each dir has workspace.yaml + events.jsonl).

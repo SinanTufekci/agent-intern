@@ -23,22 +23,28 @@ Version-by-version compatibility notes: what changed upstream, what the bridge d
   - **copilot:** 1.0.85 moved argument parsing to a Rust grammar, and every flag the bridge passes
     still parses. Under `read-only` a file write was refused.
   - **opencode:** besides the fix above, 1.19.0 stopped installing updates on its own.
-- ✅ **Re-verified on cursor-agent 2026.08.11, and `cursor_status` now catches an expired login.**
-  Ask, continue in the same chat and a read-only file read all answered. Under `read-only` (ask
-  mode) a file write and a shell command were both refused, and nothing was written. Getting there
+- ✅ **Re-verified on cursor-agent 2026.08.11 and 2026.10.14, and `cursor_status` now catches an
+  expired login.** On both, ask, continue in the same chat and a read-only file read all answered.
+  Under `read-only` (ask mode) a file write and a shell command were both refused, and nothing was
+  written. Getting there
   took a fresh login: the saved one had expired, but `cursor-agent status` still printed *"Login
   successful!"* while every `-p` run failed with *"Authentication required"*, and
   `cursor_status` reported that as ready. It now flags it. The first call after logging in again
   timed out in `create-chat`, which the bridge gives 30 s; afterwards it took 0.4 s every time.
-  The installer currently ships 2026.10.14, which is not verified yet.
-- ⚠️ **On Windows, an npm-installed codex or copilot refuses most prompts.** npm installs both as a
-  `.cmd` shim that runs a node script. The bridge can't bypass that shim the way it does
-  opencode's, so the [shim check](security.md#windows-batch-file-shims-and-the-prompt) refuses any
-  prompt containing `" % ! ^ & | < >`, which covers nearly every diff. The standalone codex
-  installer and the winget copilot are native `.exe`s and aren't affected. Workaround: point
-  `CODEX_BIN` or `COPILOT_BIN` at the native binary npm installed alongside:
-  - `node_modules\@openai\codex-win32-x64\vendor\x86_64-pc-windows-msvc\bin\codex.exe`
-  - `node_modules\@github\copilot-win32-x64\copilot.exe`
+- 🐛 **On Windows, an npm-installed codex or copilot couldn't take most prompts. Fixed.** npm
+  installs both as a `.cmd` shim that runs a node script. Launched by bare name, the shim isn't
+  found at all, because Windows looks only for a `.exe`. Pointed at by `CODEX_BIN` or
+  `COPILOT_BIN`, it runs through `cmd.exe`, so the
+  [shim check](security.md#windows-batch-file-shims-and-the-prompt) refused any prompt containing
+  `" % ! ^ & | < >`, which covers nearly every diff. Both scripts only find and start a native
+  binary, so the bridge now starts that binary itself:
+  - codex: `@openai/codex-win32-<arch>\vendor\<triple>\bin\codex.exe`, with the two update-hint
+    variables `codex.js` sets.
+  - copilot: `@github/copilot-win32-<arch>\copilot.exe`.
+
+  Verified on codex 0.162.1 and copilot 1.0.97, with the shim named in `*_BIN` and with bare names
+  and the shims first on `PATH`: a prompt containing `"`, `&` and `%` answered through both. The
+  standalone codex installer and the winget copilot are native `.exe`s and launch as before.
 - ✅ **Re-verified on agy 1.3.5. No code change was needed, but the model catalog moved again.**
   Thirteen releases from 1.2.10, and nothing on the bridge's path broke. These held: ask on the
   default model, continue in the same conversation, a swarm worker, and the `/usage` table. Two

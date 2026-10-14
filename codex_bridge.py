@@ -57,6 +57,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import threading
@@ -72,7 +73,68 @@ import proc_tree
 #   %LOCALAPPDATA%\Programs\OpenAI\Codex\bin\codex.exe
 # and a fresh terminal/reboot can leave it off a non-login shell's PATH. Mirrors
 # AGY_BIN in server.py. Read once at import; the launching process's env wins.
-CODEX_BIN = os.environ.get("CODEX_BIN", "codex")
+CODEX_BIN_ENV = os.environ.get("CODEX_BIN", "codex")
+
+# codex's Rust target triple for each npm arch name.
+_NPM_TRIPLES = {"x64": "x86_64-pc-windows-msvc", "arm64": "aarch64-pc-windows-msvc"}
+
+
+def _npm_native(script: str) -> tuple[Optional[str], dict]:
+    """The codex.exe npm's `bin/codex.js` would start, and the env it would add.
+
+    codex.js finds `@openai/codex-<platform>-<arch>`, falling back to the codex
+    package's own vendor/ dir, and spawns `vendor/<triple>/bin/codex.exe` with the
+    same arguments and stdio. Its env adds CODEX_MANAGED_PACKAGE_ROOT and a
+    CODEX_MANAGED_BY_* flag, which only shape codex's update hints; the bridge
+    sets them the same way (npm, codex.js's own default), so the binary sees what
+    it would under the shim. (None, {}) when this isn't codex's script or the
+    binary isn't there.
+    """
+    if os.path.basename(script).lower() != "codex.js":
+        return None, {}
+    package = os.path.dirname(os.path.dirname(script))
+    for arch in proc_tree.npm_archs():
+        vendor_dirs = [
+            os.path.join(package, "node_modules", "@openai", f"codex-win32-{arch}", "vendor"),
+            os.path.join(os.path.dirname(package), f"codex-win32-{arch}", "vendor"),
+            os.path.join(package, "vendor"),
+        ]
+        for vendor in vendor_dirs:
+            exe = os.path.join(vendor, _NPM_TRIPLES[arch], "bin", "codex.exe")
+            if os.path.isfile(exe):
+                env = {"CODEX_MANAGED_PACKAGE_ROOT": os.path.realpath(package)}
+                env["CODEX_MANAGED_BY_NPM"] = "1"
+                return exe, env
+    return None, {}
+
+
+def _resolve_bin() -> tuple[str, dict]:
+    """The codex executable to launch, and any env it needs on top of ours.
+
+    CODEX_BIN_ENV as given, unless that is an npm shim. npm installs codex on
+    Windows as a `codex.cmd` that runs a node script, which Windows won't find by
+    bare name (it looks only for a .exe) and which, launched by path, runs through
+    cmd.exe, so proc_tree.check_args refuses every prompt with `"`, `&` or `%`. A
+    shim, found on PATH or named in CODEX_BIN, is traded for the native codex.exe
+    its script would start (see _npm_native). Anything else, the standalone
+    installer's codex.exe included, launches as given, as before. If the native
+    binary can't be found, the shim's full path is used: it starts, and
+    check_args still refuses a dangerous prompt.
+    """
+    if os.path.sep in CODEX_BIN_ENV or os.path.isfile(CODEX_BIN_ENV):
+        found = CODEX_BIN_ENV
+    else:
+        found = shutil.which(CODEX_BIN_ENV)
+        if not found or not proc_tree.is_batch_file(found):
+            return CODEX_BIN_ENV, {}
+    script = proc_tree.npm_shim_script(found)
+    exe, env = _npm_native(script) if script else (None, {})
+    return (exe, env) if exe else (found, {})
+
+
+# _LAUNCH_ENV is what codex.js would have added when CODEX_BIN is the binary an
+# npm shim stood for; empty otherwise, and then codex inherits our env untouched.
+CODEX_BIN, _LAUNCH_ENV = _resolve_bin()
 
 # codex's state home (config + sessions). codex honors CODEX_HOME; default ~/.codex.
 CODEX_HOME = Path(os.environ.get("CODEX_HOME") or (Path.home() / ".codex"))
@@ -161,10 +223,17 @@ def _spawn_kwargs() -> dict:
     Cosmetic only: codex writes its answer to the -o file regardless of the
     controlling terminal (it has no agy-style stdout bug). Windows uses
     CREATE_NO_WINDOW so a child console doesn't flash; POSIX starts a new session.
+    Plus `env`, only when codex was resolved from an npm shim (_LAUNCH_ENV).
     """
     if os.name == "nt":
-        return {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)}
-    return {"start_new_session": True}
+        kwargs = {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)}
+    else:
+        kwargs = {"start_new_session": True}
+    if _LAUNCH_ENV:
+        # codex.js drops every CODEX_MANAGED_BY_* before setting its own.
+        env = {k: v for k, v in os.environ.items() if not k.startswith("CODEX_MANAGED_BY_")}
+        kwargs["env"] = {**env, **_LAUNCH_ENV}
+    return kwargs
 
 
 def normalize_workspace(ws: Optional[str]) -> str:

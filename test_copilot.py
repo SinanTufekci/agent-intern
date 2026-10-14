@@ -399,3 +399,71 @@ def test_watch_lines_ignores_noise():
     assert server._copilot_event_to_watch_lines({"type": "session.mcp_servers_loaded"}) == []
     assert server._copilot_event_to_watch_lines({"type": "result", "sessionId": "x"}) == []
     assert server._copilot_event_to_watch_lines({"type": "assistant.idle", "data": {}}) == []
+
+
+# --------------------------------------------------------------------------
+# binary resolution: an npm shim is traded for the native copilot.exe
+# --------------------------------------------------------------------------
+
+
+def _npm_node_shim(path: Path, script: str) -> Path:
+    """npm's node-script cmd-shim (as npm 10 writes it), running `script`."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(  # bytes, so Windows text mode can't turn \r\n into \r\r\n
+        (
+            "@ECHO off\r\nGOTO start\r\n:find_dp0\r\nSET dp0=%~dp0\r\nEXIT /b\r\n:start\r\n"
+            "SETLOCAL\r\nCALL :find_dp0\r\n\r\n"
+            'IF EXIST "%dp0%\\node.exe" (\r\n  SET "_prog=%dp0%\\node.exe"\r\n) ELSE (\r\n'
+            '  SET "_prog=node"\r\n  SET PATHEXT=%PATHEXT:;.JS;=;%\r\n)\r\n\r\n'
+            'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  '
+            f'"%dp0%\\{script}" %*\r\n'
+        ).encode("ascii")
+    )
+    return path
+
+
+def _touch(path: Path) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"")
+    return path
+
+
+@pytest.fixture
+def npm_prefix(tmp_path, monkeypatch):
+    """A global npm prefix holding copilot as npm installs it on Windows."""
+    monkeypatch.setattr(copilot_bridge.proc_tree, "npm_archs", lambda: ["x64", "arm64"])
+    monkeypatch.setattr(copilot_bridge, "COPILOT_BIN_ENV", "copilot")
+    shim = _npm_node_shim(tmp_path / "copilot.cmd", r"node_modules\@github\copilot\npm-loader.js")
+    _touch(tmp_path / "node_modules" / "@github" / "copilot" / "npm-loader.js")
+    monkeypatch.setattr(copilot_bridge.shutil, "which", lambda name: str(shim))
+    return tmp_path
+
+
+def test_resolve_bin_trades_an_npm_shim_for_the_hoisted_native_exe(npm_prefix):
+    exe = _touch(npm_prefix / "node_modules" / "@github" / "copilot-win32-x64" / "copilot.exe")
+    assert copilot_bridge._resolve_bin() == str(exe)
+
+
+def test_resolve_bin_finds_a_platform_package_nested_under_copilot(npm_prefix):
+    nested = npm_prefix / "node_modules" / "@github" / "copilot" / "node_modules" / "@github"
+    exe = _touch(nested / "copilot-win32-arm64" / "copilot.exe")
+    assert copilot_bridge._resolve_bin() == str(exe)
+
+
+def test_resolve_bin_keeps_the_shim_path_when_no_native_exe_exists(npm_prefix):
+    # Better than the bare name, which Windows can't launch: the shim starts, and
+    # proc_tree.check_args still refuses a prompt cmd.exe would misread.
+    assert copilot_bridge._resolve_bin() == str(npm_prefix / "copilot.cmd")
+
+
+def test_resolve_bin_trades_a_shim_named_in_copilot_bin(npm_prefix, monkeypatch):
+    exe = _touch(npm_prefix / "node_modules" / "@github" / "copilot-win32-x64" / "copilot.exe")
+    monkeypatch.setattr(copilot_bridge, "COPILOT_BIN_ENV", str(npm_prefix / "copilot.cmd"))
+    assert copilot_bridge._resolve_bin() == str(exe)
+
+
+@pytest.mark.parametrize("found", [None, "C:/WinGet/Packages/GitHub.Copilot/copilot.exe"])
+def test_resolve_bin_leaves_a_native_install_or_a_missing_one_as_named(monkeypatch, found):
+    monkeypatch.setattr(copilot_bridge, "COPILOT_BIN_ENV", "copilot")
+    monkeypatch.setattr(copilot_bridge.shutil, "which", lambda name: found)
+    assert copilot_bridge._resolve_bin() == "copilot"

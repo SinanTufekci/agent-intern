@@ -213,7 +213,11 @@ against both real shims, and fixed in **0.30.3**:
 
 - **The shims are bypassed.** opencode's npm shim is resolved to the native `opencode.exe` it wraps,
   and cursor is launched as the `node.exe index.js` its own launcher would pick. `cmd.exe` is no
-  longer involved, so the prompt reaches the CLI verbatim.
+  longer involved, so the prompt reaches the CLI verbatim. Since 0.33.0 the same holds for an
+  npm-installed codex or copilot. Their shims run a node script that only finds and starts a
+  native binary, so the bridge starts that binary itself: codex's `codex.exe` from
+  `@openai/codex-win32-<arch>`, with the two update-hint variables its script sets, and
+  copilot's `copilot.exe` from `@github/copilot-win32-<arch>`.
 - **Anything still left is refused, not run.** Every spawn goes through one check: if the target is
   a `.cmd`/`.bat` and an argument contains `" % ! ^ & | < >` or a newline, the call fails with an
   error naming the backend's `*_BIN` override instead of running. A test fails the build if any

@@ -32,6 +32,7 @@ platform and its worse failure mode, completely unaddressed.
 from __future__ import annotations
 
 import os
+import platform
 import re
 import signal
 import subprocess
@@ -148,6 +149,41 @@ def check_args(args: list[str], windows: Optional[bool] = None) -> None:
             )
 
 
+def _shim_launch(shim: str) -> list[str]:
+    """The quoted tokens of the line an npm cmd-shim launches its program on.
+
+    npm's shims end in that line, the one that forwards `%*`. A token spelled from
+    `%dp0%` (the shim's own directory) comes back as an absolute path; any other
+    token, such as `%_prog%`, comes back as written. [] when `shim` isn't a
+    readable .cmd/.bat or has no such line.
+
+    Only that line is read, never the rest: a node-script shim also quotes
+    `"%dp0%\\node.exe"` in the `IF EXIST` that picks the interpreter, and where
+    node.exe sits next to the shim (nvm-windows, the nodejs folder as the global
+    prefix) that would read as the program itself.
+    """
+    if not is_batch_file(shim):
+        return []
+    try:
+        with open(shim, encoding="utf-8", errors="replace") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return []
+    launch = next((ln for ln in reversed(lines) if ln.rstrip().endswith("%*")), "")
+    base = os.path.dirname(os.path.abspath(shim))
+    tokens = []
+    for quoted in re.findall(r'"([^"]+)"', launch):
+        for prefix in ("%dp0%", "%~dp0"):
+            if quoted.lower().startswith(prefix):
+                # The shim spells its path with backslashes; "/" joins correctly on
+                # every OS, so the resolution is testable off Windows too.
+                rel = quoted[len(prefix) :].replace("\\", "/").lstrip("/")
+                quoted = os.path.normpath(os.path.join(base, rel))
+                break
+        tokens.append(quoted)
+    return tokens
+
+
 def npm_shim_target(shim: str) -> Optional[str]:
     """The native .exe an npm cmd-shim launches, or None if it isn't one.
 
@@ -155,28 +191,41 @@ def npm_shim_target(shim: str) -> Optional[str]:
         "%dp0%\\node_modules\\opencode-ai\\bin\\opencode.exe"   %*
     where `%dp0%` is the shim's own directory. When the target is a real `.exe`,
     launching it directly behaves identically minus cmd.exe — so the prompt never
-    meets cmd's parser. Shims that run `node script.js` are left alone (None): there
-    the correct target depends on npm's node-resolution logic, and guessing wrong is
-    worse than the loud refusal `check_args` gives.
+    meets cmd's parser. A shim that runs `node script.js` gives None here; see
+    npm_shim_script, and each bridge's own knowledge of what its script launches.
     """
-    if not is_batch_file(shim):
-        return None
-    try:
-        with open(shim, encoding="utf-8", errors="replace") as f:
-            text = f.read()
-    except OSError:
-        return None
-    base = os.path.dirname(os.path.abspath(shim))
-    for quoted in reversed(re.findall(r'"([^"]+\.exe)"', text, flags=re.IGNORECASE)):
-        low = quoted.lower()
-        for token in ("%dp0%", "%~dp0"):
-            if low.startswith(token):
-                # The shim spells its path with backslashes; "/" joins correctly on
-                # every OS, so the resolution is testable off Windows too.
-                rel = quoted[len(token) :].replace("\\", "/").lstrip("/")
-                candidate = os.path.normpath(os.path.join(base, rel))
-                if os.path.isfile(candidate):
-                    return candidate
+    tokens = _shim_launch(shim)
+    if tokens and tokens[0].lower().endswith(".exe") and os.path.isfile(tokens[0]):
+        return tokens[0]
+    return None
+
+
+def npm_archs() -> list[str]:
+    """CPU names in node's `process.arch` spelling, this machine's first.
+
+    npm installs the platform package for the arch of the NODE it ran under, which
+    on Windows on Arm may be x64 under emulation, so a caller looking for that
+    package should try every name in turn rather than only the native one.
+    """
+    names = {"amd64": "x64", "x86_64": "x64", "arm64": "arm64", "aarch64": "arm64"}
+    native = names.get(platform.machine().lower())
+    return [native] + [a for a in ("x64", "arm64") if a != native] if native else ["x64", "arm64"]
+
+
+def npm_shim_script(shim: str) -> Optional[str]:
+    """The .js file an npm cmd-shim runs with node, or None if it isn't one.
+
+    Such a shim ends in
+        "%_prog%"  "%dp0%\\..\\@github\\copilot\\npm-loader.js" %*
+    Where the script only finds and starts a native binary (codex's and copilot's
+    do), the bridge can start that binary itself and leave cmd.exe out. Which
+    binary, and how to start it, is the bridge's to say, since npm can't.
+    """
+    tokens = _shim_launch(shim)
+    if len(tokens) >= 2 and tokens[0].lower() == "%_prog%":
+        script = tokens[1]
+        if script.lower().endswith((".js", ".mjs", ".cjs")) and os.path.isfile(script):
+            return script
     return None
 
 
