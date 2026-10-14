@@ -238,6 +238,44 @@ def test_read_history_pairs_user_and_agent_messages(tmp_path, monkeypatch):
     ]
 
 
+def _item(kind, text, **extra):
+    # The event_msg/item_completed shape codex has written since 0.149.1, as read
+    # off a 0.162.1 rollout: user parts are "text", agent parts "Text".
+    part = "text" if kind == "UserMessage" else "Text"
+    item = {"type": kind, "id": "x", "content": [{"type": part, "text": text}], **extra}
+    return {"type": "event_msg", "payload": {"type": "item_completed", "item": item}}
+
+
+def test_read_history_reads_item_completed_messages(tmp_path, monkeypatch):
+    # Through 0.144.1 the turns were user_message/agent_message events; from
+    # 0.149.1 on they are only item_completed items, and the watch view of
+    # codex_continue showed no history at all until this was read.
+    sessions = tmp_path / "sessions"
+    monkeypatch.setattr(codex_bridge, "SESSIONS_DIR", sessions)
+    monkeypatch.setattr(codex_bridge, "_PINNED", {})
+    path = _write_rollout(sessions, SAMPLE_SID, "C:\\proj")
+    _append_events(
+        path,
+        [
+            _item("UserMessage", "first Q"),
+            {
+                "type": "event_msg",
+                "payload": {"type": "item_completed", "item": {"type": "Reasoning"}},
+            },
+            _item("AgentMessage", "I'll read it first.", phase="commentary"),
+            _item("AgentMessage", "first A", phase="final_answer"),
+            _item("UserMessage", "second Q"),
+            _item("AgentMessage", "second A"),  # no phase: an answer, as before
+        ],
+    )
+    assert codex_bridge.read_history("C:\\proj", True) == [
+        {"role": "user", "content": "first Q"},
+        {"role": "assistant", "content": "first A"},
+        {"role": "user", "content": "second Q"},
+        {"role": "assistant", "content": "second A"},
+    ]
+
+
 def test_read_history_empty_for_fresh_or_unresolved(tmp_path, monkeypatch):
     sessions = tmp_path / "sessions"
     monkeypatch.setattr(codex_bridge, "SESSIONS_DIR", sessions)

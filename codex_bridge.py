@@ -287,8 +287,11 @@ def read_history(workspace: str, continue_conv: bool) -> list[dict]:
 
     Oldest first, for the watch view's conversation history. Resolves the session
     the same way a resume would (in-memory pin, then newest matching on-disk
-    rollout), then walks its rollout JSONL pulling the clean user prompts
-    (event_msg/user_message) and final agent answers (event_msg/agent_message).
+    rollout), then walks its rollout JSONL pulling the clean user prompts and
+    final agent answers. Through 0.144.1 those are event_msg/user_message and
+    event_msg/agent_message; from 0.149.1 on they are event_msg/item_completed
+    with a UserMessage or AgentMessage item, whose text is in item.content[] and
+    whose agent messages also carry a phase ("commentary" or "final_answer").
     Returns [] for a fresh ask, an unresolved/absent session, or any read error.
     """
     if not continue_conv:
@@ -315,13 +318,24 @@ def read_history(workspace: str, continue_conv: bool) -> list[dict]:
         if e.get("type") != "event_msg":
             continue
         p = e.get("payload") or {}
-        ptype, msg = p.get("type"), (p.get("message") or "").strip()
-        if not msg:
+        ptype = p.get("type")
+        if ptype == "item_completed":
+            item = p.get("item") or {}
+            if item.get("type") == "UserMessage":
+                role = "user"
+            elif item.get("type") == "AgentMessage" and item.get("phase") != "commentary":
+                role = "assistant"
+            else:
+                continue
+            parts = item.get("content") or []
+            msg = "".join(c.get("text") or "" for c in parts if isinstance(c, dict)).strip()
+        elif ptype in ("user_message", "agent_message"):
+            role = "user" if ptype == "user_message" else "assistant"
+            msg = (p.get("message") or "").strip()
+        else:
             continue
-        if ptype == "user_message":
-            turns.append({"role": "user", "content": msg})
-        elif ptype == "agent_message":
-            turns.append({"role": "assistant", "content": msg})
+        if msg:
+            turns.append({"role": role, "content": msg})
     return turns
 
 
