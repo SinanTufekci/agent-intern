@@ -23,10 +23,14 @@ Version-by-version compatibility notes: what changed upstream, what the bridge d
   - **copilot:** 1.0.85 moved argument parsing to a Rust grammar, and every flag the bridge passes
     still parses. Under `read-only` a file write was refused.
   - **opencode:** besides the fix above, 1.19.0 stopped installing updates on its own.
-- ⚠️ **Cursor was not re-verified.** The test account's saved login had expired: `cursor-agent
-  status` still printed *"Login successful!"*, but every `-p` run failed with *"Authentication
-  required"*. `cursor_status` used to report that as ready. It now flags it. The installer
-  currently ships 2026.10.14.
+- ✅ **Re-verified on cursor-agent 2026.08.11, and `cursor_status` now catches an expired login.**
+  Ask, continue in the same chat and a read-only file read all answered. Under `read-only` (ask
+  mode) a file write and a shell command were both refused, and nothing was written. Getting there
+  took a fresh login: the saved one had expired, but `cursor-agent status` still printed *"Login
+  successful!"* while every `-p` run failed with *"Authentication required"*, and
+  `cursor_status` reported that as ready. It now flags it. The first call after logging in again
+  timed out in `create-chat`, which the bridge gives 30 s; afterwards it took 0.4 s every time.
+  The installer currently ships 2026.10.14, which is not verified yet.
 - ⚠️ **On Windows, an npm-installed codex or copilot refuses most prompts.** npm installs both as a
   `.cmd` shim that runs a node script. The bridge can't bypass that shim the way it does
   opencode's, so the [shim check](security.md#windows-batch-file-shims-and-the-prompt) refuses any

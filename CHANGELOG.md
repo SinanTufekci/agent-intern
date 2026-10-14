@@ -54,7 +54,8 @@ summary.
   *"Authentication required"*. The auth row now flags it and gives the login command.
 - **The watch view of `codex_continue` showed no earlier turns** from codex 0.149.1 on, because
   codex now records turns as `item_completed` items. Both the old and new shapes are read.
-- **Docs: verified versions** are now codex-cli 0.162.1, copilot 1.0.97 and opencode 1.19.0. The
+- **Docs: verified versions** are now codex-cli 0.162.1, copilot 1.0.97, cursor-agent 2026.08.11
+  and opencode 1.19.0. The
   Windows read-only caveat for codex still holds on 0.162.1. A new note covers npm-installed codex
   and copilot on Windows, which refuse prompts containing `"` or `&` until `*_BIN` points at the
   native binary.
