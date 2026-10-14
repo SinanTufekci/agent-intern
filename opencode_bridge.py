@@ -61,8 +61,9 @@ in the project:
      nominally read-only `plan` agent, which in fact leaves `bash` allowed.
 Unlike grok's OS sandbox this is agent-enforced, so it is NOT a hard boundary —
 but unlike grok's, it behaves IDENTICALLY on Windows, macOS and Linux. Modes:
-  - read-only        deny edit/bash/task/webfetch/websearch/external_directory;
-                     read and search tools allowed, `.env` files denied.
+  - read-only        deny edit/task/webfetch/websearch/external_directory, and
+                     "ask" (= reject, see 1.) for bash; read and search tools
+                     allowed, `.env` files denied.
   - workspace-write  writes and shell inside the workspace; `external_directory`
                      denied, so escaping the workspace is refused, not asked.
   - danger-full-access  `--auto` (opencode's own word for it: "dangerous!"), no
@@ -156,7 +157,8 @@ DEFAULT_TIMEOUT_S = 300
 # external_directory, todowrite, question, webfetch, websearch, lsp, doom_loop,
 # skill — plus arbitrary extra keys — each "ask" | "allow" | "deny", or a
 # {pattern: action} map. Remember that in headless run mode "ask" == reject, so
-# only allow/deny are used here.
+# "ask" fences a tool as firmly as "deny" does; read-only's bash is the one rule
+# that has to use it (see there).
 #
 # read-only is an explicit DENYLIST of the mutating/outbound tools rather than an
 # allowlist, because opencode's set is open-ended (an MCP server adds its own keys)
@@ -167,7 +169,13 @@ DEFAULT_TIMEOUT_S = 300
 # that loosened it).
 _READ_ONLY_PERMISSION = {
     "edit": "deny",
-    "bash": "deny",
+    # "ask", not "deny": a denied bash is left out of the request, and since early
+    # October 2026 opencode's free tier refuses a request without it ("OpenCode's
+    # free tier can only be used from within OpenCode"), on every CLI version, so
+    # read-only failed every free-model call. Headless run auto-rejects an "ask",
+    # verified live on 1.18.29 and 1.19.0: the model's bash call came back
+    # "rejected permission to use this specific tool call" and wrote nothing.
+    "bash": "ask",
     "task": "deny",  # a subagent would otherwise get its own, unrestricted turn
     # opencode's own loop guard. Its default is "ask", which headless mode already
     # rejects, so this changes nothing in the default case — it exists so a user

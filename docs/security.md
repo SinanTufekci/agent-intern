@@ -163,8 +163,10 @@ Copilot's and Cursor's, with two properties that make it the strongest of that t
 
 Modes:
 
-- **`read-only`** (default) — `edit`, `bash`, `task`, `external_directory`, `webfetch`, `websearch`
-  denied; read/search tools kept; `.env` files denied.
+- **`read-only`** (default) — `edit`, `task`, `external_directory`, `webfetch`, `websearch`
+  denied; `bash` set to ask, which a headless run rejects; read/search tools kept; `.env` files
+  denied. `bash` can't simply be denied: a denied tool is left out of the request, and opencode's
+  free tier refuses a request without `bash`.
 - **`workspace-write`** — edits and shell inside the run directory; `external_directory` denied.
 - **`danger-full-access`** — `--auto`, no policy. Avoid.
 

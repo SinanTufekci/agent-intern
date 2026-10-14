@@ -100,11 +100,17 @@ def test_default_sandbox_is_read_only():
     assert opencode_bridge.DEFAULT_SANDBOX == "read-only"
 
 
-@pytest.mark.parametrize(
-    "tool", ["edit", "bash", "task", "external_directory", "webfetch", "websearch"]
-)
+@pytest.mark.parametrize("tool", ["edit", "task", "external_directory", "webfetch", "websearch"])
 def test_read_only_denies_every_mutating_or_outbound_tool(tool):
     assert opencode_bridge._permission_policy("read-only")[tool] == "deny"
+
+
+def test_read_only_fences_bash_with_ask_which_headless_run_rejects(tmp_path):
+    # "deny" would leave bash out of the request, and opencode's free tier refuses
+    # such a request outright. "ask" is rejected headlessly, but only without
+    # --auto, so read-only must never pass it.
+    assert opencode_bridge._permission_policy("read-only")["bash"] == "ask"
+    assert "--auto" not in opencode_bridge.build_args("hi", str(tmp_path), "read-only", None)
 
 
 @pytest.mark.parametrize("mode", ["read-only", "workspace-write"])
@@ -413,7 +419,7 @@ def test_run_opencode_passes_the_permission_policy(tmp_path, monkeypatch):
     monkeypatch.setattr(subprocess, "Popen", _fake_popen(_ndjson(TEXT_EVENT), seen=seen))
     opencode_bridge.run_opencode("hi", str(tmp_path), sandbox="read-only")
     policy = json.loads(seen[0][1]["env"]["OPENCODE_PERMISSION"])
-    assert policy["edit"] == "deny" and policy["bash"] == "deny"
+    assert policy["edit"] == "deny" and policy["bash"] == "ask"
 
 
 def test_run_opencode_surfaces_the_error_event(tmp_path, monkeypatch):
