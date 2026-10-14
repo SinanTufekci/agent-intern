@@ -696,6 +696,11 @@ def auth_status() -> tuple[bool, str]:
     out = ((proc.stdout or "") + (proc.stderr or "")).strip()
     # Strip a leading status glyph (e.g. "✓ ") so the detail reads cleanly.
     first = out.splitlines()[0].lstrip("✓✔✅✗✘ \t").strip() if out else ""
+    if "unable to fetch user details" in out.lower():
+        # Seen live on 2026.08.11 with a stale saved login: status still prints
+        # "✓ Login successful!" over "Logged in (unable to fetch user details)",
+        # while every -p run exits 1 with "Authentication required".
+        return (False, "saved login looks expired (run `cursor-agent login`)")
     if "logged in" in out.lower():
         return (True, first or "logged in")
     return (False, first or "not logged in (run `cursor-agent login`)")

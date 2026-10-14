@@ -442,6 +442,20 @@ def test_auth_status_not_logged_in(monkeypatch):
     assert ok is False
 
 
+def test_auth_status_flags_a_login_it_cannot_fetch_details_for(monkeypatch):
+    # The live output of 2026.08.11 with a stale login: it says "logged in"
+    # twice, yet every -p run fails with "Authentication required".
+    class P:
+        returncode = 0
+        stdout = "✓ Login successful!\nLogged in (unable to fetch user details)\n"
+        stderr = ""
+
+    monkeypatch.setattr(cursor_bridge.proc_tree, "run_captured", lambda *a, **k: P())
+    ok, detail = cursor_bridge.auth_status()
+    assert ok is False
+    assert "cursor-agent login" in detail
+
+
 def test_status_rows_cursor_missing(monkeypatch):
     monkeypatch.setattr(cursor_bridge, "cursor_version", lambda: None)
     monkeypatch.setattr(cursor_bridge, "auth_status", lambda: (True, "x"))
