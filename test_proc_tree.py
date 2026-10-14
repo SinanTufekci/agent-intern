@@ -418,6 +418,15 @@ def test_npm_shim_script_finds_the_script_and_target_ignores_the_interpreter(tmp
     assert proc_tree.npm_shim_script(str(shim)) == str(script)
 
 
+@pytest.mark.parametrize(
+    "machine, archs",
+    [("AMD64", ["x64", "arm64"]), ("ARM64", ["arm64", "x64"]), ("riscv64", ["x64", "arm64"])],
+)
+def test_npm_archs_puts_this_machine_first(monkeypatch, machine, archs):
+    monkeypatch.setattr(proc_tree.platform, "machine", lambda: machine)
+    assert proc_tree.npm_archs() == archs
+
+
 def test_npm_shim_script_is_none_for_exe_shims_and_missing_scripts(tmp_path):
     exe_shim = _write_npm_shim(tmp_path, r'"%dp0%\node_modules\opencode-ai\bin\opencode.exe"')
     assert proc_tree.npm_shim_script(str(exe_shim)) is None
