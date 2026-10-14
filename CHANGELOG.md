@@ -35,6 +35,10 @@ summary.
 
 ### Changed
 
+- **fastmcp 4 is allowed.** The dependency was capped below 4 until the server was verified on
+  it. On fastmcp 4.1.0 the full unit suite passes unchanged, the tools list and answer over stdio,
+  a live `antigravity_ask` streams its progress notifications to the client, and Claude Code
+  connects. A fresh `uvx agent-intern` now resolves to 4.x; the cap moves to below 5.
 - **The routing guide no longer compares the backends' sandboxes in its closing security note.**
   Each backend's own line already says what its sandbox enforces, and with backends turned off the
   comparison would name ones that aren't there. Its example offer no longer names Gemini either.

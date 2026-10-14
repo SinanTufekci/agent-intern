@@ -20,11 +20,11 @@ classifiers = [
     "Topic :: Utilities",
 ]
 dependencies = [
-    # Upper bound is deliberate: fastmcp 4 targets the 2026-07-28 MCP spec and drops
-    # the 3.x compatibility shims. CI installs unpinned (`pip install -e .[dev]`), so
-    # without a cap the first stable 4.0 silently becomes what every fresh install
-    # gets. Lift to <5 once the server is verified against 4.0 stable.
-    "fastmcp>=2.0.0,<4",
+    # Upper bound is deliberate: CI installs unpinned (`pip install -e .[dev]`), so
+    # without a cap the next major silently becomes what every fresh install gets.
+    # 4.x is verified (4.1.0: the suite, stdio, a live call with progress
+    # notifications, and Claude Code's own handshake). Lift to <6 the same way.
+    "fastmcp>=2.0.0,<5",
 ]
 
 [project.optional-dependencies]
