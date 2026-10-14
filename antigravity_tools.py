@@ -83,7 +83,7 @@ async def antigravity_ask(
               agy's agent loop, so treat it as a strong default rather than a
               boundary you'd rely on against a hostile prompt (Codex has the real
               one — see codex_ask's sandbox, and its Windows caveat: as of codex
-              0.149.1 a sandboxed run there refuses every command and answers
+              0.162.1 a sandboxed run there refuses every command and answers
               anyway). And it is exclusive with the bridge's
               slash-command shield, because agy silently disables plan mode when
               that shield is on; a prompt whose first token is a slash command is

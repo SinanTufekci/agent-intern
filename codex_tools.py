@@ -63,7 +63,7 @@ async def codex_ask(
                  exec` has no interactive approval gate, so this is the real safety
                  boundary; opt into write access deliberately.
 
-                 WINDOWS CAVEAT (codex 0.149.1): sandboxed runs there currently
+                 WINDOWS CAVEAT (codex 0.149.1-0.162.1): sandboxed runs there currently
                  refuse EVERY command, both policies, down to `pwd` — codex's
                  policy engine cannot classify the `pwsh -Command <...>` wrapper it
                  builds. Shell commands are how codex reads files, so it sees none

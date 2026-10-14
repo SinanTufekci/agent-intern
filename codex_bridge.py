@@ -17,7 +17,8 @@ rollout file that appeared during the run) and pin it to the workspace; a later
 `codex_continue` resumes the exact session with `codex exec resume <id>`. If the
 in-memory pin is gone (server restarted) we fall back to the newest rollout whose
 recorded cwd matches the workspace — the codex analogue of agy's
-last_conversations.json lookup. This is verified against codex-cli 0.149.1
+last_conversations.json lookup. This is verified against codex-cli 0.149.1, and
+re-verified on 0.162.1 (ask, resume, and the Windows read-only refusal below)
 (flags and the rollout-*.jsonl session layout unchanged from the 0.141.0 baseline;
 ask and resume both round-tripped live). 0.147.0 removed `codex exec --full-auto`,
 which this bridge never passed. One thing DID break on the way to 0.149.1 and is

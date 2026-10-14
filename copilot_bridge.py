@@ -6,7 +6,9 @@ Third backend alongside the agy bridge (server.py) and the Codex bridge
 final answer straight to STDOUT (the `-s/--silent` flag drops the usage stats),
 then exits. No transcript-scraping — we read the answer from stdout. Verified
 against copilot 1.0.80 on Windows (bumped from 1.0.69, eleven releases in one
-step, with nothing to change). The one entry in 1.0.70-1.0.80 that could have
+step, with nothing to change), and re-verified on 1.0.97 with nothing to change
+either: 1.0.85 moved argument parsing to a Rust grammar, and every flag below
+still parses, the `=` form of --deny-tool included. The one entry in 1.0.70-1.0.80 that could have
 reached this bridge was 1.0.71's "reject malformed --allow-tool and --deny-tool
 patterns with an error message", since read-only mode IS a pair of --deny-tool
 patterns — re-verified live on 1.0.80 that they still parse, that a workspace file

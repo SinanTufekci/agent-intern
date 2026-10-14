@@ -6,6 +6,35 @@ Version-by-version compatibility notes: what changed upstream, what the bridge d
 
 ## Status & caveats
 
+- 🐛 **opencode's free tier refused every `read-only` call. Fixed.** Since early October 2026 the
+  free tier has rejected any request that lacks the `bash` tool, with *"OpenCode's free tier can
+  only be used from within OpenCode."* `read-only`, the default, denied `bash`, and a denied tool is
+  left out of the request, so every keyless `opencode_ask` failed in about 3 s. The check is on
+  the server, so 1.18.29 is hit as well as 1.19.0. `read-only` now sets `bash` to *ask*, which a
+  headless run rejects. Verified live on both versions: told to write a file through `bash`, the
+  model got *"rejected permission to use this specific tool call"* and nothing was written. Free
+  models also got much faster: 4–6 s for a short answer on 1.19.0, down from 152–260 s.
+- ✅ **Re-verified on codex 0.162.1, copilot 1.0.97 and opencode 1.19.0.** Each answered an ask, a
+  continue in the same session, and a read-only file read, with the worktree untouched.
+  - **codex:** the Windows read-only caveat still holds on 0.162.1. Three commands were refused and
+    the bridge's warning fired. Only `read-only` was re-checked. The upstream issues are still
+    open. One bridge bug turned up: from 0.149.1 on, codex records turns as `item_completed`
+    items, so the watch view of `codex_continue` had shown no earlier turns. Fixed.
+  - **copilot:** 1.0.85 moved argument parsing to a Rust grammar, and every flag the bridge passes
+    still parses. Under `read-only` a file write was refused.
+  - **opencode:** besides the fix above, 1.19.0 stopped installing updates on its own.
+- ⚠️ **Cursor was not re-verified.** The test account's saved login had expired: `cursor-agent
+  status` still printed *"Login successful!"*, but every `-p` run failed with *"Authentication
+  required"*. `cursor_status` used to report that as ready. It now flags it. The installer
+  currently ships 2026.10.14.
+- ⚠️ **On Windows, an npm-installed codex or copilot refuses most prompts.** npm installs both as a
+  `.cmd` shim that runs a node script. The bridge can't bypass that shim the way it does
+  opencode's, so the [shim check](security.md#windows-batch-file-shims-and-the-prompt) refuses any
+  prompt containing `" % ! ^ & | < >`, which covers nearly every diff. The standalone codex
+  installer and the winget copilot are native `.exe`s and aren't affected. Workaround: point
+  `CODEX_BIN` or `COPILOT_BIN` at the native binary npm installed alongside:
+  - `node_modules\@openai\codex-win32-x64\vendor\x86_64-pc-windows-msvc\bin\codex.exe`
+  - `node_modules\@github\copilot-win32-x64\copilot.exe`
 - ✅ **Re-verified on agy 1.3.5. No code change was needed, but the model catalog moved again.**
   Thirteen releases from 1.2.10, and nothing on the bridge's path broke. These held: ask on the
   default model, continue in the same conversation, a swarm worker, and the `/usage` table. Two

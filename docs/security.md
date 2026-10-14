@@ -89,7 +89,7 @@ that codex enforces:
 Because there's no approval prompt, the flag you pass **is** the safety decision — choose it per
 call.
 
-> ⚠️ **On Windows, as of codex 0.149.1, that boundary is currently too tight to be useful — and it
+> ⚠️ **On Windows, as of codex 0.149.1 and still on 0.162.1, that boundary is currently too tight to be useful — and it
 > fails silently.** Every command is refused under **both** `read-only` and `workspace-write` (down
 > to `pwd`) with `rejected: blocked by policy`: codex's policy engine can't classify the
 > `pwsh -Command <...>` wrapper codex itself builds. Shell commands are how codex reads files, so a

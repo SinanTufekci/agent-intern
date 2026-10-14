@@ -266,8 +266,10 @@ def _env(sandbox: Optional[str] = None) -> dict:
 
     A CLI that updates itself mid-session is how this project has been broken
     before with no code change on our side (see the agy stdout saga), and opencode
-    ships an auto-updater. `OPENCODE_DISABLE_AUTOUPDATE=1` is its process-scoped off
-    switch, read off the bundle's env table.
+    shipped an auto-updater. `OPENCODE_DISABLE_AUTOUPDATE=1` is its process-scoped off
+    switch, read off the bundle's env table. 1.19.0 stopped installing updates on
+    its own and the variable now only silences the update check; it stays set for
+    the versions before.
 
     `sandbox` selects the OPENCODE_PERMISSION policy; None leaves the caller's
     environment untouched (used by the read-only diagnostics). json.dumps is not

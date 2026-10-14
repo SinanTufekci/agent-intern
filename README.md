@@ -145,7 +145,7 @@ criterion."</i> None did.</sub>
 | 🌙 **Kimi Code** (Moonshot) | *experimental — unverified* | ❌ none | a Kimi plan |
 | 🎼 **Muse Code** (Meta) | *experimental — pipeline verified offline, real model not* | ⚠️ read-only switches write/shell/web tools off; OS sandbox for writes | a Muse plan or `META_API_KEY` |
 
-<sub>¹ On Windows, codex 0.149.1's sandbox refuses every command — reads included — so a sandboxed Codex
+<sub>¹ On Windows, codex's sandbox (0.149.1, and still on 0.162.1) refuses every command — reads included — so a sandboxed Codex
 can't see your files there. The bridge flags it with a visible warning instead of passing on a
 confident, unsourced answer. [Details →](https://github.com/SinanTufekci/agent-intern/blob/main/docs/security.md#codex--a-real-sandbox-you-should-use)</sub>
 
@@ -157,8 +157,8 @@ rest stay out of Claude's context. [How →](https://github.com/SinanTufekci/age
 [Tool reference →](https://github.com/SinanTufekci/agent-intern/blob/main/docs/tools.md) ·
 [How each backend is driven →](https://github.com/SinanTufekci/agent-intern/blob/main/docs/backends.md)
 
-Verified live against **agy 1.3.5 · codex-cli 0.149.1 · copilot 1.0.80 · cursor-agent 2026.07.23 ·
-opencode 1.18.29**. These CLIs update themselves, so
+Verified live against **agy 1.3.5 · codex-cli 0.162.1 · copilot 1.0.97 · cursor-agent 2026.07.23 ·
+opencode 1.19.0**. These CLIs update themselves, so
 [status & caveats](https://github.com/SinanTufekci/agent-intern/blob/main/docs/status.md) tracks what
 changed upstream and what the bridge does about it.
 
