@@ -254,6 +254,18 @@ def test_dashboard_is_live_reflects_recent_poll(monkeypatch):
     assert swarm_watch._dashboard_is_live() is True
 
 
+@pytest.mark.parametrize("live", [False, True])
+def test_open_window_keeps_stdout_clean(monkeypatch, capsys, live):
+    # stdout is the MCP JSON-RPC stream, so a stray line there lands in the protocol.
+    # Both paths (new window, reused dashboard) must stay off it.
+    monkeypatch.setattr(swarm_watch, "_port", lambda: 8765)
+    monkeypatch.setattr(swarm_watch, "_launch", lambda *a, **k: None)
+    monkeypatch.setattr(swarm_watch, "_dashboard_is_live", lambda: live)
+    monkeypatch.delenv("AGY_WATCH_ALWAYS_NEW", raising=False)
+    swarm_watch.open_window(3)
+    assert capsys.readouterr().out == ""
+
+
 # --------------------------------------------------------------------------
 # unified agent swarm: _normalize_tasks / swarm_agents / format_agent_results
 # --------------------------------------------------------------------------

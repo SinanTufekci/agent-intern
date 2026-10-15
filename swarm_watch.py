@@ -242,11 +242,13 @@ def open_window(n_workers: int) -> None:
     # Fixed, narrow window, tall enough for five worker cards; more scroll.
     w, h, x, y = 440, 720, 40, 60
     _GEO.update(x=x, y=y, w=w, h=h)
-    url = f"http://127.0.0.1:{_port()}/?k={server._WATCH_TOKEN}"
+    port = _port()
+    url = f"http://127.0.0.1:{port}/?k={server._WATCH_TOKEN}"
+    # Log, never print: stdout is the MCP JSON-RPC stream. The token stays out of the log.
     if _dashboard_is_live() and not _env_truthy("AGY_WATCH_ALWAYS_NEW"):
-        print(f"[swarm-watch] reusing open dashboard: {url}", flush=True)
+        server.log.debug("swarm dashboard already open on port %d; reusing it", port)
         return
-    print(f"[swarm-watch] dashboard: {url}", flush=True)
+    server.log.debug("swarm dashboard on http://127.0.0.1:%d", port)
     _launch(url, w, h, x, y)
 
 

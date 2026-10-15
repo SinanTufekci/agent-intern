@@ -10,6 +10,13 @@ summary.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`agent_swarm(watch=true)` wrote a line into the MCP protocol stream.** Opening or reusing the
+  swarm dashboard printed its URL to stdout, which is the JSON-RPC channel, so the host received a
+  line that was not JSON-RPC, carrying the dashboard's access token. It now goes to the debug log
+  on stderr (`AGY_BRIDGE_DEBUG`), without the token.
+
 ## [0.33.0] - 2026-10-14
 
 ### Added
