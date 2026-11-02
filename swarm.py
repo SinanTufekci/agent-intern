@@ -426,7 +426,13 @@ def _run_text_worker(index, prompt, workspace, model, timeout_s, plan=False) -> 
             **server._spawn_kwargs(),
         )
         if proc.returncode != 0:
-            raise RuntimeError(f"agy exited {proc.returncode}: {proc.stderr[-300:]}")
+            raise RuntimeError(
+                server._with_quota_note(
+                    f"agy exited {proc.returncode}: {proc.stderr[-300:]}",
+                    f"{proc.stderr}\n{(proc.stdout or '')[-2000:]}",
+                    model,
+                )
+            )
         if server._print_timed_out(proc.stderr):
             return _print_timeout_result(index, timeout_s, proc.stdout, home, t0, workspace)
         deadline = time.time() + 5.0
@@ -558,7 +564,14 @@ def _run_text_worker_watched(
         out_t.join(timeout=5)
         err_t.join(timeout=5)
         if proc.returncode != 0:
-            raise RuntimeError(f"agy exited {proc.returncode}: {''.join(err_chunks)[-300:]}")
+            err_text = "".join(err_chunks)
+            raise RuntimeError(
+                server._with_quota_note(
+                    f"agy exited {proc.returncode}: {err_text[-300:]}",
+                    f"{err_text}\n{''.join(out_chunks)[-2000:]}",
+                    model,
+                )
+            )
         if server._print_timed_out("".join(err_chunks)):
             res = _print_timeout_result(
                 index, timeout_s, "".join(out_chunks), home, start, workspace
@@ -709,11 +722,19 @@ def _run_image_worker(index, prompt, target, workspace, timeout_s) -> WorkerResu
                     agy_text = _read_isolated_response(home, conv)
                 except RuntimeError:
                     pass
-        elif _looks_like_auth_failure((proc.stderr or "") + (proc.stdout or "")):
-            # Surface agy's sign-in failure as the error, so the handler below can
-            # recognize it. Otherwise this path swallows a non-zero exit and fails
-            # with "no image file produced", which hides the real cause.
-            raise RuntimeError(f"agy exited {proc.returncode}: {(proc.stderr or '')[-300:]}")
+        else:
+            output = (proc.stderr or "") + (proc.stdout or "")
+            if _looks_like_auth_failure(output) or server._looks_like_quota_failure(output):
+                # Surface agy's sign-in or quota failure as the error, so the handler
+                # below can recognize the first and the caller sees which model
+                # family is out for the second. Otherwise this path swallows a
+                # non-zero exit and fails with "no image file produced", which hides
+                # the real cause.
+                raise RuntimeError(
+                    server._with_quota_note(
+                        f"agy exited {proc.returncode}: {(proc.stderr or '')[-300:]}", output
+                    )
+                )
         final_path, fmt, size = _finalize_image_isolated(home, target, agy_text, start)
         return WorkerResult(
             index,
@@ -806,10 +827,13 @@ def _run_image_worker_watched(index, prompt, target, workspace, timeout_s) -> Wo
             except RuntimeError:
                 pass
         err_text = "".join(err_chunks)
-        if proc.returncode != 0 and _looks_like_auth_failure(err_text):
-            # See the non-watched twin: surface the sign-in failure instead of
-            # letting it become a misleading "no image file produced".
-            raise RuntimeError(f"agy exited {proc.returncode}: {err_text[-300:]}")
+        if proc.returncode != 0 and (
+            _looks_like_auth_failure(err_text) or server._looks_like_quota_failure(err_text)
+        ):
+            # See the non-watched twin: surface the sign-in or quota failure instead
+            # of letting it become a misleading "no image file produced".
+            message = f"agy exited {proc.returncode}: {err_text[-300:]}"
+            raise RuntimeError(server._with_quota_note(message, err_text))
         final_path, fmt, size = _finalize_image_isolated(home, target, agy_text, start)
         caption = f"Saved to {final_path}\nformat={fmt} · {size} bytes"
         swarm_watch.worker_finish(index, "done", caption, time.time() - start, image=final_path)

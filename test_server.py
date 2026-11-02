@@ -1200,8 +1200,11 @@ def test_validate_model_skips_when_list_unavailable(monkeypatch):
 # And a third time, on 1.3.5: gemini-3.7-flash, gemini-3.6-flash, gemini-3.1-pro,
 # claude-sonnet-4-6 and claude-opus-4-6-thinking all gone, claude-sonnet-5-5 and
 # claude-opus-5-5 in, and no changelog entry from 1.2.11 on mentions any of it.
+#
+# A fourth, on 1.4.12: the gemini-4-argon family, which agy's own default moved onto.
 DOCUMENTED_AGY_MODELS = [
-    "gemini-3.8-flash-high",  # the default as of 1.1.25 (added the 3.8 family)
+    "gemini-4-argon-high",  # agy's own default family as of 1.4.12 (Medium, in a clean HOME)
+    "gemini-3.8-flash-high",  # the default from 1.1.25 to 1.3.5 (added the 3.8 family)
     "claude-sonnet-5-5-high",
     "claude-opus-5-5-high",
     "gpt-oss-120b-medium",
@@ -1843,6 +1846,57 @@ def test_run_agy_print_timeout_on_the_plain_text_path(fake_agy, last_conv_file):
     assert "half an answ" in str(exc.value)
 
 
+# agy 1.4.11 added `finished_reason` to the json result; verified on 1.4.12 that an
+# expired --print-timeout reports "print_timeout" with exit 0 and status SUCCESS.
+
+
+def test_run_agy_finished_reason_print_timeout_without_the_stderr_line(
+    fake_agy_json, last_conv_file
+):
+    # The structured field alone must be enough: the stderr wording is not a contract.
+    last_conv_file.write_text(json.dumps({}), encoding="utf-8")
+    fake_agy_json["stdout"] = _json_result(
+        response="Movable type reached", conv="fr-cut", finished_reason="print_timeout"
+    )
+    with pytest.raises(RuntimeError, match="10s timeout") as exc:
+        server._run_agy("hi", "C:\\ws", continue_conv=False, timeout_s=10)
+    assert "Movable type reached" in str(exc.value)
+    assert server._recorded_conv_id("C:\\ws") == "fr-cut"
+
+
+@pytest.mark.parametrize("reason", ["error", "interrupted"])
+def test_run_agy_finished_early_is_an_error_not_a_truncated_answer(
+    fake_agy_json, last_conv_file, reason
+):
+    last_conv_file.write_text(json.dumps({}), encoding="utf-8")
+    fake_agy_json["stdout"] = _json_result(
+        response="half of it", conv="fr-early", finished_reason=reason
+    )
+    with pytest.raises(RuntimeError, match=f"finished_reason={reason}") as exc:
+        server._run_agy("hi", "C:\\ws", continue_conv=False, timeout_s=10)
+    assert "half of it" in str(exc.value) and "cut off" in str(exc.value)
+    assert server._recorded_conv_id("C:\\ws") == "fr-early"
+
+
+def test_run_agy_finished_early_beats_a_schema_answer(fake_agy_json, last_conv_file):
+    # A schema run cut short must not hand back structured_output as if it were whole.
+    last_conv_file.write_text(json.dumps({}), encoding="utf-8")
+    fake_agy_json["stdout"] = _json_result(
+        response="", finished_reason="error", structured_output={"verdict": "positive"}
+    )
+    with pytest.raises(RuntimeError, match="finished_reason=error"):
+        server._run_agy("hi", "C:\\ws", False, 10, schema='{"type": "object"}')
+
+
+def test_run_agy_unknown_finished_reason_keeps_the_answer(fake_agy_json, last_conv_file):
+    # The field is documented as present only on an early end, but its vocabulary may
+    # grow. Like an unknown status, a value newer than the bridge is not worth
+    # throwing a real answer away over.
+    last_conv_file.write_text(json.dumps({}), encoding="utf-8")
+    fake_agy_json["stdout"] = _json_result(response="whole answer", finished_reason="stop")
+    assert server._run_agy("hi", "C:\\ws", continue_conv=False, timeout_s=10) == "whole answer"
+
+
 def test_run_agy_json_empty_response_falls_back_to_transcript(
     fake_agy_json, brain_dir, last_conv_file
 ):
@@ -2014,8 +2068,10 @@ def test_stream_watch_does_not_double_emit_a_repeated_done(watch_slot):
 # --------------------------------------------------------------------------
 
 
-def _stream_lines(conv="c-stream", response="stream answer", status="SUCCESS"):
-    """A realistic agy 1.1.8 stream-json run: init, narration, a tool, the result."""
+def _stream_lines(conv="c-stream", response="stream answer", status="SUCCESS", **extra):
+    """A realistic agy 1.1.8 stream-json run: init, narration, a tool, the result.
+
+    `extra` lands in the result object, e.g. finished_reason (agy 1.4.11+)."""
     return (
         json.dumps({"event": "init", "conversation_id": conv, "init": {"cwd": "C:\\ws"}})
         + "\n"
@@ -2038,7 +2094,12 @@ def _stream_lines(conv="c-stream", response="stream answer", status="SUCCESS"):
         + json.dumps(
             {
                 "event": "result",
-                "result": {"conversation_id": conv, "status": status, "response": response},
+                "result": {
+                    "conversation_id": conv,
+                    "status": status,
+                    "response": response,
+                    **extra,
+                },
             }
         )
         + "\n"
@@ -2133,6 +2194,30 @@ def test_watched_print_timeout_is_an_error_not_a_truncated_answer(
     assert "cut mid-sent" in str(exc.value)
     assert server._watch_snapshot()["status"] == "error"
     assert server._recorded_conv_id("C:\\ws") == "wc-cut"
+
+
+def test_watched_finished_reason_print_timeout_is_a_timeout(
+    fake_watched_agy, brain_dir, last_conv_file
+):
+    last_conv_file.write_text(json.dumps({}), encoding="utf-8")
+    fake_watched_agy["stdout"] = _stream_lines(
+        response="cut", conv="wc-fr", finished_reason="print_timeout"
+    )
+    with pytest.raises(RuntimeError, match="10s timeout"):
+        server._run_agy_watched("hi", "C:\\ws", continue_conv=False, timeout_s=10)
+    assert server._watch_snapshot()["status"] == "error"
+
+
+def test_watched_finished_early_is_an_error(fake_watched_agy, brain_dir, last_conv_file):
+    last_conv_file.write_text(json.dumps({}), encoding="utf-8")
+    fake_watched_agy["stdout"] = _stream_lines(
+        response="half", conv="wc-err", finished_reason="error"
+    )
+    with pytest.raises(RuntimeError, match="finished_reason=error") as exc:
+        server._run_agy_watched("hi", "C:\\ws", continue_conv=False, timeout_s=10)
+    assert "half" in str(exc.value)
+    assert server._watch_snapshot()["status"] == "error"
+    assert server._recorded_conv_id("C:\\ws") == "wc-err"
 
 
 def test_watched_stream_without_result_event_falls_back_to_transcript(
@@ -2772,11 +2857,93 @@ def test_collect_status_dirs_absent(tmp_path, monkeypatch):
     assert d["brain dir"][0] is False
 
 
+def _age_conv(brain, conv_id, seconds_ago):
+    """Backdate a conversation's brain dir, which is what orders them newest-first."""
+    when = time.time() - seconds_ago
+    os.utime(brain / conv_id, (when, when))
+
+
+def _transcript_row():
+    ok, detail = _status_dict([server._transcript_status_row()])["newest transcript"]
+    return ok, detail
+
+
 def test_collect_status_unreadable_transcript(status_dirs, monkeypatch):
+    """A finished conversation the bridge cannot read is still a real failure."""
     monkeypatch.setattr(server, "_get_agy_version", lambda: "1.0.5")
-    (status_dirs["brain"] / "c1").mkdir()  # conv dir exists but no transcript
+    _write_transcript(status_dirs["brain"], "c1", [_entry("RUN_COMMAND", "step")])
+    _age_conv(status_dirs["brain"], "c1", 3600)
     rows = server._collect_status()
     assert _status_dict(rows)["newest transcript"][0] is False
+
+
+# Issue #8: the row read only the single newest conversation, which is often not
+# finished, and flipped Overall to PROBLEMS FOUND while every call worked.
+
+
+def test_transcript_row_skips_an_empty_newest_conversation(status_dirs):
+    # agy leaves an empty brain dir behind when it self-updates.
+    _write_transcript(status_dirs["brain"], "done", [_entry("PLANNER_RESPONSE", "ans")])
+    _age_conv(status_dirs["brain"], "done", 600)
+    (status_dirs["brain"] / "empty").mkdir()
+    _age_conv(status_dirs["brain"], "empty", 10)  # newest
+    ok, detail = _transcript_row()
+    assert ok is True
+    assert detail.startswith("readable") and "skipped 1" in detail
+
+
+def test_transcript_row_skips_a_newer_failed_turn(status_dirs):
+    # A turn that died on a quota error or a soft-denied tool wrote no answer; an
+    # older conversation still shows the read path works.
+    _write_transcript(status_dirs["brain"], "done", [_entry("PLANNER_RESPONSE", "ans")])
+    _age_conv(status_dirs["brain"], "done", 7200)
+    _write_transcript(status_dirs["brain"], "failed", [_entry("GENERIC", status="ERROR")])
+    _age_conv(status_dirs["brain"], "failed", 3600)
+    ok, detail = _transcript_row()
+    assert ok is True and "skipped 1" in detail
+
+
+def test_transcript_row_ok_when_only_empty_or_running_conversations(status_dirs):
+    (status_dirs["brain"] / "empty").mkdir()
+    _age_conv(status_dirs["brain"], "empty", 3600)
+    # Another bridge call or a swarm worker is mid-turn: transcript, no answer yet.
+    _write_transcript(status_dirs["brain"], "running", [_entry("USER_INPUT", source="USER")])
+    ok, detail = _transcript_row()
+    assert ok is True and "nothing finished" in detail
+
+
+def test_transcript_row_fails_when_no_recent_conversation_is_readable(status_dirs):
+    for i in range(3):
+        _write_transcript(status_dirs["brain"], f"c{i}", [_entry("RUN_COMMAND", "step")])
+        _age_conv(status_dirs["brain"], f"c{i}", 3600 + i)
+    ok, detail = _transcript_row()
+    assert ok is False and detail.startswith("none of the 3 newest is readable")
+
+
+def test_transcript_row_looks_no_further_than_the_probe_limit(status_dirs, monkeypatch):
+    monkeypatch.setattr(server, "_TRANSCRIPT_PROBE_LIMIT", 2)
+    _write_transcript(status_dirs["brain"], "old-good", [_entry("PLANNER_RESPONSE", "ans")])
+    _age_conv(status_dirs["brain"], "old-good", 9000)
+    for i in range(2):
+        _write_transcript(status_dirs["brain"], f"bad{i}", [_entry("RUN_COMMAND", "step")])
+        _age_conv(status_dirs["brain"], f"bad{i}", 3600 + i)
+    ok, _ = _transcript_row()
+    assert ok is False
+
+
+def test_transcript_row_no_conversations(status_dirs):
+    assert _transcript_row() == (True, "no conversations yet")
+
+
+def test_antigravity_status_overall_ok_with_an_empty_newest_conversation(status_dirs, monkeypatch):
+    """The exact report from issue #8, end to end through the tool's Overall line."""
+    monkeypatch.setattr(server, "_get_agy_version", lambda: "1.0.5")
+    monkeypatch.setattr(server, "_fetch_latest_release_version", lambda: None)
+    _write_transcript(status_dirs["brain"], "done", [_entry("PLANNER_RESPONSE", "ans")])
+    _age_conv(status_dirs["brain"], "done", 600)
+    (status_dirs["brain"] / "empty").mkdir()
+    out = server.antigravity_status()
+    assert out.splitlines()[-1] == "Overall: OK"
 
 
 def test_antigravity_status_formats_report(status_dirs, monkeypatch):
@@ -2880,6 +3047,188 @@ def test_collect_status_includes_quota_rows(status_dirs, monkeypatch):
     d = _status_dict(server._collect_status())
     assert d["quota: Gemini Models"] == (True, "Weekly 100%, Five Hour 100%")
     assert d["quota: Claude and GPT models"][0] is True
+
+
+# --------------------------------------------------------------------------
+# quota failures  (issue #7: say which family is out and which still has quota)
+# --------------------------------------------------------------------------
+
+# agy 1.4.12's `/usage` with one family empty, as issue #7 reported it.
+_USAGE_ARGON_EMPTY = (
+    "Gemini Models\tWeekly Limit Remaining\t91%\t2026-11-09T13:12:12Z\n"
+    "Gemini Models\tFive Hour Limit Remaining\t100%\t2026-11-02T18:12:12Z\n"
+    "Claude and GPT models\tWeekly Limit Remaining\t100%\t2026-11-09T13:12:12Z\n"
+    "Gemini 4 Argon\tGemini 4 Argon Weekly Limit\t0%\t2026-11-04T13:34:06Z\n"
+)
+_LIVE_MODELS = [
+    "gemini-4-argon-medium",
+    "gemini-4-argon-high",
+    "gemini-4-argon-low",
+    "gemini-3.8-flash-high",
+    "gemini-3.8-flash-medium",
+    "gemini-3.8-flash-low",
+    "claude-opus-5-5-low",
+    "claude-sonnet-5-5-high",
+    "gpt-oss-120b-medium",
+]
+# The error issue #7 got back from a failed antigravity_ask.
+_QUOTA_STDERR = "Error: Individual quota reached, resets in ~75h\n"
+
+
+@pytest.fixture
+def quota_usage(monkeypatch):
+    """A readable `/usage` (counted), the live model list, and an empty report cache."""
+    cfg = {"usage": _USAGE_ARGON_EMPTY, "reads": 0}
+
+    def fake_read():
+        cfg["reads"] += 1
+        return cfg["usage"]
+
+    monkeypatch.setattr(server, "supports_print_usage", lambda: True)
+    monkeypatch.setattr(server, "_read_agy_usage", fake_read)
+    monkeypatch.setattr(server, "list_agy_models", lambda: list(_LIVE_MODELS))
+    monkeypatch.setattr(server, "_agy_settings_model", lambda: None)
+    monkeypatch.setattr(server, "_QUOTA_REPORT_CACHE", None)
+    return cfg
+
+
+def test_parse_usage_table_keeps_reset_times_and_family_specific_limits():
+    table = server._parse_usage_table(_USAGE_ARGON_EMPTY)
+    assert list(table) == ["Gemini Models", "Claude and GPT models", "Gemini 4 Argon"]
+    assert table["Gemini 4 Argon"] == [("Gemini 4 Argon Weekly", "0%", "2026-11-04T13:34:06Z")]
+    rows = _status_dict(server._parse_usage_rows(_USAGE_ARGON_EMPTY))
+    assert rows["quota: Gemini 4 Argon"] == (False, "Gemini 4 Argon Weekly 0%")
+
+
+@pytest.mark.parametrize(
+    "model,family",
+    [
+        ("gemini-4-argon-high", "Gemini 4 Argon"),  # its own family beats "Gemini Models"
+        ("gemini-3.8-flash-high", "Gemini Models"),
+        ("claude-opus-5-5-low", "Claude and GPT models"),
+        ("gpt-oss-120b-medium", "Claude and GPT models"),
+        ("Gemini 4 Argon (High)", "Gemini 4 Argon"),  # settings.json holds the label
+        ("Gemini 3.8 Flash (High)", "Gemini Models"),
+        ("llama-9", None),
+        (None, None),
+    ],
+)
+def test_model_usage_family(model, family):
+    families = ["Gemini Models", "Claude and GPT models", "Gemini 4 Argon"]
+    assert server._model_usage_family(model, families) == family
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        (_QUOTA_STDERR, True),
+        ("429 Too Many Requests", True),
+        ("RESOURCE_EXHAUSTED: rate limit exceeded", True),
+        ("Error: authentication timed out", False),
+        ("", False),
+        (None, False),
+    ],
+)
+def test_looks_like_quota_failure(text, expected):
+    assert server._looks_like_quota_failure(text) is expected
+
+
+def test_quota_note_names_the_empty_family_and_a_model_to_retry_with(quota_usage):
+    note = server._quota_failure_note("gemini-4-argon-high")
+    assert "Gemini 4 Argon: Gemini 4 Argon Weekly 0% (resets 2026-11-04T13:34:06Z)" in note
+    assert "<- OUT OF QUOTA" in note
+    assert "draws on Gemini 4 Argon, and that family is out of quota" in note
+    assert 'model="gemini-3.8-flash-high"' in note
+    assert 'model="claude-opus-5-5-low"' in note
+    assert "argon" not in note.split("retry with", 1)[1]  # never suggests the empty family
+
+
+def test_quota_note_resolves_the_default_model_from_settings(quota_usage, monkeypatch):
+    # issue #7's call passed no model: the default was the exhausted family.
+    monkeypatch.setattr(server, "_agy_settings_model", lambda: "Gemini 4 Argon (High)")
+    note = server._quota_failure_note(None)
+    assert "agy's default model (Gemini 4 Argon (High))" in note
+    assert "that family is out of quota" in note
+    assert 'model="gemini-3.8-flash-high"' in note
+
+
+def test_quota_note_when_the_used_family_still_has_quota(quota_usage):
+    note = server._quota_failure_note("gemini-3.8-flash-high")
+    assert "Gemini Models, and that family still shows quota" in note
+    assert "retry with a model" not in note
+
+
+def test_quota_note_when_no_family_is_empty(quota_usage):
+    quota_usage["usage"] = _USAGE_TSV
+    note = server._quota_failure_note("gemini-3.8-flash-high")
+    assert "short-term rate limit" in note and "OUT OF QUOTA" not in note
+
+
+def test_quota_note_when_every_family_is_empty(quota_usage):
+    quota_usage["usage"] = "Gemini Models\tWeekly Limit Remaining\t0%\t2026-11-09T13:12:12Z\n"
+    note = server._quota_failure_note("gemini-3.8-flash-high")
+    assert "Every model family is out of quota" in note
+
+
+def test_quota_note_when_usage_is_unreadable(quota_usage):
+    quota_usage["usage"] = None
+    note = server._quota_failure_note("gemini-4-argon-high")
+    assert "could not be read" in note and "different `model`" in note
+
+
+def test_quota_note_never_reads_like_an_auth_failure(quota_usage):
+    # swarm workers retry serialized on an auth signature in the error text; the
+    # note must never trip that.
+    for model in ("gemini-4-argon-high", None):
+        assert not swarm._looks_like_auth_failure(server._quota_failure_note(model))
+
+
+def test_quota_report_is_read_once_for_a_burst_of_failures(quota_usage):
+    for _ in range(5):
+        server._with_quota_note("agy exited 1", _QUOTA_STDERR, "gemini-4-argon-high")
+    assert quota_usage["reads"] == 1
+
+
+def test_with_quota_note_leaves_other_failures_alone(quota_usage):
+    assert server._with_quota_note("agy exited 2", "boom", None) == "agy exited 2"
+    assert quota_usage["reads"] == 0
+
+
+def test_with_quota_note_never_masks_the_real_error(quota_usage, monkeypatch):
+    def broken(model):
+        raise ValueError("bug in the note")
+
+    monkeypatch.setattr(server, "_quota_failure_note", broken)
+    assert server._with_quota_note("agy exited 1", _QUOTA_STDERR) == "agy exited 1"
+
+
+def test_run_agy_quota_failure_says_which_family_is_out(fake_agy_json, quota_usage):
+    fake_agy_json["returncode"] = 1
+    fake_agy_json["stderr"] = _QUOTA_STDERR
+    with pytest.raises(RuntimeError) as exc:
+        server._run_agy("hi", "C:\\ws", False, 10, model="gemini-4-argon-high")
+    msg = str(exc.value)
+    assert msg.startswith("agy exited 1") and "Individual quota reached" in msg
+    assert "that family is out of quota" in msg and 'model="gemini-3.8-flash-high"' in msg
+
+
+def test_run_agy_other_failures_spend_no_usage_read(fake_agy_json, quota_usage):
+    fake_agy_json["returncode"] = 3
+    fake_agy_json["stderr"] = "AGY_ERROR: model returned an invalid response"
+    with pytest.raises(RuntimeError, match="agy exited 3") as exc:
+        server._run_agy("hi", "C:\\ws", False, 10)
+    assert "Quota left" not in str(exc.value) and quota_usage["reads"] == 0
+
+
+def test_watched_quota_failure_says_which_family_is_out(
+    fake_watched_agy, quota_usage, brain_dir, last_conv_file
+):
+    last_conv_file.write_text(json.dumps({}), encoding="utf-8")
+    fake_watched_agy["returncode"] = 1
+    fake_watched_agy["stderr"] = _QUOTA_STDERR
+    with pytest.raises(RuntimeError) as exc:
+        server._run_agy_watched("hi", "C:\\ws", False, 10, "gemini-4-argon-high")
+    assert "that family is out of quota" in str(exc.value)
 
 
 def test_codex_status_includes_bridge_version_row(monkeypatch):

@@ -90,24 +90,29 @@ known-good `agy` version.
 <summary><b>Which model does Antigravity use — can I pick it?</b></summary>
 
 Yes. Pass `model` to `antigravity_ask`/`antigravity_continue` (or per task in `agent_swarm`) — it maps
-to agy's `--model`, taking any slug from `agy models` (e.g. `"claude-sonnet-5-5-high"`,
-`"gemini-3.8-flash-low"`). Omit it to use the `"model"` field in agy's `settings.json`, which
-defaults to **`gemini-3.8-flash-high`** — speed-optimized for cheap tool-calling.
+to agy's `--model`, taking any slug from `agy models` (e.g. `"gemini-4-argon-high"`,
+`"gemini-3.8-flash-low"`). Omit it to use the `"model"` field in agy's `settings.json`; with none
+set, agy 1.4.12 picks **Gemini 4 Argon (Medium)** (checked live in a clean home directory).
 
 **agy 1.1.5 renamed every model**, replacing the old human labels (`"Gemini 3.1 Pro (High)"`) with
 stable slugs (`gemini-3.1-pro-high`) — the old form is no longer accepted, so pass slugs. **The
-default has since moved three times**: 1.1.6 added the `gemini-3.6-flash` family and took it, the
+default has since moved four times**: 1.1.6 added the `gemini-3.6-flash` family and took it, the
 `gemini-3.7-flash` family arrived by 1.1.16 and took it in turn, and **1.1.25 added
 `gemini-3.8-flash` and moved the default onto that** (verified through the bridge: a call passing no
 `model` answers as Gemini 3.8 Flash). The same release also **dropped the whole `gemini-3.5-flash`
 family, which no changelog entry mentions** — a 3.5 slug from older docs is now rejected up front.
 **By 1.3.5 the catalog shrank again, and again no changelog entry says so:** the 3.7 and 3.6 Flash
 families, Gemini 3.1 Pro, `claude-sonnet-4-6` and `claude-opus-4-6-thinking` are gone, and Claude
-Opus 5.5 and Sonnet 5.5 arrived. The full list, re-checked live on 1.3.5:
-`gemini-3.8-flash-low|medium|high`, `claude-opus-5-5-low|medium|high`,
-`claude-sonnet-5-5-low|medium|high`, `gpt-oss-120b-medium`. Note the slug bakes in the
-reasoning effort, which is why each family appears once per level. The Claude and GPT models draw on
-a separate quota from the Gemini ones; `antigravity_status` shows both. agy self-updates in
+Opus 5.5 and Sonnet 5.5 arrived. **By 1.4.12 the `gemini-4-argon` family had arrived and agy's own
+default moved onto it.** The full list, re-checked live on 1.4.12:
+`gemini-4-argon-low|medium|high`, `gemini-3.8-flash-low|medium|high`,
+`claude-opus-5-5-low|medium|high`, `claude-sonnet-5-5-low|medium|high`, `gpt-oss-120b-medium`.
+Note the slug bakes in the reasoning effort, which is why each family appears once per level.
+
+Quota is counted per family: Gemini 4 Argon, the other Gemini models, and the Claude and GPT models
+each have their own, and `antigravity_status` shows all three. When a call fails on quota, the error
+lists every family's quota and names a model from one that still has some, so retrying with that
+`model` usually works. agy self-updates in
 the background, so treat any list written down here — this one included — as a snapshot; `agy models`
 and `antigravity_status` are the live answer.
 

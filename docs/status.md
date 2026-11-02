@@ -6,6 +6,45 @@ Version-by-version compatibility notes: what changed upstream, what the bridge d
 
 ## Status & caveats
 
+- ✅ **Re-verified on agy 1.4.12. No break, but agy's default model moved.** Fourteen releases from
+  1.3.5. These held, live on Windows: ask on the default model, continue in the same conversation,
+  an image, a two-worker swarm, `--model gemini-4-argon-high`, and `/usage` and `/changelog`, which
+  the CLI still answers itself without starting a conversation. Two changelog entries touched the
+  bridge's path:
+  - **1.4.7:** headless runs no longer "render the transcript for display". The JSONL transcript is
+    still written: the swarm workers, which read nothing else, answered.
+  - **1.4.11:** the json and stream-json results gained `finished_reason`, present only when a turn
+    ended early: `print_timeout`, `interrupted` or `error`. An expired `--print-timeout` still exits
+    0 with status `SUCCESS` and the same stderr line, so the bridge's check already held; it now
+    reads the field too, and treats `interrupted` and `error` as a cut-short answer, raising with
+    the partial text attached rather than returning it as whole. Only `print_timeout` was seen
+    live; the other two follow the changelog.
+
+  The catalog moved again, with no changelog entry until 1.4.3 fixed it for `GEMINI_API_KEY`
+  users: a **`gemini-4-argon`** family (low, medium, high) arrived, and with no model in
+  `settings.json` agy 1.4.12 picks **Gemini 4 Argon (Medium)**, checked in a clean home directory.
+  `/usage` gained a matching `Gemini 4 Argon` family.
+- 🐛 **A quota failure didn't say which model family was out
+  ([#7](https://github.com/SinanTufekci/agent-intern/issues/7)). Fixed.** agy counts quota per
+  family (Gemini 4 Argon, the other Gemini models, Claude and GPT), but a call that hit one came
+  back as a bare `agy exited 1 … Individual quota reached`. A calling agent read that as "agy is out
+  of quota" and moved the work onto its own tokens, when another family would have answered. Now
+  a failed run whose output reads like a quota or rate-limit error gets agy's own `/usage` table
+  appended (free to read), names the family the call drew on, and suggests a model from a family
+  that still has quota. This covers `antigravity_ask`/`_continue` with and without `watch`, and
+  antigravity swarm workers; image workers used to report such a failure as "no image file
+  produced" and now pass agy's error on. Checked against the live `/usage` table and model list:
+  every one of the 13 models maps to its family. A real exhausted family was not available to test
+  against, so the 0% case was checked by editing the live table.
+- 🐛 **`antigravity_status` reported `newest transcript [!!]` while everything worked
+  ([#8](https://github.com/SinanTufekci/agent-intern/issues/8)). Fixed.** The row read only the
+  single newest conversation, which is often unfinished: empty after a self-update, still running
+  in another call or swarm worker, or a failed turn with no answer. It now reports the newest
+  conversation that has a readable answer and says how many newer ones it skipped. It fails only
+  when none of the ten newest is readable and at least one of those is neither empty nor touched
+  in the last five minutes. Run against the same live brain dir, the old check reported `[!!]`
+  for the newest conversation, a turn with no answer, and the new one reports
+  `readable (skipped 2 newer …)`.
 - 🐛 **opencode's free tier refused every `read-only` call. Fixed.** Since early October 2026 the
   free tier has rejected any request that lacks the `bash` tool, with *"OpenCode's free tier can
   only be used from within OpenCode."* `read-only`, the default, denied `bash`, and a denied tool is

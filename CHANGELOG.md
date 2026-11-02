@@ -10,8 +10,31 @@ summary.
 
 ## [Unreleased]
 
+### Changed
+
+- **A quota failure now says which model family is out, and which still has quota
+  ([#7](https://github.com/SinanTufekci/agent-intern/issues/7)).** agy counts quota per model
+  family, but a call that hit a limit came back as a bare `agy exited 1 … Individual quota
+  reached`, which a calling agent read as "agy is out of quota". When agy's output reads like a
+  quota or rate-limit error, the error now carries agy's `/usage` table (free to read), the family
+  the call drew on, and a model from a family that still has quota, e.g.
+  `retry with … Gemini Models (e.g. model="gemini-3.8-flash-high")`. Covers ask and continue,
+  watched or not, and antigravity swarm workers. One `/usage` read serves a burst of failures.
+- **Re-verified on agy 1.4.12.** No break. The bridge also reads 1.4.11's `finished_reason`: a turn
+  agy reports as cut short (`print_timeout`, `interrupted` or `error`) is an error with the
+  partial answer attached, never returned as a whole answer. The new `gemini-4-argon` family is
+  documented; with nothing set in `settings.json`, agy now defaults to Gemini 4 Argon (Medium).
+
 ### Fixed
 
+- **`antigravity_status` reported `newest transcript [!!]` and `PROBLEMS FOUND` while everything
+  worked ([#8](https://github.com/SinanTufekci/agent-intern/issues/8)).** It read only the newest
+  conversation, which is often empty (left by an agy self-update), still running, or a failed turn.
+  It now reports the newest conversation with a readable answer, says how many newer ones it
+  skipped, and fails only when none of the ten newest is readable and one of those is neither
+  empty nor still running.
+- **An antigravity image swarm worker that hit a quota limit reported "no image file produced".**
+  It now passes agy's error on, with the quota note above.
 - **`agent_swarm(watch=true)` wrote a line into the MCP protocol stream.** Opening or reusing the
   swarm dashboard printed its URL to stdout, which is the JSON-RPC channel, so the host received a
   line that was not JSON-RPC, carrying the dashboard's access token. It now goes to the debug log

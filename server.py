@@ -23,8 +23,8 @@ must have logged in interactively at least once via the Antigravity IDE or
 `agy -i`. Uses the same AI Pro quota. The bridge itself only does cross-
 platform filesystem reads under `~/.gemini/antigravity-cli/`.
 
-Model: defaults to agy's settings.json "model" field (gemini-3.8-flash-high as of
-agy 1.1.25).
+Model: defaults to agy's settings.json "model" field, and to agy's own default
+where that is unset (Gemini 4 Argon (Medium) on agy 1.4.12, checked in a clean HOME).
 agy 1.0.5 added a --model flag (and a `models` subcommand); through
 ~1.0.14 switching to a DIFFERENT model in -p HUNG the call (verified on 1.0.5:
 the active label returned in seconds, any other hung >60s), so the bridge kept
@@ -44,21 +44,23 @@ unchecked. `agy models` itself must be
 run with stdin closed (it blocks on an interactive terminal otherwise), same as
 -p is spawned with DEVNULL stdin.
 
-Model SLUGS (agy 1.1.5, list re-checked live on 1.3.5) — the label format CHANGED
+Model SLUGS (agy 1.1.5, list re-checked live on 1.4.12) — the label format CHANGED
 and every old example is now invalid. 1.1.5 introduced "stable, user-facing model
 slugs" that the /model picker shows and --model accepts, and `agy models` emits
 those slugs (bare through 1.1.10; as `<slug>\t<human label>` from 1.1.11 on — see
-_parse_models_output). The live list (re-read on 1.3.5) is:
-gemini-3.8-flash-{low,medium,high}, claude-opus-5-5-{low,medium,high},
-claude-sonnet-5-5-{low,medium,high}, gpt-oss-120b-medium — 1.1.6 ADDED the
-gemini-3.6-flash family and moved the settings.json default to it, the
-gemini-3.7-flash family arrived by 1.1.16 and took the default in turn, and 1.1.25
-added gemini-3.8-flash and moved the default onto THAT (verified live through this
-bridge: a call passing no `model` at all answered "Gemini 3.8 Flash"). Somewhere
-between 1.2.11 and 1.3.5 the catalog shrank to the list above: gemini-3.7-flash,
-gemini-3.6-flash, gemini-3.1-pro, claude-sonnet-4-6 and claude-opus-4-6-thinking
-went, the two Claude 5.5 families came in, each with three effort variants, and
-no changelog entry says so. The default stayed on Gemini 3.8 Flash (High).
+_parse_models_output). The live list (re-read on 1.4.12) is:
+gemini-4-argon-{low,medium,high}, gemini-3.8-flash-{low,medium,high},
+claude-opus-5-5-{low,medium,high}, claude-sonnet-5-5-{low,medium,high},
+gpt-oss-120b-medium. 1.1.6 ADDED the gemini-3.6-flash family and moved the
+settings.json default to it, the gemini-3.7-flash family arrived by 1.1.16 and
+took the default in turn, and 1.1.25 added gemini-3.8-flash and moved the default
+onto THAT (verified live through this bridge: a call passing no `model` at all
+answered "Gemini 3.8 Flash"). Somewhere between 1.2.11 and 1.3.5 the catalog
+shrank: gemini-3.7-flash, gemini-3.6-flash, gemini-3.1-pro, claude-sonnet-4-6 and
+claude-opus-4-6-thinking went, the two Claude 5.5 families came in, each with
+three effort variants, and no changelog entry says so. The default stayed on
+Gemini 3.8 Flash (High). By 1.4.12 the gemini-4-argon family had arrived, and
+with no model in settings.json agy now picks Gemini 4 Argon (Medium).
 
 Two things about the 3.8 arrival are worth keeping. Its changelog entry scopes it
 to "when connecting with a `GEMINI_API_KEY`", but it is in the catalog on the
@@ -686,6 +688,23 @@ _AGY_LOCK = threading.Lock()
 # Newer agy releases may change paths/schemas (the SQLite migration is the known
 # risk), so we warn at startup if the installed agy is newer than this.
 #
+# 1.4.12 re-verification (live, Windows): fourteen releases and a minor bump, no
+# break. Ask on the default model, continue in the same conversation, an image, a
+# two-worker swarm, `--model gemini-4-argon-high`, `/usage` and `/changelog` (both
+# still answered by the CLI, no conversation left behind) all held. 1.4.7 stopped
+# headless runs from "rendering the transcript for display", but the JSONL
+# transcript is still written: the swarm workers, which read nothing else, answered.
+# 1.4.11 added `finished_reason` to the json and stream-json results (see
+# _FINISHED_EARLY_REASONS); an expired --print-timeout reports "print_timeout" and
+# still exits 0 with status SUCCESS and the same stderr line, so the old check held
+# and the field is a second signal. Only print_timeout was seen live; "error" and
+# "interrupted" are handled as the changelog describes them. The drift is the model
+# catalog once more: a gemini-4-argon family (low, medium, high), in no changelog
+# entry until 1.4.3 fixed it for GEMINI_API_KEY users, and agy's own default moved
+# onto it: in a clean HOME with no settings.json, 1.4.12 picked Gemini 4 Argon
+# (Medium). `/usage` gained a matching "Gemini 4 Argon" family whose limit is named
+# "Gemini 4 Argon Weekly Limit" (no "Remaining"), which the parser already handled.
+#
 # 1.3.5 re-verification (live, Windows): thirteen releases and a minor bump, no
 # break. Ask on the default model, continue pinning the same conversation, a
 # one-worker swarm, and `/usage` all held. 1.3.2 stopped
@@ -738,8 +757,9 @@ _AGY_LOCK = threading.Lock()
 # self-updated, and antigravity_status dutifully reported "newest transcript [!!]"
 # for it. The read path was fine -- the very next bridge call wrote a real
 # transcript and status went green -- so an empty newest-conversation is a stale
-# artifact, not a regression.
-VERIFIED_AGY_VERSION = (1, 3, 5)
+# artifact, not a regression. (Issue #8: the row now skips such conversations, and
+# ones still running or whose turn failed; see _transcript_status_row.)
+VERIFIED_AGY_VERSION = (1, 4, 12)
 
 # First agy version whose print mode understands `--output-format json` (1.1.8).
 # Below this the flag is unknown to agy's parser, so the bridge must not pass it
@@ -1498,6 +1518,89 @@ def _bridge_status_rows() -> list[tuple[str, bool, str]]:
     return rows
 
 
+# How many of the newest conversations _transcript_status_row tries before it calls
+# the read path broken.
+_TRANSCRIPT_PROBE_LIMIT = 10
+# A conversation touched this recently may still be running (another bridge call, a
+# swarm worker, agy's own UI), so failing to read it is no evidence of anything.
+_TRANSCRIPT_IN_PROGRESS_S = 300.0
+
+
+def _conversations_newest_first(limit: int) -> list[tuple[str, float]]:
+    """(conversation id, brain-dir mtime) for the `limit` newest conversations."""
+    if not BRAIN_DIR.is_dir():
+        return []
+    convs: list[tuple[str, float]] = []
+    for child in BRAIN_DIR.iterdir():
+        if not child.is_dir():
+            continue
+        try:
+            convs.append((child.name, child.stat().st_mtime))
+        except OSError:
+            continue
+    convs.sort(key=lambda c: c[1], reverse=True)
+    return convs[:limit]
+
+
+def _conversation_is_empty(conv_id: str) -> bool:
+    """No transcript entries and no SQLite store: nothing was ever written to read.
+
+    agy leaves such a brain dir behind when it self-updates (just empty
+    .user_uploaded/ and scratch/ folders, seen on 1.1.24)."""
+    return not _transcript_entries(conv_id) and not (CONVERSATIONS_DIR / f"{conv_id}.db").exists()
+
+
+def _transcript_status_row() -> tuple[str, bool, str]:
+    """Status row for the read path: can the bridge still read agy's answers?
+
+    Issue #8: this used to read only the single newest conversation, and that one
+    is often not finished. agy may have left it empty while self-updating, another
+    bridge call or a swarm worker may be running it right now, or its turn may have
+    failed (a quota error, a soft-denied tool) without writing an answer. Each of
+    those flipped Overall to PROBLEMS FOUND while every call worked, and a calling
+    agent then read that as "agy is broken".
+
+    What the row is for is a change in agy's transcript format, and that breaks
+    every conversation, not one. So: walk the newest _TRANSCRIPT_PROBE_LIMIT and
+    report ok at the first readable answer. Fail only when none is readable and at
+    least one of them is neither empty nor recent enough to still be running.
+    """
+    label = "newest transcript"
+    convs = _conversations_newest_first(_TRANSCRIPT_PROBE_LIMIT)
+    if not convs:
+        return (label, True, "no conversations yet")
+    now = time.time()
+    skipped = 0
+    suspect: Optional[str] = None
+    for conv_id, mtime in convs:
+        try:
+            _read_response(conv_id)
+        except RuntimeError as e:
+            skipped += 1
+            if (
+                suspect is None
+                and now - mtime > _TRANSCRIPT_IN_PROGRESS_S
+                and not _conversation_is_empty(conv_id)
+            ):
+                suspect = str(e)
+            continue
+        if skipped:
+            return (
+                label,
+                True,
+                f"readable (skipped {skipped} newer without a finished answer: "
+                "empty, still running or failed)",
+            )
+        return (label, True, "readable")
+    if suspect is None:
+        return (
+            label,
+            True,
+            f"nothing finished to read yet (the {len(convs)} newest are empty or still running)",
+        )
+    return (label, False, f"none of the {len(convs)} newest is readable: {suspect}"[:160])
+
+
 def _collect_status() -> list[tuple[str, bool, str]]:
     """Gather setup diagnostics as (label, ok, detail) rows.
 
@@ -1529,15 +1632,7 @@ def _collect_status() -> list[tuple[str, bool, str]]:
 
     rows.append(("last_conversations.json", LAST_CONVERSATIONS.exists(), str(LAST_CONVERSATIONS)))
 
-    newest = _find_newest_conv_after(0.0)
-    if newest is None:
-        rows.append(("newest transcript", True, "no conversations yet"))
-    else:
-        try:
-            _read_response(newest)
-            rows.append(("newest transcript", True, "readable"))
-        except RuntimeError as e:
-            rows.append(("newest transcript", False, str(e)[:80]))
+    rows.append(_transcript_status_row())
 
     if CONVERSATIONS_DIR.exists():
         n = sum(1 for _ in CONVERSATIONS_DIR.glob("*.db"))
@@ -1845,35 +1940,49 @@ def _percent_remaining(value: str) -> Optional[float]:
         return None
 
 
-def _parse_usage_rows(stdout: str) -> list[tuple[str, bool, str]]:
-    """agy's `/usage` table as status rows, one per model family.
+def _parse_usage_table(stdout: str) -> dict[str, list[tuple[str, str, str]]]:
+    """agy's `/usage` table grouped by model family: {family: [(limit, remaining, resets)]}.
 
     agy 1.1.11+ prints one tab-separated record per limit:
 
         Gemini Models\tWeekly Limit Remaining\t100%\t2026-08-11T18:50:23Z
 
-    i.e. family, limit name, remaining share, reset time. We group by family in
-    first-seen order and keep the remaining share, dropping the reset timestamps —
-    they are the least useful column in a one-line status row.
-
-    A family whose remaining share has hit 0% is reported NOT ok: every call
-    against it will fail until the window resets, which is exactly the kind of
-    thing this tool exists to surface before the user spends a call finding out.
-    Unrecognized lines are skipped rather than raising — agy's format may change
-    again, and a status probe must never be the thing that breaks.
+    i.e. family, limit name, remaining share, reset time. Families keep their
+    first-seen order. The limit name loses its " Limit Remaining" tail ("Weekly");
+    a family-specific limit keeps its own prefix ("Gemini 4 Argon Weekly", from
+    "Gemini 4 Argon Weekly Limit", as agy 1.4.12 prints it). Unrecognized lines are
+    skipped rather than raising — agy's format may change again, and a status probe
+    must never be the thing that breaks.
     """
-    families: dict[str, list[tuple[str, str]]] = {}
+    families: dict[str, list[tuple[str, str, str]]] = {}
     for line in stdout.splitlines():
         fields = [f.strip() for f in line.split("\t")]
         if len(fields) < 3 or not fields[0] or not fields[2]:
             continue
         limit = fields[1].removesuffix(" Remaining").removesuffix(" Limit")
-        families.setdefault(fields[0], []).append((limit or fields[1], fields[2]))
+        resets = fields[3] if len(fields) > 3 else ""
+        families.setdefault(fields[0], []).append((limit or fields[1], fields[2], resets))
+    return families
+
+
+def _family_exhausted(limits: list[tuple[str, str, str]]) -> bool:
+    """True if any of a family's limits has 0% left: every call against it fails."""
+    return any(_percent_remaining(value) == 0.0 for _, value, _ in limits)
+
+
+def _parse_usage_rows(stdout: str) -> list[tuple[str, bool, str]]:
+    """agy's `/usage` table as status rows, one per model family.
+
+    Keeps the remaining share and drops the reset timestamps — they are the least
+    useful column in a one-line status row. A family whose remaining share has hit
+    0% is reported NOT ok: every call against it will fail until the window resets,
+    which is exactly the kind of thing this tool exists to surface before the user
+    spends a call finding out.
+    """
     rows: list[tuple[str, bool, str]] = []
-    for family, limits in families.items():
-        detail = ", ".join(f"{name} {value}" for name, value in limits)
-        exhausted = any(_percent_remaining(v) == 0.0 for _, v in limits)
-        rows.append((f"quota: {family}", not exhausted, detail))
+    for family, limits in _parse_usage_table(stdout).items():
+        detail = ", ".join(f"{name} {value}" for name, value, _ in limits)
+        rows.append((f"quota: {family}", not _family_exhausted(limits), detail))
     return rows
 
 
@@ -1891,6 +2000,179 @@ def _quota_status_rows() -> list[tuple[str, bool, str]]:
     out = _read_agy_usage()
     rows = _parse_usage_rows(out) if out else []
     return rows or [("quota", True, 'unreadable (`agy -p "/usage"` failed)')]
+
+
+# --- quota failures (issue #7) ---------------------------------------------------
+# agy's quota is per model FAMILY ("Gemini Models", "Gemini 4 Argon", "Claude and
+# GPT models"), but a run that hits one fails with a bare non-zero exit, e.g.
+# "Individual quota reached, resets in ~75h". A calling agent reads that as "agy is
+# out of quota" and moves the job onto its own, scarcer tokens, when another family
+# would have answered for free. So a failed run whose output reads like a quota or
+# rate-limit error gets agy's own `/usage` table appended, with the family the call
+# drew on and a model to retry with.
+#
+# The markers are matched only against a FAILED run's stderr/stdout, never an
+# answer. A false positive costs one free `/usage` read and an extra paragraph.
+_QUOTA_FAILURE_MARKERS = (
+    "quota",
+    "rate limit",
+    "rate-limit",
+    "rate_limit",
+    "ratelimit",
+    "resource_exhausted",
+    "resource exhausted",
+    "too many requests",
+)
+
+# A swarm whose workers all hit the same exhausted family fails N times within a
+# second or two. One `/usage` read serves them all.
+_QUOTA_REPORT_TTL_S = 30.0
+_QUOTA_REPORT_CACHE: Optional[tuple[float, Optional[str]]] = None
+_QUOTA_REPORT_LOCK = threading.Lock()
+
+
+def _looks_like_quota_failure(text: Optional[str]) -> bool:
+    low = (text or "").lower()
+    return any(m in low for m in _QUOTA_FAILURE_MARKERS)
+
+
+def _recent_agy_usage() -> Optional[str]:
+    """`/usage` stdout for a failure report, shared for _QUOTA_REPORT_TTL_S.
+
+    None where agy has no free `/usage` (see supports_print_usage) or the read
+    failed. Unlike antigravity_status, which always reads fresh, a failure report
+    only needs the table to be seconds old.
+    """
+    global _QUOTA_REPORT_CACHE
+    if not supports_print_usage():
+        return None
+    with _QUOTA_REPORT_LOCK:
+        cached = _QUOTA_REPORT_CACHE
+        if cached is not None and time.monotonic() - cached[0] < _QUOTA_REPORT_TTL_S:
+            return cached[1]
+        out = _read_agy_usage()
+        _QUOTA_REPORT_CACHE = (time.monotonic(), out)
+        return out
+
+
+def _family_prefixes(family: str) -> list[str]:
+    """Model-slug prefixes a `/usage` family covers.
+
+    "Gemini 4 Argon" -> ["gemini-4-argon"], "Gemini Models" -> ["gemini"],
+    "Claude and GPT models" -> ["claude", "gpt"].
+    """
+    words = [w for w in family.lower().split() if w not in ("model", "models")]
+    return ["-".join(part.split()) for part in " ".join(words).split(" and ") if part.strip()]
+
+
+def _model_usage_family(model: Optional[str], families) -> Optional[str]:
+    """The `/usage` family a model draws on, or None if no family name matches.
+
+    Takes a slug (gemini-4-argon-high) or the human label agy's settings.json holds
+    (Gemini 4 Argon (High)). The longest matching family prefix wins, so a model
+    with its own family ("Gemini 4 Argon") is not counted under the generic
+    "Gemini Models".
+    """
+    if not model:
+        return None
+    slug = "-".join(re.sub(r"\s*\([^)]*\)\s*$", "", model).lower().split())
+    best: Optional[str] = None
+    best_len = 0
+    for family in families:
+        for prefix in _family_prefixes(family):
+            if (slug == prefix or slug.startswith(prefix + "-")) and len(prefix) > best_len:
+                best, best_len = family, len(prefix)
+    return best
+
+
+def _agy_settings_model() -> Optional[str]:
+    """The `"model"` label in agy's settings.json (what a call without `model` runs
+    on, swarm workers included: they copy this file), or None if unset/unreadable."""
+    try:
+        data = json.loads((AGY_DATA / "settings.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    model = data.get("model") if isinstance(data, dict) else None
+    return model if isinstance(model, str) and model.strip() else None
+
+
+def _quota_failure_note(model: Optional[str]) -> str:
+    """Which model families are out of quota and which still have some, for a
+    failed run that hit a quota or rate limit. Spends no quota (see _read_agy_usage).
+    """
+    table = _parse_usage_table(_recent_agy_usage() or "")
+    if not table:
+        return (
+            "agy reported a quota or rate limit, but its `/usage` table could not be "
+            "read to say which model family is out. Quota is counted per model family, "
+            "so another family may still answer: retry with a different `model` (agy's "
+            "`models` list has them), or run antigravity_status."
+        )
+    lines = ["agy reported a quota or rate limit. Quota left per model family (agy `/usage`):"]
+    for family, limits in table.items():
+        parts = []
+        for name, value, resets in limits:
+            empty = _percent_remaining(value) == 0.0
+            parts.append(f"{name} {value}" + (f" (resets {resets})" if empty and resets else ""))
+        mark = "  <- OUT OF QUOTA" if _family_exhausted(limits) else ""
+        lines.append(f"  {family}: {', '.join(parts)}{mark}")
+
+    exhausted = [f for f, limits in table.items() if _family_exhausted(limits)]
+    if not exhausted:
+        lines.append(
+            "No family is at 0%, so this is most likely a short-term rate limit: wait a "
+            "little and retry."
+        )
+        return "\n".join(lines)
+
+    if model:
+        ran_on = f"This call ran on {model}"
+        family = _model_usage_family(model, table)
+    else:
+        default = _agy_settings_model()
+        ran_on = "This call ran on agy's default model" + (f" ({default})" if default else "")
+        family = _model_usage_family(default, table)
+    if family in exhausted:
+        lines.append(f"{ran_on}, which draws on {family}, and that family is out of quota.")
+    elif family:
+        lines.append(
+            f"{ran_on}, which draws on {family}, and that family still shows quota, so "
+            "this may be a short-term rate limit: wait a little and retry."
+        )
+        return "\n".join(lines)
+    else:
+        lines.append(f"{ran_on}.")
+
+    models = list_agy_models()
+    options = []
+    for fam, limits in table.items():
+        if _family_exhausted(limits):
+            continue
+        # Match against every family, so gemini-4-argon-* counts as Gemini 4 Argon
+        # and is never offered as a "Gemini Models" example.
+        example = next((m for m in models if _model_usage_family(m, table) == fam), None)
+        options.append(f'{fam} (e.g. model="{example}")' if example else fam)
+    if options:
+        lines.append(
+            "agy itself is working: retry with a model from a family that still has "
+            f"quota: {'; '.join(options)}."
+        )
+    else:
+        lines.append("Every model family is out of quota until the reset times above.")
+    return "\n".join(lines)
+
+
+def _with_quota_note(message: str, output: Optional[str], model: Optional[str] = None) -> str:
+    """`message`, plus _quota_failure_note when `output` (a FAILED agy run's stderr
+    and stdout) reads like a quota or rate-limit error. The note is a courtesy: if
+    building it fails, the original message goes out unchanged."""
+    if not _looks_like_quota_failure(output):
+        return message
+    try:
+        return f"{message}\n\n{_quota_failure_note(model)}"
+    except Exception:  # noqa: BLE001 — never let the courtesy mask the real error
+        log.debug("quota note failed", exc_info=True)
+        return message
 
 
 def _parse_json_result(stdout: str) -> Optional[dict]:
@@ -2167,6 +2449,39 @@ def _print_timeout_error(timeout_s: int, partial: str = "") -> RuntimeError:
     return RuntimeError(msg)
 
 
+# agy 1.4.11 added `finished_reason` to the `--output-format json` result and the
+# stream-json result event. It is present only when the turn ended early, and the
+# changelog names three values: print_timeout, interrupted and error. Like the
+# 1.2.0 timeout, such a run can still exit 0 with status SUCCESS (verified on
+# 1.4.12 for print_timeout), so the field, not the status, says the answer is cut.
+_FINISHED_EARLY_REASONS = ("print_timeout", "interrupted", "error")
+
+
+def _finished_reason(result: Optional[dict]) -> Optional[str]:
+    """agy's `finished_reason` from a json/stream-json result, or None if absent."""
+    reason = (result or {}).get("finished_reason")
+    return reason if isinstance(reason, str) and reason else None
+
+
+def _finished_early_error(
+    reason: str, partial: str, stderr: Optional[str], model: Optional[str]
+) -> RuntimeError:
+    """The error for a turn agy says it ended early for a reason other than a timeout.
+
+    Same contract as _print_timeout_error: a cut-short answer is an error, and the
+    partial text rides along, labelled as cut, instead of being passed off as whole.
+    """
+    msg = f"agy ended the turn early (finished_reason={reason}), so its answer is incomplete."
+    stderr = (stderr or "").strip()
+    if stderr:
+        msg += f"\nstderr: {stderr[-1000:]}"
+    msg = _with_quota_note(msg, stderr, model)
+    partial = (partial or "").strip()
+    if partial:
+        msg += f"\n\n--- partial answer, cut off mid-turn ({len(partial)} chars) ---\n{partial}"
+    return RuntimeError(msg)
+
+
 def _build_agy_args(
     prompt: str,
     workspace: str,
@@ -2277,9 +2592,13 @@ def _run_agy(
         log.debug("agy exited %s in %.1fs", proc.returncode, time.time() - start)
         if proc.returncode != 0:
             raise RuntimeError(
-                f"agy exited {proc.returncode}\n"
-                f"stderr: {proc.stderr[-1000:]}\n"
-                f"stdout: {proc.stdout[-500:]}"
+                _with_quota_note(
+                    f"agy exited {proc.returncode}\n"
+                    f"stderr: {proc.stderr[-1000:]}\n"
+                    f"stdout: {proc.stdout[-500:]}",
+                    f"{proc.stderr}\n{proc.stdout[-2000:]}",
+                    model,
+                )
             )
 
         # agy 1.0.15 fixed the print-mode stdout bug (Windows): `agy -p` now writes
@@ -2301,16 +2620,24 @@ def _run_agy(
         # A None result means agy gave us plain text after all (an agy that ignored
         # the flag), which falls through to the text path below unchanged.
         result = _parse_json_result(stdout_answer) if use_json else None
-        if _print_timed_out(proc.stderr):
-            # Exit 0 and status SUCCESS, but the turn was cut — see _print_timeout_error.
-            # Still record the conversation: it is this workspace's newest thread, and
-            # leaving the previous id in place would point a later continue at an
-            # older one.
+        reason = _finished_reason(result)
+        if _print_timed_out(proc.stderr) or reason in _FINISHED_EARLY_REASONS:
+            # Exit 0 and status SUCCESS, but the turn was cut — see _print_timeout_error
+            # and _FINISHED_EARLY_REASONS. Still record the conversation: it is this
+            # workspace's newest thread, and leaving the previous id in place would
+            # point a later continue at an older one.
             conv_id = (result or {}).get("conversation_id") or ""
             if conv_id and pin:
                 _record_conv_id(workspace, conv_id)
             partial = (result.get("response") or "") if result is not None else stdout_answer
-            raise _print_timeout_error(timeout_s, partial)
+            if _print_timed_out(proc.stderr) or reason == "print_timeout":
+                raise _print_timeout_error(timeout_s, partial)
+            raise _finished_early_error(reason, partial, proc.stderr, model)
+        if reason:
+            # A value newer than this bridge. The field is documented as present only
+            # on an early end, but its vocabulary may grow; like an unexpected status,
+            # note it rather than discard what may be a whole answer.
+            log.warning("agy reported finished_reason=%s; returning its answer", reason)
         if schema is not None and result is None:
             raise RuntimeError(
                 "agy produced no structured result object for a --json-schema run "
@@ -2535,15 +2862,28 @@ def _run_agy_watched(
         err_t.join(timeout=5)
         if proc.returncode != 0:
             _watch_finish(rid, "error", f"(agy exited {proc.returncode})", time.time() - start)
-            stderr_tail = "".join(err_chunks)[-1000:]
-            raise RuntimeError(f"agy exited {proc.returncode}\nstderr: {stderr_tail}")
-        if _print_timed_out("".join(err_chunks)):
+            stderr_text = "".join(err_chunks)
+            raise RuntimeError(
+                _with_quota_note(
+                    f"agy exited {proc.returncode}\nstderr: {stderr_text[-1000:]}",
+                    f"{stderr_text}\n{''.join(_out)[-2000:]}",
+                    model,
+                )
+            )
+        reason = _finished_reason(stream.result if stream is not None else None)
+        timed_out = _print_timed_out("".join(err_chunks)) or reason == "print_timeout"
+        if timed_out or reason in _FINISHED_EARLY_REASONS:
             # Same cut-short-but-exit-0 turn as _run_agy — see _print_timeout_error.
             if stream is not None and stream.conv_id:
                 _record_conv_id(workspace, stream.conv_id)
             partial = ((stream.result or {}).get("response") or "") if stream is not None else ""
-            _watch_finish(rid, "error", "(timed out)", time.time() - start)
-            raise _print_timeout_error(timeout_s, partial)
+            if timed_out:
+                _watch_finish(rid, "error", "(timed out)", time.time() - start)
+                raise _print_timeout_error(timeout_s, partial)
+            _watch_finish(rid, "error", f"(ended early: {reason})", time.time() - start)
+            raise _finished_early_error(reason, partial, "".join(err_chunks), model)
+        if reason:
+            log.warning("agy reported finished_reason=%s; returning its answer", reason)
 
         # The stream's terminal `result` event is the answer, and its conversation_id
         # is agy naming its own conversation — record it so a later continue pins to

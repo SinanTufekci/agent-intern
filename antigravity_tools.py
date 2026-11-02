@@ -60,12 +60,15 @@ async def antigravity_ask(
         workspace: Working directory for the conversation. Defaults to cwd.
                    Choose an existing project dir for context-aware responses.
         model: Optional model slug to run this conversation on (agy's --model),
-               e.g. "claude-sonnet-5-5-high" or "gemini-3.8-flash-low". Omit to use
-               the model set in agy's settings.json (gemini-3.8-flash-high as of
-               agy 1.3.5). Must be one of `agy models` — an unknown slug is
-               rejected up front. agy renames and drops models between releases,
-               often with no changelog entry, so a slug from older docs may be
-               gone; see antigravity_status / `agy models` for the valid ones.
+               e.g. "gemini-4-argon-high" or "gemini-3.8-flash-low". Omit to use
+               the model set in agy's settings.json, or agy's own default when
+               none is set (Gemini 4 Argon (Medium) as of agy 1.4.12). Must be one
+               of `agy models` — an unknown slug is rejected up front. agy renames
+               and drops models between releases, often with no changelog entry,
+               so a slug from older docs may be gone; see antigravity_status /
+               `agy models` for the valid ones. Quota is counted per model family:
+               if a call fails on quota, the error lists each family's quota and a
+               model from a family that still has some.
         timeout_s: Max seconds to wait for agy to complete. Default 180.
         watch: If true, open a live "watch" view in your browser that streams
                agy's steps (narration + the real commands it runs) as it works.
@@ -351,7 +354,8 @@ def antigravity_status() -> str:
     per model family (agy 1.1.11+ answers `/usage` in print mode for free — a
     family at 0% is reported as a problem, since every call against it will fail
     until its window resets), whether agy's state directories exist, whether the
-    newest conversation transcript is readable, and whether the SQLite
+    bridge can still read agy's answers (the newest conversation that has one;
+    empty, still-running and failed ones are skipped), and whether the SQLite
     conversation store is present. Use this to debug empty or failed responses —
     or to see if the bridge itself is out of date, or if you are simply out of
     quota — before spending quota.

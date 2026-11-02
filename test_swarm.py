@@ -27,8 +27,14 @@ def _pin_isolation_ok():
     it explicitly.
     """
     swarm._ISOLATION_OK = True
+    # A worker that fails with a quota error reads agy's `/usage` (server's quota
+    # note). Pin that probe OFF and the shared report empty, so no test spawns it.
+    server._AGY_USAGE_GATE = False
+    server._QUOTA_REPORT_CACHE = None
     yield
     swarm._ISOLATION_OK = None
+    server._AGY_USAGE_GATE = None
+    server._QUOTA_REPORT_CACHE = None
 
 
 # --------------------------------------------------------------------------
@@ -810,6 +816,50 @@ def test_text_worker_does_not_retry_other_failures(monkeypatch, tmp_path):
     res = swarm._run_text_worker(0, "hi", str(tmp_path), None, 10)
     assert res.ok is False and "quota exhausted" in res.error
     assert swarm._ISOLATION_OK is True  # unrelated failures don't latch
+
+
+# Issue #7, on the swarm's paths: agy's `/usage` with the Gemini 4 Argon family empty.
+_USAGE_ARGON_EMPTY = (
+    "Gemini Models\tWeekly Limit Remaining\t91%\t2026-11-09T13:12:12Z\n"
+    "Gemini 4 Argon\tGemini 4 Argon Weekly Limit\t0%\t2026-11-04T13:34:06Z\n"
+)
+
+
+@pytest.fixture
+def argon_empty(monkeypatch):
+    monkeypatch.setattr(server, "supports_print_usage", lambda: True)
+    monkeypatch.setattr(server, "_read_agy_usage", lambda: _USAGE_ARGON_EMPTY)
+    monkeypatch.setattr(
+        server, "list_agy_models", lambda: ["gemini-4-argon-high", "gemini-3.8-flash-high"]
+    )
+    monkeypatch.setattr(server, "_agy_settings_model", lambda: "Gemini 4 Argon (High)")
+
+
+class _QuotaFailed:
+    returncode = 1
+    stdout = ""
+    stderr = "Error: Individual quota reached, resets in ~75h\n"
+
+
+def test_text_worker_quota_failure_says_which_family_is_out(monkeypatch, tmp_path, argon_empty):
+    monkeypatch.setattr(swarm.proc_tree, "run_captured", lambda *a, **k: _QuotaFailed())
+    monkeypatch.setattr(server, "_run_agy", lambda *a, **k: pytest.fail("must not retry"))
+    res = swarm._run_text_worker(0, "hi", str(tmp_path), "gemini-4-argon-high", 10)
+    assert res.ok is False and "Individual quota reached" in res.error
+    assert "that family is out of quota" in res.error
+    assert 'model="gemini-3.8-flash-high"' in res.error
+    assert swarm._ISOLATION_OK is True  # a quota note must not read as an auth failure
+
+
+def test_image_worker_quota_failure_is_not_no_image_produced(monkeypatch, tmp_path, argon_empty):
+    # This path used to swallow every non-auth exit and fail with "no image file
+    # produced", which hides that the account is simply out of quota.
+    target = str(tmp_path / "out.png")
+    monkeypatch.setattr(swarm.proc_tree, "run_captured", lambda *a, **k: _QuotaFailed())
+    res = swarm._run_image_worker(0, "draw", target, str(tmp_path), 10)
+    assert res.ok is False and "Individual quota reached" in res.error
+    assert "agy's default model (Gemini 4 Argon (High))" in res.error
+    assert swarm._ISOLATION_OK is True
 
 
 def test_image_worker_auth_failure_retries_serialized(monkeypatch, tmp_path):
