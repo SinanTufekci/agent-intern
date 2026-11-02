@@ -10,6 +10,8 @@ summary.
 
 ## [Unreleased]
 
+## [0.34.0] - 2026-11-02
+
 ### Changed
 
 - **A quota failure now says which model family is out, and which still has quota
@@ -1895,7 +1897,8 @@ caller might copy becomes a guaranteed rejected call.
 
 - **BREAKING:** `antigravity_ask_stream` (superseded by watch mode).
 
-[Unreleased]: https://github.com/SinanTufekci/agent-intern/compare/v0.33.0...HEAD
+[Unreleased]: https://github.com/SinanTufekci/agent-intern/compare/v0.34.0...HEAD
+[0.34.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.33.0...v0.34.0
 [0.33.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.32.1...v0.33.0
 [0.32.1]: https://github.com/SinanTufekci/agent-intern/compare/v0.32.0...v0.32.1
 [0.32.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.31.1...v0.32.0
