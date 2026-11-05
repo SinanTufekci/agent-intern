@@ -3,7 +3,8 @@
 Seventh backend alongside the agy bridge (server.py), Codex (codex_bridge.py),
 Copilot (copilot_bridge.py), Cursor (cursor_bridge.py), Grok (grok_bridge.py) and
 Kimi (kimi_bridge.py). opencode is SST's open-source terminal coding agent
-(`opencode`, https://github.com/sst/opencode, npm `opencode-ai`). Like
+(`opencode`, https://github.com/sst/opencode, npm `@opencode/cli` for 2.x,
+`opencode-ai` for 1.x). Like
 codex/copilot/cursor it is stdout-native in headless mode: `opencode run --format
 json "<prompt>"` runs one prompt non-interactively, writes NDJSON events to
 STDOUT, and exits — so we read the answer from stdout, no transcript scraping.
@@ -68,6 +69,11 @@ but unlike grok's, it behaves IDENTICALLY on Windows, macOS and Linux. Modes:
                      denied, so escaping the workspace is refused, not asked.
   - danger-full-access  `--auto` (opencode's own word for it: "dangerous!"), no
                      policy at all.
+OPENCODE 2.x changes the mechanism, not the modes: the policy goes in
+OPENCODE_CONFIG_CONTENT as an ordered rule list and every run passes --standalone
+(see _V2_READ_ONLY_RULES for why both are required, and what workspace-write no
+longer confines there: the shell). A major the bridge has no verified policy for
+is refused outright (check_supported_version), never run unfenced.
 ⚠️ FOOTGUN, read off the bundle: invalid JSON in OPENCODE_PERMISSION is SKIPPED
 with a debug-level warning — a typo would silently mean NO restrictions. That is
 why the policy is built as a dict and serialized with json.dumps, never
@@ -84,6 +90,7 @@ providers list` (all non-interactive, all free) for the status view.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import shutil
@@ -108,7 +115,8 @@ def _resolve_bin() -> str:
     On Windows the npm install is an `opencode.cmd` shim, and a shim hands its
     arguments to cmd.exe — which re-parses them, so a prompt containing `"` and `&`
     would run a shell command on the host (see proc_tree's batch-shim note). The npm
-    shim only forwards to `node_modules/opencode-ai/bin/opencode.exe`, a native
+    shim only forwards to `node_modules/opencode-ai/bin/opencode.exe` (2.x:
+    `node_modules/@opencode/cli/bin/opencode.exe`, verified on 2.2.5), a native
     binary, so launch that directly: same program, no cmd.exe. If the shim can't be
     resolved, proc_tree.check_args refuses a dangerous prompt instead of running it.
     """
@@ -120,6 +128,35 @@ def _resolve_bin() -> str:
 
 
 OPENCODE_BIN = _resolve_bin()
+
+# Whether the user chose the binary (OPENCODE_BIN in the environment). A chosen
+# path is never swapped for another one behind their back.
+_BIN_EXPLICIT = bool(os.environ.get("OPENCODE_BIN"))
+
+
+def _refresh_bin() -> str:
+    """OPENCODE_BIN, re-resolved if the file it names is gone.
+
+    The resolved path is the native binary INSIDE an npm package, so an upgrade
+    that changes the package moves it: the owner's 1.x -> 2.x upgrade
+    (`opencode-ai` -> `@opencode/cli`) deleted node_modules/opencode-ai/bin/
+    opencode.exe while the server was running, and every later call failed to
+    start. So when an absolute OPENCODE_BIN no longer exists, resolve once more
+    through PATH. Not when the user set OPENCODE_BIN: their path stays, and
+    unsupported_version_reason says it is gone. A bare name ("opencode", nothing
+    found on PATH) is left alone; there is nothing to re-resolve from."""
+    global OPENCODE_BIN
+    current = OPENCODE_BIN
+    if _BIN_EXPLICIT or not os.path.isabs(current) or os.path.exists(current):
+        return current
+    fresh = _resolve_bin()
+    if fresh != current:
+        logging.getLogger("agy_bridge").warning(
+            "opencode: %s is gone (upgraded?); using %s", current, fresh
+        )
+        OPENCODE_BIN = fresh
+    return OPENCODE_BIN
+
 
 # opencode's data home: auth.json, sessions, logs, plans. It follows the XDG layout
 # ON EVERY PLATFORM — read off the bundle as `XDG_DATA_HOME || join(homedir(),
@@ -142,13 +179,11 @@ _TEXT = {"encoding": "utf-8", "errors": "replace"}
 SANDBOX_MODES = ("read-only", "workspace-write", "danger-full-access")
 DEFAULT_SANDBOX = "read-only"
 
-# Default per-call budget, and the floor the swarm raises a worker to. 300s rather
-# than the other bridges' 180s because opencode's FREE hosted models are
-# queue-scheduled and genuinely slow: measured end-to-end at 152, 161, 163, 166,
-# 214, 260 and 428 seconds for one-word answers. A 180s budget would fail about
-# half of those, so a swarm that kept the shared default would report an opencode
-# worker as broken when it was merely slow. Paid models are not affected — they
-# just finish early.
+# Default per-call budget, and the floor the swarm raises a worker to. A CEILING,
+# not an expected duration: on opencode 1.19.5 six free models answered a short
+# prompt in 2.5-6.5 s (live). It stays at 300s rather than the other bridges' 180s
+# because the free tier has been queue-scheduled before (1.18.x: 152-428 s for
+# one-word answers), and a run that finishes early never notices a larger budget.
 DEFAULT_TIMEOUT_S = 300
 
 # Permission policies, keyed by sandbox mode, serialized into OPENCODE_PERMISSION.
@@ -251,17 +286,203 @@ def _kill_tree(proc: subprocess.Popen) -> None:
     proc_tree.kill_tree(proc)
 
 
-def _permission_policy(sandbox: str) -> Optional[dict]:
-    """The OPENCODE_PERMISSION dict for `sandbox`, or None for no policy at all."""
+# opencode 2.x (`@opencode/cli`, the same `opencode` command) changed how the fence
+# is set, and the 1.x way fails OPEN on it. Verified live on 2.2.5 / Windows with
+# free models:
+#   - OPENCODE_PERMISSION is not read at all: with the 1.x read-only policy in it, a
+#     shell write went through.
+#   - The policy goes in OPENCODE_CONFIG_CONTENT as {"permissions": [rules]}, an
+#     ORDERED array of {"action", "resource", "effect"} where the LAST matching rule
+#     wins. Actions were renamed: shell (was bash), subagent (task), edit (also
+#     covers write/patch), plus execute (Code Mode); doom_loop and lsp are gone.
+#   - A run normally connects to a shared background service that ignores the
+#     run's own env (OPENCODE_CONFIG_CONTENT with a read-only policy: the shell
+#     write still went through). `--standalone` runs a private server that does
+#     apply it, and leaves no service running on the user's machine. So every 2.x
+#     run passes --standalone (build_args).
+#   - "ask" is still auto-rejected headless. The free tier no longer needs shell
+#     offered, but read-only keeps "ask" for it, the combination verified.
+# .env files are kept out of reads, as on 1.x. Verified on 2.2.5 through this bridge:
+# the read tool is refused .env and .env.local and allowed .env.example and other
+# files, in both modes. In workspace-write the SHELL (allowed, unconfined) can still
+# `cat` a .env: a .env.local leaked once that way, so only read-only protects them.
+_V2_ENV_RULES = [
+    {"action": "read", "resource": "*.env", "effect": "deny"},
+    {"action": "read", "resource": "*.env.*", "effect": "deny"},
+    {"action": "read", "resource": "*.env.example", "effect": "allow"},
+]
+# Verified: a shell write and an edit-tool write were both refused, no file created.
+_V2_READ_ONLY_RULES = [
+    {"action": "shell", "resource": "*", "effect": "ask"},
+    {"action": "edit", "resource": "*", "effect": "deny"},
+    {"action": "subagent", "resource": "*", "effect": "deny"},
+    {"action": "external_directory", "resource": "*", "effect": "deny"},
+    {"action": "webfetch", "resource": "*", "effect": "deny"},
+    {"action": "websearch", "resource": "*", "effect": "deny"},
+    # Code Mode. Without this a model called `execute` a dozen times (and still
+    # wrote nothing); denying it is cheap insurance.
+    {"action": "execute", "resource": "*", "effect": "deny"},
+    *_V2_ENV_RULES,
+]
+# workspace-write on 2.x. The SHELL is NOT confined (verified live: on 2.x
+# external_directory deny did not stop a shell redirect into the parent directory),
+# so the mode is documented as unconfined and these rules only keep the EDIT tool
+# in the workspace. Per opencode 2.2.5's source (core/src/file-access.ts,
+# core/src/util/wildcard.ts), an edit inside the run directory is matched as a
+# RELATIVE path with forward slashes ("sub/dir/f.txt"), one outside as "../..." or
+# an absolute path, and `*` crosses "/", case-insensitively on Windows. So: allow
+# edits, then deny the parent-relative and absolute forms. An earlier rule set
+# allowed only "<absolute workspace>/*", which an inside edit never matches: it
+# denied the edit tool everywhere, and the "inside write" seen live was the shell.
+# These rules are SOURCE-DERIVED and not yet live-verified (free tier rate-limited
+# at the time). If they are wrong in the open direction, an edit can leave the
+# workspace, which a shell command already can on 2.x.
+_V2_WORKSPACE_WRITE_RULES = [
+    {"action": "shell", "resource": "*", "effect": "allow"},
+    {"action": "edit", "resource": "*", "effect": "allow"},
+    {"action": "edit", "resource": "../*", "effect": "deny"},
+    {"action": "edit", "resource": "?:/*", "effect": "deny"},  # Windows drive paths
+    {"action": "edit", "resource": "/*", "effect": "deny"},  # POSIX and UNC (//host/...)
+    {"action": "external_directory", "resource": "*", "effect": "deny"},
+    *_V2_ENV_RULES,
+]
+
+# The permission policies per opencode MAJOR version: a dict for 1.x's
+# OPENCODE_PERMISSION, a rule list for 2.x's OPENCODE_CONFIG_CONTENT. A major
+# missing here is REFUSED (check_supported_version) rather than run with a fence
+# nobody has verified; supporting one is adding its entry, once verified live.
+_PERMISSION_POLICIES: dict[int, dict[str, object]] = {
+    1: {"read-only": _READ_ONLY_PERMISSION, "workspace-write": _WORKSPACE_WRITE_PERMISSION},
+    2: {"read-only": _V2_READ_ONLY_RULES, "workspace-write": _V2_WORKSPACE_WRITE_RULES},
+}
+
+_VERSION_RE = re.compile(r"(\d+)\.(\d+)\.(\d+)")
+
+# `opencode --version`, cached per BINARY rather than per process: the owner upgraded
+# opencode 1.x -> 2.x mid-session, and a process-long cache would have kept building
+# 1.x argv (`--dir`, which 2.x rejects) or, on a future 2 -> 3, kept applying a
+# fence nobody verified. The key is the binary's path, mtime and size (one stat per
+# call), so an upgrade in place re-reads the version. A failed read, or a binary
+# that can't be stat'ed, is not cached.
+_VERSION_CACHE: Optional[tuple[tuple, str]] = None  # (binary key, version text)
+_VERSION_LOCK = threading.Lock()
+# A PINNED major that skips the read entirely (tests set it). None = read it.
+_MAJOR_CACHE: Optional[int] = None
+
+
+def _binary_key() -> Optional[tuple]:
+    """(path, mtime_ns, size) of OPENCODE_BIN, or None if it can't be stat'ed.
+    Re-resolves a binary an upgrade moved first (see _refresh_bin)."""
+    path = _refresh_bin()
+    try:
+        st = os.stat(path)
+    except (OSError, ValueError):
+        return None
+    return (path, st.st_mtime_ns, st.st_size)
+
+
+def parse_major(version_text: Optional[str]) -> Optional[int]:
+    """The major of the first X.Y.Z in `version_text` ("opencode v2.2.5" -> 2)."""
+    m = _VERSION_RE.search(version_text or "")
+    return int(m.group(1)) if m else None
+
+
+def opencode_major() -> Optional[int]:
+    """The installed opencode's major version, or None if it can't be read.
+
+    Re-read whenever the binary changes (see _VERSION_CACHE), unless pinned."""
+    if _MAJOR_CACHE is not None:
+        return _MAJOR_CACHE
+    return parse_major(opencode_version())
+
+
+def unsupported_version_reason(major: Optional[int]) -> Optional[str]:
+    """Why the bridge won't run this opencode major, or None if it will."""
+    if major is None and _BIN_EXPLICIT and not os.path.exists(OPENCODE_BIN):
+        if os.path.isabs(OPENCODE_BIN) or os.path.sep in OPENCODE_BIN:
+            return (
+                f"OPENCODE_BIN points at {OPENCODE_BIN}, which does not exist (moved by an "
+                "upgrade?). Update OPENCODE_BIN to the new path, or unset it to let the "
+                "bridge find opencode on PATH."
+            )
+    if major is None:
+        return (
+            "could not read opencode's version (`opencode --version`), so the bridge "
+            "cannot tell which permission settings fence it, and will not run it "
+            "unfenced. Check that opencode is installed, or set OPENCODE_BIN."
+        )
+    if major not in _PERMISSION_POLICIES:
+        known = ", ".join(f"{m}.x" for m in sorted(_PERMISSION_POLICIES))
+        return (
+            f"opencode {major}.x is not supported yet: its permission settings are "
+            "unverified, so the bridge's sandbox fence might not apply, and it will not "
+            f"run it unfenced. Supported: {known} (`npm i -g @opencode/cli` for 2.x)."
+        )
+    return None
+
+
+def _diagnostic_prefix() -> list[str]:
+    """Global flags for opencode's own subcommands (`models`, `auth list`).
+
+    On 2.x those START the shared background service and leave it running on the
+    user's machine (verified on 2.2.5: `opencode service status` went from stopped
+    to http://127.0.0.1:28894 after either). The global `--standalone`, placed
+    BEFORE the subcommand, avoids it; after the subcommand (`models --standalone`)
+    it did not. `--version` starts nothing. 1.x has no service and no such flag."""
+    return ["--standalone"] if (opencode_major() or 1) >= 2 else []
+
+
+def check_supported_version() -> int:
+    """The installed opencode's major, or raise RuntimeError if the bridge won't run it."""
+    major = opencode_major()
+    reason = unsupported_version_reason(major)
+    if reason:
+        raise RuntimeError(reason)
+    return major
+
+
+def _permission_policy(sandbox: str, major: int = 1):
+    """The policy for `sandbox` on opencode `major`: 1.x's OPENCODE_PERMISSION dict,
+    2.x's ordered rule list, or None for no policy at all (danger-full-access). A
+    copy: callers may change it freely. No rule names the workspace: on 2.x an edit
+    inside the run directory is matched as a relative path (see
+    _V2_WORKSPACE_WRITE_RULES)."""
     validate_sandbox(sandbox)
-    if sandbox == "read-only":
-        return dict(_READ_ONLY_PERMISSION)
-    if sandbox == "workspace-write":
-        return dict(_WORKSPACE_WRITE_PERMISSION)
-    return None  # danger-full-access
+    if sandbox == "danger-full-access":
+        return None
+    policy = _PERMISSION_POLICIES[major][sandbox]
+    if isinstance(policy, dict):
+        return dict(policy)
+    return [dict(rule) for rule in policy]
 
 
-def _env(sandbox: Optional[str] = None) -> dict:
+def _config_content_with(inherited: Optional[str], rules: Optional[list]) -> Optional[str]:
+    """OPENCODE_CONFIG_CONTENT for a 2.x run: the caller's own inline config, if it
+    is a JSON object, with its permission keys replaced by `rules` (or removed, for
+    no policy). None means "unset the variable"."""
+    try:
+        data = json.loads(inherited) if inherited else {}
+    except ValueError:
+        data = None
+    if not isinstance(data, dict):
+        if inherited and inherited.strip():
+            # opencode also takes JSONC; strict JSON can't read comments or trailing
+            # commas, and guessing at them could change what the user meant. Say so
+            # rather than drop their settings silently.
+            logging.getLogger("agy_bridge").warning(
+                "opencode: OPENCODE_CONFIG_CONTENT is not a plain JSON object (JSONC?); "
+                "it was replaced by the sandbox policy for this run, so its other "
+                "settings do not apply to it"
+            )
+        data = {}
+    data.pop("permission", None)  # the deprecated 1.x-style object key
+    data.pop("permissions", None)
+    if rules is not None:
+        data["permissions"] = rules
+    return json.dumps(data) if data else None
+
+
+def _env(sandbox: Optional[str] = None, major: int = 1) -> dict:
     """Process env for opencode: auto-updater off, plus the permission policy.
 
     A CLI that updates itself mid-session is how this project has been broken
@@ -274,11 +495,23 @@ def _env(sandbox: Optional[str] = None) -> dict:
     `sandbox` selects the OPENCODE_PERMISSION policy; None leaves the caller's
     environment untouched (used by the read-only diagnostics). json.dumps is not
     cosmetic here — see the module note on invalid JSON being silently ignored.
+
+    On 2.x the policy goes in OPENCODE_CONFIG_CONTENT instead (see
+    _V2_READ_ONLY_RULES), merged into any inline config the caller already set, and
+    with its permission keys replaced, so an outer policy cannot loosen or tighten
+    the mode. danger-full-access removes them and imposes nothing.
     """
     env = {**os.environ, "OPENCODE_DISABLE_AUTOUPDATE": "1"}
     if sandbox is None:
         return env
-    policy = _permission_policy(sandbox)
+    policy = _permission_policy(sandbox, major)
+    if major >= 2:
+        content = _config_content_with(env.get("OPENCODE_CONFIG_CONTENT"), policy)
+        if content is None:
+            env.pop("OPENCODE_CONFIG_CONTENT", None)
+        else:
+            env["OPENCODE_CONFIG_CONTENT"] = content
+        return env
     if policy is None:
         # danger-full-access: impose nothing. Drop any inherited policy too, so the
         # mode means what it says instead of quietly keeping an outer restriction.
@@ -362,7 +595,7 @@ def list_models() -> list[str]:
         return _MODELS_CACHE
     try:
         proc = proc_tree.run_captured(
-            [OPENCODE_BIN, "models"],
+            [_refresh_bin(), *_diagnostic_prefix(), "models"],
             stdin=subprocess.DEVNULL,
             timeout=30,
             env=_env(),
@@ -406,8 +639,16 @@ def build_args(
     resume_id: Optional[str] = None,
     continue_conv: bool = False,
     agent: Optional[str] = None,
+    major: int = 1,
 ) -> list[str]:
     """argv for a headless `opencode run` (fresh, `-s <id>` resume, or `-c` continue).
+
+    opencode 2.x (`major` >= 2) dropped `--dir` ("Unrecognized flag: --dir", exit 1,
+    verified on 2.2.5): the run directory is the process cwd, which the caller
+    already sets to the workspace. It gets `--standalone` instead, which is what
+    makes opencode apply the run's own permission policy (see _V2_READ_ONLY_RULES).
+    Verified on 2.2.5: `-s`, `-c`, `-m` and `--` behave as on 1.x, `-s`/`-c`
+    included under --standalone. `--auto` and `--agent` are untested there.
 
     `--format json` yields the NDJSON event stream the answer is reconstructed
     from (and that watch mode renders). `--dir` roots the run at the workspace.
@@ -425,7 +666,8 @@ def build_args(
     agents, and it is covered by tests so it can't rot unnoticed.
     """
     validate_sandbox(sandbox)
-    args = [OPENCODE_BIN, "run", "--format", "json", "--dir", workspace]
+    args = [OPENCODE_BIN, "run", "--format", "json"]
+    args += ["--standalone"] if major >= 2 else ["--dir", workspace]
     if resume_id:
         args += ["-s", resume_id]
     elif continue_conv:
@@ -459,6 +701,15 @@ def _consume_event(ev: dict, state: dict) -> None:
         text = part.get("text") if isinstance(part, dict) else None
         if isinstance(text, str) and text.strip():
             state.setdefault("chunks", []).append(text.strip())
+    elif etype == "tool_use":
+        # A call the permission policy auto-rejected comes back as a finished tool
+        # part in state "error" whose message says so (headless run never prompts).
+        # Counted so an empty answer can name the fence instead of "no text".
+        part = ev.get("part")
+        tstate = part.get("state") if isinstance(part, dict) else None
+        if isinstance(tstate, dict) and tstate.get("status") == "error":
+            if _looks_rejected(str(tstate.get("error") or "")):
+                state["rejected"] = state.get("rejected", 0) + 1
     elif etype == "error":
         err = ev.get("error")
         msg = ""
@@ -466,6 +717,9 @@ def _consume_event(ev: dict, state: dict) -> None:
             data = err.get("data")
             if isinstance(data, dict) and data.get("message"):
                 msg = str(data["message"])
+            elif err.get("message"):
+                # 2.x: {"type": "provider.no-route", "message": "Model unavailable: ..."}
+                msg = str(err["message"])
             else:
                 msg = str(err.get("name") or err)
         elif err:
@@ -474,7 +728,24 @@ def _consume_event(ev: dict, state: dict) -> None:
             state["error"] = msg.strip()
 
 
-def _finish(state: dict, stderr: str, returncode: Optional[int]) -> str:
+# How a call the policy fenced shows up: the tool part's error ("rejected
+# permission to use this specific tool call" on 1.18.29 and 1.19.0; "This
+# non-interactive run cannot ask the user for permission, so the request was
+# rejected." on 2.2.5, both live) and run's own stderr line when it auto-rejects a
+# prompt ("! permission requested: shell (...); auto-rejecting" on both majors).
+# Matched loosely: the wording is not a contract.
+_REJECTED_MARKERS = ("rejected permission", "auto-rejecting", "cannot ask the user for permission")
+
+
+def _looks_rejected(text: str) -> bool:
+    """True if `text` reads like opencode auto-rejecting a fenced permission."""
+    low = (text or "").lower()
+    return any(m in low for m in _REJECTED_MARKERS)
+
+
+def _finish(
+    state: dict, stderr: str, returncode: Optional[int], sandbox: Optional[str] = None
+) -> str:
     """The final answer from an accumulated event `state`, or raise with a reason."""
     if state.get("error"):
         raise RuntimeError(f"opencode error: {state['error']}")
@@ -485,6 +756,18 @@ def _finish(state: dict, stderr: str, returncode: Optional[int]) -> str:
             f"session: {state.get('session_id') or '(none)'}"
         )
     answer = "\n\n".join(state.get("chunks", [])).strip()
+    if not answer and (state.get("rejected") or _looks_rejected(stderr)):
+        n = state.get("rejected") or 0
+        calls = f"{n} tool call(s)" if n else "a tool call"
+        mode = f"the sandbox={sandbox!r}" if sandbox else "the sandbox"
+        raise RuntimeError(
+            f"opencode produced no answer: {calls} it attempted were blocked by "
+            f"{mode} permission policy (headless runs auto-reject anything that would "
+            "prompt), and the model stopped without replying. Ask for something that "
+            "does not need those tools, or pick a sandbox that allows them "
+            "(workspace-write lets it edit files and run shell commands in the "
+            f"workspace). stderr: {(stderr or '')[-300:]}"
+        )
     if not answer:
         raise RuntimeError(
             f"opencode produced no text in its --format json output. "
@@ -510,11 +793,11 @@ def run_opencode(
     `pin=False` for swarm workers (one-shot, no continue). Signature mirrors
     run_grok so server.py's _run_with_progress can call it unchanged.
 
-    The default timeout is 300s rather than the other bridges' 180s: opencode's FREE
-    hosted models are queue-scheduled and were measured taking minutes for a
-    one-word answer, and that free path is exactly what a fresh install hits — which
-    also means the timeout here is a path users really take, not a theoretical one.
-    That is why this shares the streaming implementation instead of calling
+    The default timeout is a 300s ceiling rather than the other bridges' 180s (see
+    DEFAULT_TIMEOUT_S): the free models answer in seconds today, but have been
+    queue-scheduled to minutes before, and that free path is what a fresh install
+    hits. A run that outlives the budget is killed as a tree, which is why this
+    shares the streaming implementation instead of calling
     `subprocess.run(timeout=...)`: see _kill_tree for the hang that would cause.
     """
     return _run_impl(prompt, workspace, sandbox, model, continue_conv, timeout_s, None, pin, agent)
@@ -558,18 +841,19 @@ def _run_impl(
 ) -> str:
     """The one runner behind run_opencode and run_opencode_streaming."""
     validate_sandbox(sandbox)
+    major = check_supported_version()  # before anything runs: fail closed
     os.makedirs(workspace, exist_ok=True)
     resume_id, use_continue = _resume_flags(workspace, continue_conv)
-    args = build_args(prompt, workspace, sandbox, model, resume_id, use_continue, agent)
+    args = build_args(prompt, workspace, sandbox, model, resume_id, use_continue, agent, major)
 
     state: dict = {}
     proc = proc_tree.popen(
         args,
-        cwd=workspace,
+        cwd=workspace,  # also the run directory on 2.x, which has no --dir
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        env=_env(sandbox),
+        env=_env(sandbox, major),
         **_TEXT,
         **_spawn_kwargs(),
     )
@@ -623,16 +907,15 @@ def _run_impl(
     et.join(timeout=1)
 
     if timed_out:
-        # Name the usual cause. opencode's free models are queue-scheduled and were
-        # measured at 152-428s for trivial answers, so a timeout here is far more
-        # often "too slow" than "stuck" — and the caller can fix it with one arg.
+        # Free models normally answer in seconds, so a timeout means a long task, a
+        # busy free tier or a stuck run; the caller can rule out the first two.
         raise RuntimeError(
-            f"opencode timed out after {timeout_s + 30}s. opencode's free "
-            f"`opencode/*` models are queue-scheduled and routinely take minutes — "
-            f"raise timeout_s, or use a configured (paid) model."
+            f"opencode timed out after {timeout_s + 30}s. For a long task raise "
+            f"timeout_s; if a short prompt timed out, the free `opencode/*` tier may "
+            f"be congested: retry later, or use another model."
         )
 
-    answer = _finish(state, "".join(err_chunks), proc.returncode)
+    answer = _finish(state, "".join(err_chunks), proc.returncode, sandbox)
     if not continue_conv and pin and state.get("session_id"):
         _pin(workspace, state["session_id"])
     return answer
@@ -640,7 +923,23 @@ def _run_impl(
 
 # ----------------------------------------------------------------- diagnostics
 def opencode_version() -> Optional[str]:
-    """`opencode --version` first line (e.g. "1.18.29"), or None if it can't run."""
+    """`opencode --version` first line (e.g. "1.18.29", "opencode v2.2.5"), or None
+    if it can't run. Cached per binary (see _VERSION_CACHE), so status_rows and the
+    version gate share one read."""
+    global _VERSION_CACHE
+    key = _binary_key()
+    with _VERSION_LOCK:
+        if key is not None and _VERSION_CACHE is not None and _VERSION_CACHE[0] == key:
+            return _VERSION_CACHE[1]
+    text = _read_version()
+    if text is not None and key is not None:
+        with _VERSION_LOCK:
+            _VERSION_CACHE = (key, text)
+    return text
+
+
+def _read_version() -> Optional[str]:
+    """Run `opencode --version` (uncached)."""
     try:
         proc = proc_tree.run_captured(
             [OPENCODE_BIN, "--version"],
@@ -667,7 +966,12 @@ def auth_status() -> tuple[bool, str]:
     with zero credentials — so "0 credentials" still reads ok as long as models are
     listed, with a hint about `opencode auth login`. It is a problem only when
     opencode can't run at all.
+
+    2.x has no `providers list` (it prints usage and "Unexpected positional
+    argument"); `opencode auth list` replaces it, see _auth_status_v2.
     """
+    if (opencode_major() or 1) >= 2:
+        return _auth_status_v2()
     try:
         proc = proc_tree.run_captured(
             [OPENCODE_BIN, "providers", "list"],
@@ -699,6 +1003,44 @@ def auth_status() -> tuple[bool, str]:
     return (True, match.group(0).strip())
 
 
+def _auth_status_v2() -> tuple[bool, str]:
+    """The credentials row on opencode 2.x, via `opencode auth list`. Free.
+
+    Verified on 2.2.5 with nothing configured: it prints "No authenticated
+    integrations". Its output with a key configured is unverified, so anything else
+    is reported as-is (first line) rather than parsed into a count. As on 1.x, no
+    credentials is fine while free models are listed."""
+    try:
+        proc = proc_tree.run_captured(
+            [OPENCODE_BIN, *_diagnostic_prefix(), "auth", "list"],
+            stdin=subprocess.DEVNULL,
+            timeout=30,
+            env=_env(),
+            **_TEXT,
+            **_spawn_kwargs(),
+        )
+    except (OSError, subprocess.SubprocessError):
+        return (False, "could not run `opencode auth list`")
+    out = _strip_ansi((proc.stdout or "") + (proc.stderr or "")).strip()
+    if not out:
+        return (False, "`opencode auth list` printed nothing")
+    if "no authenticated" in out.lower():
+        return (
+            bool(list_models()),
+            "none — free `opencode/*` models only "
+            "(run `opencode auth login` for Anthropic/OpenAI/…)",
+        )
+    return (True, out.splitlines()[0].strip()[:120])
+
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+
+def _strip_ansi(text: str) -> str:
+    """`text` without ANSI escape sequences (opencode colours some of its output)."""
+    return _ANSI_RE.sub("", text or "")
+
+
 def status_rows() -> list[tuple[str, bool, str]]:
     """Setup diagnostics as (label, ok, detail) rows. Spends no quota.
 
@@ -713,7 +1055,8 @@ def status_rows() -> list[tuple[str, bool, str]]:
             ("opencode CLI", False, f"not found (set OPENCODE_BIN; tried {OPENCODE_BIN_ENV!r})")
         )
     else:
-        rows.append(("opencode CLI", True, ver))
+        reason = unsupported_version_reason(parse_major(ver))
+        rows.append(("opencode CLI", reason is None, f"{ver} — {reason}" if reason else ver))
 
     ok, detail = auth_status()
     rows.append(("credentials", ok, detail))

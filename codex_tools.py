@@ -71,6 +71,11 @@ async def codex_ask(
                  web search, with no hint that it read nothing. The bridge appends
                  a visible "[agent-intern] WARNING" to any answer whose run had
                  commands refused: if you see it, treat the answer as unsourced.
+                 Also on Windows (verified on 0.166.0), codex silently runs
+                 "workspace-write" as READ-ONLY unless a Windows sandbox is set
+                 (`[windows] sandbox = "unelevated"` in ~/.codex/config.toml);
+                 the bridge appends a WARNING when the sandbox codex reports
+                 differs from the one asked for, and codex_status shows the key.
         model: Optional model override (`-m`); omit to use codex's configured default.
         timeout_s: Max seconds to wait for codex to complete. Default 180.
         watch: If true, open a live "watch" view in your browser that streams

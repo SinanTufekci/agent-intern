@@ -425,6 +425,9 @@ def _run_text_worker(index, prompt, workspace, model, timeout_s, plan=False) -> 
             timeout=timeout_s + 30,
             **server._spawn_kwargs(),
         )
+        # The timeout first: agy 1.5.0+ exits 3 on it, 1.2.0-1.4.x exited 0.
+        if server._print_timed_out(proc.stderr):
+            return _print_timeout_result(index, timeout_s, proc.stdout, home, t0, workspace)
         if proc.returncode != 0:
             raise RuntimeError(
                 server._with_quota_note(
@@ -433,8 +436,6 @@ def _run_text_worker(index, prompt, workspace, model, timeout_s, plan=False) -> 
                     model,
                 )
             )
-        if server._print_timed_out(proc.stderr):
-            return _print_timeout_result(index, timeout_s, proc.stdout, home, t0, workspace)
         deadline = time.time() + 5.0
         while True:
             conv = _only_conv(home)
@@ -563,6 +564,13 @@ def _run_text_worker_watched(
         feed.pump()
         out_t.join(timeout=5)
         err_t.join(timeout=5)
+        # The timeout first: agy 1.5.0+ exits 3 on it, 1.2.0-1.4.x exited 0.
+        if server._print_timed_out("".join(err_chunks)):
+            res = _print_timeout_result(
+                index, timeout_s, "".join(out_chunks), home, start, workspace
+            )
+            swarm_watch.worker_finish(index, "error", res.error or "", time.time() - start)
+            return res
         if proc.returncode != 0:
             err_text = "".join(err_chunks)
             raise RuntimeError(
@@ -572,12 +580,6 @@ def _run_text_worker_watched(
                     model,
                 )
             )
-        if server._print_timed_out("".join(err_chunks)):
-            res = _print_timeout_result(
-                index, timeout_s, "".join(out_chunks), home, start, workspace
-            )
-            swarm_watch.worker_finish(index, "error", res.error or "", time.time() - start)
-            return res
         deadline = time.time() + 5.0
         while True:
             conv = _only_conv(home)
@@ -619,6 +621,23 @@ def _run_text_worker_watched(
 
 
 # ----------------------------------------------------------------------------- image swarm
+def _finalize_or_timeout(home, target, agy_text, start, stderr: str, timeout_s: int):
+    """_finalize_image_isolated, but a turn agy cut at --print-timeout that produced
+    no image reports the timeout, not "no image file found".
+
+    An image written before the cut is still returned: the file is checked first.
+    agy 1.5.0+ exits 3 on the timeout and 1.2.0-1.4.x exit 0; the stderr mark is the
+    same on both, so this does not look at the exit code."""
+    import server
+
+    try:
+        return _finalize_image_isolated(home, target, agy_text, start)
+    except RuntimeError as e:
+        if server._print_timed_out(stderr):
+            raise RuntimeError(f"{server._print_timeout_error(timeout_s)} ({e})") from e
+        raise
+
+
 def _finalize_image_isolated(home: Path, target: str, agy_text: Optional[str], start: float):
     """Locate the generated image (target / agy-reported path / isolated scratch),
     correct its extension to the real bytes, and return (path, fmt, size)."""
@@ -668,13 +687,20 @@ def _run_image_worker_serialized(
         os.makedirs(workspace, exist_ok=True)
         wrapped = server._wrap_image_prompt(prompt, target)
         agy_text: Optional[str] = None
+        agy_error: Optional[RuntimeError] = None
         try:
             agy_text = server._run_agy(wrapped, workspace, False, timeout_s, pin=False)
-        except RuntimeError:
+        except RuntimeError as e:
             # The image may exist even when the answer read failed; only report this
-            # if nothing was produced (same rule as server.antigravity_image).
-            pass
-        final_path, fmt, size = server._finalize_image(target, agy_text, start)
+            # if nothing was produced (same rule as server.antigravity_image), and
+            # then name it, so a timeout is not reported as a missing file.
+            agy_error = e
+        try:
+            final_path, fmt, size = server._finalize_image(target, agy_text, start)
+        except RuntimeError as fin_err:
+            if agy_error is not None:
+                raise RuntimeError(f"{fin_err} (agy also failed: {agy_error})") from agy_error
+            raise
         return WorkerResult(
             index,
             True,
@@ -735,7 +761,9 @@ def _run_image_worker(index, prompt, target, workspace, timeout_s) -> WorkerResu
                         f"agy exited {proc.returncode}: {(proc.stderr or '')[-300:]}", output
                     )
                 )
-        final_path, fmt, size = _finalize_image_isolated(home, target, agy_text, start)
+        final_path, fmt, size = _finalize_or_timeout(
+            home, target, agy_text, start, proc.stderr or "", timeout_s
+        )
         return WorkerResult(
             index,
             True,
@@ -834,7 +862,9 @@ def _run_image_worker_watched(index, prompt, target, workspace, timeout_s) -> Wo
             # of letting it become a misleading "no image file produced".
             message = f"agy exited {proc.returncode}: {err_text[-300:]}"
             raise RuntimeError(server._with_quota_note(message, err_text))
-        final_path, fmt, size = _finalize_image_isolated(home, target, agy_text, start)
+        final_path, fmt, size = _finalize_or_timeout(
+            home, target, agy_text, start, err_text, timeout_s
+        )
         caption = f"Saved to {final_path}\nformat={fmt} · {size} bytes"
         swarm_watch.worker_finish(index, "done", caption, time.time() - start, image=final_path)
         return WorkerResult(
@@ -1313,12 +1343,11 @@ def _opencode_timeout(timeout_s: int) -> int:
     """The swarm's per-worker budget, raised to opencode's own default if lower.
 
     The swarm shares one `timeout_s` across every backend and defaults it to 180s,
-    which is right for codex/copilot/cursor and WRONG for opencode: its free hosted
-    models are queue-scheduled and were measured at 152-428s for one-word answers,
-    so roughly half of them would be killed mid-answer and reported as a broken
-    worker rather than a slow one. Raising (never lowering) to the same 300s the
-    opencode_* tools use keeps a mixed swarm honest; a paid model just finishes
-    early and never notices the larger budget.
+    and opencode's own is a 300s ceiling: its free tier answers in seconds today
+    (2.5-6.5 s on 1.19.5) but has been queue-scheduled to 152-428 s before (1.18.x),
+    when a 180s budget killed about half the workers mid-answer. Raising (never
+    lowering) to the same ceiling the opencode_* tools use keeps a mixed swarm
+    honest; a worker that finishes early never notices the larger budget.
     """
     import opencode_bridge
 

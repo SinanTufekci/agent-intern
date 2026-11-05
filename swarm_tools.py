@@ -77,17 +77,15 @@ def agent_swarm(
                - model:   optional model override for ANY backend — Codex's `-m`,
                           Copilot's/Cursor's/Muse's `--model`, Grok's/opencode's `-m`
                           (opencode wants "provider/model"), or Antigravity's
-                          `--model` (an agy slug like "claude-sonnet-5-5-high";
+                          `--model` (an agy slug like "gemini-4-argon-high";
                           validated against each backend's model list). Omit for
                           each backend's default.
         max_concurrency: Max workers running at once (default 4). Higher = faster
                          but more quota/rate-limit pressure and more agents at once.
         timeout_s: Per-worker timeout in seconds. Default 180. An opencode
-                   worker is given at least 300s regardless — its free models are
-                   queue-scheduled and were measured at 152-428s, so the shared
-                   default would kill about half of them mid-answer and report a
-                   slow worker as a broken one. The budget is only ever raised,
-                   never lowered.
+                   worker is given at least 300s regardless, as a ceiling: its free
+                   models answer in seconds today but have been queue-scheduled to
+                   minutes before. The budget is only ever raised, never lowered.
         watch: If true, open the live "Agent Swarm" dashboard window (one card per
                worker, with its backend's logo; click a card for its full step log).
     """
