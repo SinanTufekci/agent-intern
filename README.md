@@ -29,13 +29,6 @@ for Gemini, ChatGPT, Copilot or Cursor — each of which ships a coding CLI that
 charge; the intern runs the errand headless under your own login and hands back a plain answer — or a
 file path.
 
-<div align="center">
-<img src="https://raw.githubusercontent.com/SinanTufekci/agent-intern/main/assets/watch-swarm.gif" width="62%" alt="Agent Swarm dashboard: one card per worker with its backend's logo, prompt, a status chip with a live clock, its latest step and a time bar, under counters for running, queued, done and failed workers">
-<br>
-<sub><code>agent_swarm(..., watch=true)</code> — one card per worker, each on a different backend.
-<a href="https://github.com/SinanTufekci/agent-intern/blob/main/docs/watch-and-swarm.md">More on watch mode and swarms →</a></sub>
-</div>
-
 ## Quick start
 
 **1. Install it** (needs [uv](https://docs.astral.sh/uv/)). In Claude Code there are two ways; pick
@@ -87,6 +80,13 @@ turned on and says what to fix. It spends no quota, and needs no host. Any `*_st
 > tells you when a newer release is out; upgrade deliberately with `uvx agent-intern@latest`.
 > [Other install paths, from source included →](https://github.com/SinanTufekci/agent-intern/blob/main/docs/setup.md)
 
+<div align="center">
+<img src="https://raw.githubusercontent.com/SinanTufekci/agent-intern/main/assets/watch-swarm.gif" width="40%" alt="Agent Swarm dashboard: one card per worker with its backend's logo, prompt, a status chip with a live clock, its latest step and a time bar, under counters for running, queued, done and failed workers">
+<br>
+<sub><code>agent_swarm(..., watch=true)</code> — one card per worker, each on a different backend.
+<a href="https://github.com/SinanTufekci/agent-intern/blob/main/docs/watch-and-swarm.md">More on watch mode and swarms →</a></sub>
+</div>
+
 ## Works in
 
 The server is plain stdio MCP, so the same `uvx agent-intern` runs in each host below. Only the place
@@ -96,8 +96,11 @@ you register it differs.
 adds the `/agent-intern:*` slash commands, and the server's routing guide tells Claude which tool
 fits, so you don't have to name one.
 
-**Antigravity CLI (`agy`).** One command registers it; it writes
-`~/.gemini/config/mcp_config.json` for you, so there is nothing to hand-edit:
+<details>
+<summary><b>Antigravity CLI</b> (<code>agy</code>) · <code>agy mcp add agent-intern uvx agent-intern</code></summary>
+
+One command registers it; it writes `~/.gemini/config/mcp_config.json` for you, so there is
+nothing to hand-edit:
 
 ```bash
 agy mcp add agent-intern uvx agent-intern
@@ -119,12 +122,16 @@ Remove it with `agy mcp remove agent-intern`. Three things differ from Claude Co
 under `agy` hasn't been tested. The Antigravity IDE keeps its own MCP server list, which
 `agy mcp add` doesn't touch; adding agent-intern there is untested too.
 
+</details>
+
 > [!CAUTION]
 > Don't paste the output of `agy mcp list` into an issue or a chat: it prints each registered
 > server's full command line, including any API keys passed in it.
 
-**GitHub Copilot CLI.** The same command shape registers it; `copilot mcp add` writes
-`~/.copilot/mcp-config.json` for you:
+<details>
+<summary><b>GitHub Copilot CLI</b> · <code>copilot mcp add agent-intern -- uvx agent-intern</code></summary>
+
+The same command shape registers it; `copilot mcp add` writes `~/.copilot/mcp-config.json` for you:
 
 ```bash
 copilot mcp add agent-intern -- uvx agent-intern
@@ -139,8 +146,12 @@ server definition as JSON with `--additional-mcp-config`. Differences from Claud
   or name the tool in your prompt.
 - Headless `copilot -p … -s` calls the tools with no extra allow flag.
 
-**Cursor CLI (`cursor-agent`).** Add the server to `.cursor/mcp.json` in your project (or
-`~/.cursor/mcp.json` for every project):
+</details>
+
+<details>
+<summary><b>Cursor CLI</b> (<code>cursor-agent</code>) · add <code>agent-intern</code> to <code>.cursor/mcp.json</code></summary>
+
+Add the server to `.cursor/mcp.json` in your project (or `~/.cursor/mcp.json` for every project):
 
 ```json
 {
@@ -161,6 +172,8 @@ but wasn't run. Differences from Claude Code:
   that, the approval persists per workspace. Interactive runs simply ask. Note that `--force` also
   lets `cursor-agent` itself write files without asking.
 - The Cursor IDE wasn't tested.
+
+</details>
 
 `uvx agent-intern doctor` does what `/agent-intern:doctor` does, in any host or in a plain terminal
 (`--verbose` for every check, `--json` for scripts). Any other host that speaks stdio MCP, opencode
@@ -195,7 +208,7 @@ its narration, the real commands it runs, then the answer or the finished image.
 </tr>
 </table>
 
-<sub>Swarms get a dashboard too (the animation at the top): one card per worker, and a click pops that
+<sub>Swarms get a dashboard too (the animation under Quick start): one card per worker, and a click pops that
 agent into its own window.
 <a href="https://github.com/SinanTufekci/agent-intern/blob/main/docs/watch-and-swarm.md">More on watch mode and swarms →</a></sub>
 
