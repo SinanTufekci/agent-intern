@@ -5,19 +5,62 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time to file an issue. This bridge talks to
-        undocumented `agy` internals, so a lot of breakage will be "agy moved
-        a file." Please fill out the version + OS info so I can tell quickly
-        whether the bug is the bridge or upstream.
+        Thanks for taking the time to file an issue. The CLIs behind this bridge
+        update themselves, so a lot of breakage is "the CLI changed", not a bug
+        in the bridge. Please fill out the backend, version and OS info so I can
+        tell quickly which it is. Pasting the output of `uvx agent-intern doctor`
+        (add `--verbose` for every check; it spends no quota) usually settles it
+        in one go.
 
-  - type: input
-    id: agy-version
+  - type: dropdown
+    id: backend
     attributes:
-      label: agy version
-      description: Output of `agy --version`.
-      placeholder: "1.0.1"
+      label: Which backend
+      options:
+        - Antigravity (agy)
+        - Codex
+        - Copilot
+        - Cursor
+        - opencode
+        - Grok Build (experimental)
+        - Kimi Code (experimental)
+        - Muse Code (experimental)
+        - More than one / swarm
+        - Not backend-specific
     validations:
       required: true
+
+  - type: input
+    id: cli-version
+    attributes:
+      label: CLI version
+      description: Output of the backend's `--version` (`agy --version`, `codex --version`, ...).
+      placeholder: "agy 1.5.1"
+    validations:
+      required: true
+
+  - type: input
+    id: bridge-version
+    attributes:
+      label: Bridge version
+      description: "`uvx agent-intern --version`, or the `bridge version` row of any `*_status` tool."
+      placeholder: "0.34.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: status-output
+    attributes:
+      label: Doctor output
+      description: |
+        Paste the output of `uvx agent-intern doctor --verbose`. It lists the bridge version, which
+        backends are on, and every check, and spends no quota. Your home directory shows as `~`,
+        e-mail addresses as `<email>` and API keys with a known prefix as `<key>`; still read it
+        before you post. No terminal handy? Paste the backend's
+        `*_status` tool output instead (`antigravity_status`, `codex_status`, ...).
+      render: text
+    validations:
+      required: false
 
   - type: dropdown
     id: os

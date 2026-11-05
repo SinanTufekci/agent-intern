@@ -100,7 +100,29 @@ call.
 > [#38886](https://github.com/openai/codex/issues/38886)). The bridge can't fix it, but it no longer
 > launders it: any answer whose run had commands refused comes back with a visible
 > `[agent-intern] WARNING` naming the count. Until it's fixed upstream, treat a sandboxed codex
-> answer on Windows as unsourced unless that warning is absent.
+> answer on Windows as unsourced unless that warning is absent. This may share a cause with the
+> `workspace-write` downgrade described next: those runs probably had no Windows sandbox
+> configured either. Not yet checked with a real model run.
+
+> ⚠️ **On Windows, `workspace-write` runs read-only unless a Windows sandbox is configured.** On
+> codex-cli 0.166.0, `codex exec -s workspace-write` silently runs read-only until codex has a
+> Windows sandbox backend. Set it in `~/.codex/config.toml` (the same as passing
+> `-c windows.sandbox=...`):
+>
+> ```toml
+> [windows]
+> sandbox = "unelevated"   # or "elevated" or "mxc"
+> ```
+>
+> The bridge doesn't set it for you. When the sandbox codex reports differs from the one you asked
+> for, `codex_ask`, `codex_continue` (fresh runs) and codex swarm workers append an
+> `[agent-intern] WARNING: you asked for sandbox='workspace-write', but codex ran this under
+> sandbox='read-only'` note with this hint, and `codex_status` has a `windows sandbox` row on
+> Windows that shows `configured: <value>` or `not configured`. That row is information, never a
+> failure: `read-only` needs no setup. **Checked** on 0.166.0: what codex reports about its sandbox.
+> **Not checked:** an actual file write by a real model under the setting. This may be the same
+> cause as the "refuses every command" problem above: those runs probably had no Windows sandbox
+> configured either. Not yet checked with a real model run.
 
 ### Copilot — best-effort, not an OS sandbox
 
@@ -174,6 +196,38 @@ Unlike Grok's, none of this depends on the OS — the same policy applies on Win
 Unlike Codex's, none of it is a kernel boundary: it is opencode refusing its own tool calls. A
 malformed policy is silently ignored by opencode, so the bridge always serializes it with `json.dumps`.
 
+#### opencode 2.x: `workspace-write` does not confine shell commands
+
+opencode 2.x (`npm i -g @opencode/cli`) is supported alongside 1.x. The bridge applies the same
+three modes through 2.x's permission rules: an ordered rule list in `OPENCODE_CONFIG_CONTENT`, plus
+`--standalone` on every run so the fence applies to a private server instead of being ignored by the
+shared background service. Your own `OPENCODE_CONFIG_CONTENT` is kept, but its permission keys are
+replaced while a run is fenced. Any other major version, or one the bridge can't read, is refused
+with a clear message rather than run unfenced.
+
+- **`read-only`** — no edits, no shell, no subagents, no web. Checked live: a shell write and an
+  edit write were both refused and no file was created.
+- **`workspace-write`** — edits and shell are allowed. **A shell command is not confined:** it
+  can write anywhere your user can. A shell redirect into the parent directory succeeded, because
+  on 2.x denying `external_directory` doesn't stop it (verified). Whether the edit tool itself is
+  confined to the workspace is derived from opencode's source and **not yet verified live**; the
+  earlier writes seen outside the workspace were probably shell writes. There is no per-run
+  warning for this; the `opencode_ask` tool description states it. **That includes `.env` files:**
+  opencode's read tool is refused `.env` and `.env.local` (and allowed `.env.example` and other
+  files) in both modes, but in `workspace-write` a shell command can still read them. A
+  `.env.local` leaked that way once, probably through `cat`. On opencode 2.x, `workspace-write` does
+  not protect `.env` files or paths outside the workspace from shell commands; only `read-only`
+  does. Treat `workspace-write` on 2.x as "the agent may run any command", and use a container or VM
+  if that isn't acceptable.
+- **`danger-full-access`** — unchanged: no policy.
+
+**Checked** on opencode 2.2.5 / Windows with free models, through the bridge: `read-only`
+refusals, the shell write outside the workspace under `workspace-write`, and the `.env` read rules.
+**Not checked on 2.x:** edit-tool confinement under `workspace-write`, `--auto`, macOS and Linux,
+and a configured provider key. On 1.x, `workspace-write`
+still refuses reaching outside the workspace, as above; that has not been re-checked on 1.x
+recently.
+
 ### Kimi — no boundary at all
 
 `kimi -p` has **no sandbox and no `sandbox` argument**. Print mode auto-executes every tool call with
@@ -232,7 +286,8 @@ shim.
   Kimi can and do act outside it; Codex is bounded by its enforced `sandbox`; Grok by its OS profile
   on Linux/macOS and by a tool allowlist elsewhere; Copilot by its best-effort tool/path permissions;
   Cursor by its agent-enforced mode/force; opencode by a permission policy that denies leaving the
-  run directory.
+  run directory (on opencode 2.x it doesn't stop shell commands, and edit-tool confinement isn't
+  verified live yet).
 - An Antigravity or Kimi call effectively runs **arbitrary code with your user privileges**. A Copilot
   or Cursor call does too outside its best-effort denials; a Grok call does on Windows outside its
   allowlist; a Codex call does unless you keep it at `read-only`.
