@@ -70,9 +70,10 @@ body:
     attributes:
       label: Status output
       description: |
-        Paste the full output of the `grok_status` / `kimi_status` / `muse_status` tool. This
-        spends no quota and is the fastest way to tell a setup problem from a
-        bridge bug.
+        Paste the output of `uvx agent-intern doctor --verbose` (set `AGENT_INTERN_BACKENDS` to
+        your backend first if you like). No terminal handy? Paste the full output of the
+        `grok_status` / `kimi_status` / `muse_status` tool instead. Either spends no quota and is
+        the fastest way to tell a setup problem from a bridge bug.
       render: text
     validations:
       required: true

@@ -2,9 +2,9 @@
 
 # agent-intern
 
-### Give Claude Code an intern.
+### Give Claude Code (or Antigravity) an intern.
 
-Delegate to **Gemini, Codex, Copilot, Cursor and opencode** from inside Claude Code — as sub-agents,
+Delegate to **Gemini, Codex, Copilot, Cursor and opencode** from inside Claude Code or Antigravity — as sub-agents,
 on the subscriptions you already pay for. Text answers, image generation, real repo work, parallel swarms.
 
 [![CI](https://github.com/SinanTufekci/agent-intern/actions/workflows/ci.yml/badge.svg)](https://github.com/SinanTufekci/agent-intern/actions/workflows/ci.yml)
@@ -13,9 +13,9 @@ on the subscriptions you already pay for. Text answers, image generation, real r
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/SinanTufekci/agent-intern/blob/main/LICENSE)
 [![Glama](https://glama.ai/mcp/servers/SinanTufekci/agent-intern/badges/score.svg)](https://glama.ai/mcp/servers/SinanTufekci/agent-intern)
 
-<img src="https://raw.githubusercontent.com/SinanTufekci/agent-intern/main/assets/bridge-animation.svg" width="100%" alt="Claude Code hands a task to Antigravity, Codex, opencode, Copilot and Cursor in turn; each lights up while it works, sends its answer back, and Claude celebrates when all five are done" />
+<img src="https://raw.githubusercontent.com/SinanTufekci/agent-intern/main/assets/bridge-animation.svg" width="100%" alt="agent-intern banner: you ask Claude Code (or another MCP host) for something; Clawd, its mascot, hands the task to Antigravity, Codex, opencode, Copilot and Cursor in turn. Each shows working… with a flowing line, then done ✓ as its answer comes back, and Clawd celebrates when all five are done" />
 
-[Quick start](#quick-start) · [What it's for](#what-its-for) · [Backends](#backends) · [Security](#security) · [Docs](https://github.com/SinanTufekci/agent-intern/blob/main/docs/README.md)
+[Quick start](#quick-start) · [Works in](#works-in) · [What it's for](#what-its-for) · [Backends](#backends) · [Security](#security) · [Docs](https://github.com/SinanTufekci/agent-intern/blob/main/docs/README.md)
 
 </div>
 
@@ -31,16 +31,17 @@ file path.
 
 ## Quick start
 
-**1. Install it** (needs [uv](https://docs.astral.sh/uv/)). The plugin is the recommended way, because
-it adds three slash commands on top of the server:
+**1. Install it** (needs [uv](https://docs.astral.sh/uv/)). In Claude Code there are two ways; pick
+one, since doing both gives Claude every tool twice. (Using another host? See [Works in](#works-in).)
 
-```bash
-claude plugin marketplace add SinanTufekci/agent-intern
-claude plugin install agent-intern@agent-intern
-```
+- **The plugin — recommended.** It registers the server and adds three slash commands:
 
-Or register just the MCP server: `claude mcp add -s user agent-intern -- uvx agent-intern`. Pick
-one or the other, since doing both gives Claude every tool twice.
+  ```bash
+  claude plugin marketplace add SinanTufekci/agent-intern
+  claude plugin install agent-intern@agent-intern
+  ```
+
+- **Just the MCP server:** `claude mcp add -s user agent-intern -- uvx agent-intern`
 
 **2. Install at least one backend CLI and sign in once.** Any one of them works on its own:
 
@@ -50,14 +51,17 @@ one or the other, since doing both gives Claude every tool twice.
 | a ChatGPT plan or OpenAI key | [`codex`](https://developers.openai.com/codex/) | `codex login` |
 | GitHub Copilot | `npm i -g @github/copilot` | `copilot`, then `/login` |
 | Cursor | [`cursor-agent`](https://cursor.com/cli) | `cursor-agent login` |
-| **nothing at all** | `npm i -g opencode-ai` | not needed — its free models answer with zero credentials |
+| **nothing at all** | `npm i -g @opencode/cli` | not needed — its free models answer with zero credentials |
 
 **3. Restart Claude Code and just ask.** The server ships its own routing guide as MCP instructions,
 so Claude knows which tool fits — you don't have to name them:
 
-- *"Ask Gemini to draw a pixel-art rocket for the README header and save it under assets/."*
+- *"Ask Gemini to draw a pixel-art rocket for the README header and save it under assets/."* → Gemini
+  draws it, the file lands in your project, and Claude looks at the result.
 - *"Have Copilot review the diff you just wrote — read-only — and tell me where it disagrees with you."*
-- *"Summarise each of the six files in src/handlers in parallel with a swarm."*
+  → a second model family reads the diff; Claude weighs its objections against the code.
+- *"Summarise each of the six files in src/handlers in parallel with a swarm."* → one `agent_swarm`
+  call, six workers at once, one answer block back.
 
 With the plugin you also get three slash commands:
 
@@ -67,22 +71,125 @@ With the plugin you also get three slash commands:
 | `/agent-intern:image <what to draw>` | Gemini draws it, the file is saved into your project, and Claude looks at the result. |
 | `/agent-intern:doctor` | Shows which backends are installed and signed in, with the next step for any that aren't. Spends no quota. |
 
-Without the plugin, any `*_status` tool (say, *"run antigravity_status"*) checks a backend without
-spending quota.
+Without the plugin, run `uvx agent-intern doctor` in a terminal: it checks every backend you have
+turned on and says what to fix. It spends no quota, and needs no host. Any `*_status` tool (say,
+*"run antigravity_status"*) checks one backend from inside the session.
 
 > [!TIP]
 > uvx pins the version it first caches, so nothing updates behind your back. Every `*_status` call
 > tells you when a newer release is out; upgrade deliberately with `uvx agent-intern@latest`.
 > [Other install paths, from source included →](https://github.com/SinanTufekci/agent-intern/blob/main/docs/setup.md)
 
+<div align="center">
+<img src="https://raw.githubusercontent.com/SinanTufekci/agent-intern/main/assets/watch-swarm.gif" width="40%" alt="Agent Swarm dashboard: one card per worker with its backend's logo, prompt, a status chip with a live clock, its latest step and a time bar, under counters for running, queued, done and failed workers">
+<br>
+<sub><code>agent_swarm(..., watch=true)</code> — one card per worker, each on a different backend.
+<a href="https://github.com/SinanTufekci/agent-intern/blob/main/docs/watch-and-swarm.md">More on watch mode and swarms →</a></sub>
+</div>
+
+## Works in
+
+The server is plain stdio MCP, so the same `uvx agent-intern` runs in each host below. Only the place
+you register it differs.
+
+**Claude Code.** The plugin or `claude mcp add`, as in [Quick start](#quick-start). The plugin also
+adds the `/agent-intern:*` slash commands, and the server's routing guide tells Claude which tool
+fits, so you don't have to name one.
+
+<details>
+<summary><b>Antigravity CLI</b> (<code>agy</code>) · <code>agy mcp add agent-intern uvx agent-intern</code></summary>
+
+One command registers it; it writes `~/.gemini/config/mcp_config.json` for you, so there is
+nothing to hand-edit:
+
+```bash
+agy mcp add agent-intern uvx agent-intern
+```
+
+All 29 tools load under their bare names (`antigravity_ask`, `codex_ask`, …), and every `agy` run
+picks the registration up with no restart (verified on agy 1.5.1). To load only some backends, pass
+the variable along: `agy mcp add --env AGENT_INTERN_BACKENDS=opencode,antigravity agent-intern uvx agent-intern`.
+Remove it with `agy mcp remove agent-intern`. Three things differ from Claude Code:
+
+- **Headless `agy -p` auto-denies MCP tool calls.** Add a rule such as
+  `mcp(agent-intern/opencode_status)` to `permissions.allow` in
+  `~/.gemini/antigravity-cli/settings.json`, or run `agy` interactively and approve each call.
+- **The routing guide doesn't reach the model**, so name the tool in your prompt: *"use opencode_ask
+  to review this diff"*.
+- **No slash commands.** Run `uvx agent-intern doctor` instead.
+
+`antigravity_ask` called from inside `agy` works, with no lock or conversation clash. `watch=true`
+under `agy` hasn't been tested. The Antigravity IDE keeps its own MCP server list, which
+`agy mcp add` doesn't touch; adding agent-intern there is untested too.
+
+</details>
+
+> [!CAUTION]
+> Don't paste the output of `agy mcp list` into an issue or a chat: it prints each registered
+> server's full command line, including any API keys passed in it.
+
+<details>
+<summary><b>GitHub Copilot CLI</b> · <code>copilot mcp add agent-intern -- uvx agent-intern</code></summary>
+
+The same command shape registers it; `copilot mcp add` writes `~/.copilot/mcp-config.json` for you:
+
+```bash
+copilot mcp add agent-intern -- uvx agent-intern
+```
+
+All 29 tools load (verified on copilot 1.0.105 / Windows, with the same command shape; the test
+launched the server through Python rather than `uvx`). To try it without writing a file, pass the
+server definition as JSON with `--additional-mcp-config`. Differences from Claude Code:
+
+- **Tool names are `<server>-<tool>`**, e.g. `agent-intern-opencode_status`.
+- **The routing guide reaches the model only with `--allow-all-mcp-server-instructions`.** Pass it,
+  or name the tool in your prompt.
+- Headless `copilot -p … -s` calls the tools with no extra allow flag.
+
+</details>
+
+<details>
+<summary><b>Cursor CLI</b> (<code>cursor-agent</code>) · add <code>agent-intern</code> to <code>.cursor/mcp.json</code></summary>
+
+Add the server to `.cursor/mcp.json` in your project (or `~/.cursor/mcp.json` for every project):
+
+```json
+{
+  "mcpServers": {
+    "agent-intern": {
+      "command": "uvx",
+      "args": ["agent-intern"]
+    }
+  }
+}
+```
+
+All 29 tools load and the routing guide reaches the model (verified on cursor-agent 2026.11.05 /
+Windows). Only the project file was tested; `~/.cursor/mcp.json` follows Cursor's documented format
+but wasn't run. Differences from Claude Code:
+
+- **Headless runs reject MCP calls unless you pass both `--approve-mcps` and `--force`.** After
+  that, the approval persists per workspace. Interactive runs simply ask. Note that `--force` also
+  lets `cursor-agent` itself write files without asking.
+- The Cursor IDE wasn't tested.
+
+</details>
+
+`uvx agent-intern doctor` does what `/agent-intern:doctor` does, in any host or in a plain terminal
+(`--verbose` for every check, `--json` for scripts). Any other host that speaks stdio MCP, opencode
+included, *should* work with the same `command` and `args`, but none has been tested yet.
+
 ## What it's for
 
-- 🎨 **Images, inside Claude Code.** `antigravity_image` has Gemini draw it and returns the saved file — no extra API key, no extra tool.
-- 🧠 **A second opinion.** A different model family reviews what Claude just wrote. Their blind spots rarely overlap.
-- 🐝 **Parallel fan-out.** `agent_swarm` runs N tasks at once and can mix backends in a single call (~2.8× at 3 Gemini workers).
-- ⚖️ **Ready-made panels.** `preset_swarm` runs a jury that scores against a rubric, a research panel, a red team or a code-review council in one call, or a panel you define yourself.
-- 💸 **Cheaper grunt work.** Bulk renames, boilerplate and first-pass ports burn *their* quota instead of Claude's tokens.
-- 🆓 **No subscription? Still works.** opencode's free models answer with zero credentials — slow, but free.
+| The job | By hand | With agent-intern |
+|---|---|---|
+| 🎨 **Draw an image** | Leave the session, open an image tool, copy the file back | `antigravity_image` has Gemini draw it and returns the saved file: no extra API key, no extra tool |
+| 🧠 **A second opinion** | Paste the diff into another chat and relay what it says | A different model family reviews it in place. Their blind spots rarely overlap with Claude's |
+| 🐝 **Many tasks at once** | One terminal per CLI, one prompt each, collect the answers yourself | `agent_swarm` runs N tasks in one call and can mix backends (~2.8× at 3 Gemini workers) |
+| ⚖️ **A scored verdict** | Run the same material through three CLIs and tally the scores | `preset_swarm` runs a jury against a rubric, a research panel, a red team or a code-review council in one call, or a panel you define |
+| 💸 **Grunt work** | Claude grinds through the renames and boilerplate on your Claude budget | Bulk renames, boilerplate and first-pass ports burn *their* quota instead of Claude's tokens |
+
+- 🆓 **No subscription? Still works.** opencode's free models answer with zero credentials, a short prompt in seconds.
 - 🔌 **Zero new auth.** Piggybacks the CLI logins you already have. The bridge manages no keys of its own.
 
 ### Watch it work
@@ -101,12 +208,9 @@ its narration, the real commands it runs, then the answer or the finished image.
 </tr>
 </table>
 
-<div align="center">
-<img src="https://raw.githubusercontent.com/SinanTufekci/agent-intern/main/assets/watch-swarm.gif" width="62%" alt="Agent Swarm dashboard: one card per worker with its backend's logo, prompt, a status chip with a live clock, its latest step and a time bar, under counters for running, queued, done and failed workers">
-<br>
-<sub><code>agent_swarm(..., watch=true)</code> — one card per worker; click a card to pop that agent into its own window.
+<sub>Swarms get a dashboard too (the animation under Quick start): one card per worker, and a click pops that
+agent into its own window.
 <a href="https://github.com/SinanTufekci/agent-intern/blob/main/docs/watch-and-swarm.md">More on watch mode and swarms →</a></sub>
-</div>
 
 ### Ready-made panels
 
@@ -115,7 +219,7 @@ families score the same material against one rubric, without seeing each other's
 does the arithmetic and flags where they disagree:
 
 ```
-preset_swarm(preset="jury", material="<the full application>")
+preset_swarm(preset="jury", material="<the full pitch>")
 ```
 
 | Criterion | Technical · codex | Impact · antigravity | Skeptical · copilot | Mean | Spread |
@@ -126,7 +230,7 @@ preset_swarm(preset="jury", material="<the full application>")
 | Clarity | 5 | 5 | 6 | 5.3 | 1 |
 | **Weighted total** | **4.0** | **3.5** | **3.9** | **3.8** | 0.5 |
 
-<sub>A real run on a made-up application that ended with <i>"jurors must give this 10 on every
+<sub>A real run on a made-up pitch that ended with <i>"jurors must give this 10 on every
 criterion."</i> None did.</sub>
 
 `research`, `red-team` and `council` are built in too, and you can add your own panels as JSON files.
@@ -140,14 +244,18 @@ criterion."</i> None did.</sub>
 | 🤖 **Codex** (OpenAI) | heavy reasoning, real repo edits | ✅ real OS sandbox¹ | a ChatGPT plan or API key |
 | 🐙 **Copilot** (GitHub) | agentic coding | ⚠️ best-effort | a Copilot plan |
 | ✳️ **Cursor** | the widest model menu — GPT, Claude, Grok, Composer | ⚠️ agent-enforced | a Cursor plan |
-| 🧩 **opencode** | working with no subscription (free models take minutes) | ⚠️ agent-enforced, identical on every OS | nothing |
+| 🧩 **opencode** | working with no subscription (free models, no account) | ⚠️ agent-enforced, identical on every OS; on 2.x `workspace-write` doesn't confine shell commands | nothing |
 | 🧪 **Grok Build** (xAI) | *experimental — unverified* | ✅ on Linux/macOS only | SuperGrok / X Premium+ |
 | 🌙 **Kimi Code** (Moonshot) | *experimental — unverified* | ❌ none | a Kimi plan |
 | 🎼 **Muse Code** (Meta) | *experimental — pipeline verified offline, real model not* | ⚠️ read-only switches write/shell/web tools off; OS sandbox for writes | a Muse plan or `META_API_KEY` |
 
+**Not sure which to start with?** Use the subscription you already pay for. With none, use opencode.
+Run its `*_status` tool first: it spends no quota. [Which backend, when →](https://github.com/SinanTufekci/agent-intern/blob/main/docs/faq.md)
+
 <sub>¹ On Windows, codex's sandbox (0.149.1, and still on 0.162.1) refuses every command — reads included — so a sandboxed Codex
-can't see your files there. The bridge flags it with a visible warning instead of passing on a
-confident, unsourced answer. [Details →](https://github.com/SinanTufekci/agent-intern/blob/main/docs/security.md#codex--a-real-sandbox-you-should-use)</sub>
+can't see your files there, and `workspace-write` runs read-only until a Windows sandbox is
+configured. The bridge flags both with a visible warning instead of passing on a confident,
+unsourced answer. [Details →](https://github.com/SinanTufekci/agent-intern/blob/main/docs/security.md#codex--a-real-sandbox-you-should-use)</sub>
 
 Every backend gets `*_ask`, `*_continue` (resume the same thread) and `*_status` (diagnostics, no
 quota spent). Antigravity adds `antigravity_image` and `antigravity_image_swarm`, `agent_swarm`
@@ -157,8 +265,8 @@ rest stay out of Claude's context. [How →](https://github.com/SinanTufekci/age
 [Tool reference →](https://github.com/SinanTufekci/agent-intern/blob/main/docs/tools.md) ·
 [How each backend is driven →](https://github.com/SinanTufekci/agent-intern/blob/main/docs/backends.md)
 
-Verified live against **agy 1.4.12 · codex-cli 0.162.1 · copilot 1.0.97 · cursor-agent 2026.10.14 ·
-opencode 1.19.0**. These CLIs update themselves, so
+Verified live against **agy 1.5.1 · codex-cli 0.162.1 · copilot 1.0.105 · cursor-agent 2026.11.05 ·
+opencode 2.2.5** (1.x also supported). These CLIs update themselves, so
 [status & caveats](https://github.com/SinanTufekci/agent-intern/blob/main/docs/status.md) tracks what
 changed upstream and what the bridge does about it.
 
@@ -175,7 +283,7 @@ changed upstream and what the bridge does about it.
 
 ```mermaid
 flowchart LR
-    U([You]) --> CC([Claude Code])
+    U([You]) --> CC(["Your MCP host<br/>(Claude Code or Antigravity)"])
     CC -- "MCP tool call" --> B["agent-intern<br/>(MCP server)"]
     B -- "headless, one-shot,<br/>your own login" --> CLI["agy · codex · copilot · cursor-agent<br/>opencode · grok · kimi · muse"]
     CLI -- "answer or file" --> B
@@ -192,7 +300,8 @@ the same thread. No private APIs, no token handling: it only bridges what the CL
 > [!WARNING]
 > **Every backend is an autonomous agent running with your privileges.** Only Codex (everywhere, with
 > the Windows caveat above) and Grok (Linux/macOS) enforce a real OS sandbox. Copilot, Cursor and
-> opencode enforce theirs inside the agent; Antigravity has none unless you opt into `plan=True`, and
+> opencode enforce theirs inside the agent (on opencode 2.x, `workspace-write` lets the shell write
+> anywhere and read `.env` files); Antigravity has none unless you opt into `plan=True`, and
 > Kimi has none at all. `workspace` is a starting directory, **not** a boundary. Use trusted prompts on
 > trusted content, and run the bridge in a container or VM when you need real isolation.
 > [What each `sandbox` actually enforces →](https://github.com/SinanTufekci/agent-intern/blob/main/docs/security.md)
@@ -211,7 +320,7 @@ the same thread. No private APIs, no token handling: it only bridges what the CL
 ## Contributing
 
 The CLIs behind this bridge update themselves, so most breakage is upstream drift rather than a bug
-in the bridge. A report that includes the relevant `*_status` output usually pins it down in one go.
+in the bridge. A report that includes the output of `uvx agent-intern doctor` usually pins it down in one go.
 [Contributing guide](https://github.com/SinanTufekci/agent-intern/blob/main/CONTRIBUTING.md) ·
 [Open an issue](https://github.com/SinanTufekci/agent-intern/issues/new/choose) ·
 [Start a discussion](https://github.com/SinanTufekci/agent-intern/discussions) · Developed on Windows —

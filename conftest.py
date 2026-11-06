@@ -129,6 +129,28 @@ def pytest_configure(config):
     )
 
 
+class _OsProxy:
+    """The os module, but with its own `name`: see fake_os_name."""
+
+    def __init__(self, real, name):
+        self._real = real
+        self.name = name
+
+    def __getattr__(self, attr):
+        return getattr(self._real, attr)
+
+
+def fake_os_name(monkeypatch, module, name):
+    """Make `module` (and only `module`) see os.name == `name` for this test.
+
+    Patching os.name itself would reach subprocess, pathlib, tempfile and any
+    thread the test starts, all of which branch on it, and the same test would then
+    mean something different on each CI platform. A stand-in for the `os` the module
+    imported keeps the fake platform inside the code under test. Use it as
+    `from conftest import fake_os_name`."""
+    monkeypatch.setattr(module, "os", _OsProxy(os, name))
+
+
 @pytest.fixture(autouse=True)
 def _no_real_programs(request, monkeypatch):
     if request.node.get_closest_marker("real_cli"):

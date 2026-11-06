@@ -10,6 +10,80 @@ summary.
 
 ## [Unreleased]
 
+### Added
+
+- **`agent-intern doctor` checks your setup from the terminal, with no MCP host.** It runs the same
+  checks as the `*_status` tools for every backend that `AGENT_INTERN_BACKENDS` leaves on, and
+  prints each backend as `ready`, `warning` or `unusable` with the next step to fix it. It spends
+  no quota, and does what `/agent-intern:doctor` does in any host (Antigravity included) or in a
+  plain terminal: `uvx agent-intern doctor`. `--verbose` shows every check and `--json` prints the
+  result as JSON. The exit code is 0 when at least one backend is usable, 1 when none is, and 2 on
+  a usage error. Paste its output into a bug report.
+- **`agent-intern --version` / `-V`** prints the bridge version.
+- **doctor masks more than your home directory.** E-mail addresses show as `<email>` and API keys
+  with a known prefix as `<key>`, on top of the home directory (`~`). Read its output before you
+  post it anyway.
+- **opencode 2.x is supported (`npm i -g @opencode/cli`).** The sandbox uses 2.x's permission rules
+  (an ordered rule list in `OPENCODE_CONFIG_CONTENT`) and a private `--standalone` server, so the
+  per-run fence isn't ignored by the shared background service. 1.x keeps working; any other major
+  version, or one the bridge can't read, is refused with a clear message instead of running
+  unfenced. **On 2.x, `workspace-write` lets the shell write anywhere your user can** (verified); whether
+  the edit tool is confined to the workspace is derived from opencode's source and not yet verified
+  live. `read-only` blocks edits, shell, subagents and web. The read tool is refused `.env` and `.env.local` in both modes, but in
+  `workspace-write` a shell command can still read them. Checked live on opencode 2.2.5 / Windows
+  with free models; not checked on 2.x: `--auto`, macOS/Linux and a configured provider key. `opencode_status`
+  reads the credentials row from `opencode auth list` on 2.x, and `agent-intern doctor` recommends
+  the 2.x package.
+- **codex: a `workspace-write` request that codex silently ran read-only now gets a warning.** On
+  Windows, codex drops `workspace-write` to read-only unless a Windows sandbox is configured
+  (`sandbox = "unelevated"`, `"elevated"` or `"mxc"` under `[windows]` in `~/.codex/config.toml`).
+  When the sandbox codex reports differs from the one requested, `codex_ask`, `codex_continue` (fresh
+  runs) and codex swarm workers append an `[agent-intern] WARNING` with that hint. `codex_status`
+  gains a `windows sandbox` row on Windows (`configured: <value>` or `not configured`; never a
+  failure). The bridge does not set the key itself. Checked on codex-cli 0.166.0 by what codex
+  reports; a real write under the setting is not yet checked.
+
+### Changed
+
+- **agy's `model` also takes a family name without the effort suffix.** `model="gemini-4-argon"`
+  runs the family at its default effort, so `gemini-4-argon-high` is no longer the only way to name
+  it. Verified live on agy 1.5.1 for `gemini-4-argon` and `gemini-3.8-flash`. A typo is still
+  rejected up front.
+- **Tool docstrings and docs use a Gemini model in agy examples** (`gemini-4-argon-high`) instead
+  of a Claude one.
+- **opencode 2.x: status and model checks no longer leave opencode's background service running.**
+  On 2.x, `opencode models` and `opencode auth list` start the shared service; the bridge now passes
+  the global `--standalone` before them.
+- **opencode: an upgrade is picked up without restarting the server.** One that changes the
+  installed version or moves the binary (`opencode-ai` → `@opencode/cli`) is noticed on the next
+  call. An explicit `OPENCODE_BIN` pointing at a path that no longer exists now gets a clear error.
+- **opencode: an `OPENCODE_CONFIG_CONTENT` that isn't plain JSON (JSONC, say) is replaced for fenced
+  runs**, with a warning in the server log.
+- **opencode: a run the sandbox fenced into silence now says so**, instead of a bare "no text"
+  error.
+- **opencode's free models are no longer described as slow.** On opencode 1.19.5 six free models
+  answered a short prompt in 2.5–6.5 s (the default one in 4.8 s), and 1.4–2.8 s on 2.x, so the README, FAQ,
+  tool reference and tool descriptions drop "slow" and "allow minutes". The 300 s default timeout
+  stays, now only a ceiling.
+- **CI also tests Python 3.14 and 3.15**, and the package metadata lists them.
+- **Docs only:** the README gains a "Works in" section (Claude Code, the Antigravity CLI, Copilot CLI and Cursor CLI), a demo
+  animation near the top, a "by hand vs. with agent-intern" table and a where-to-start line; the FAQ
+  now covers opencode and Muse in its backend, terms-of-service and cost answers and opens its
+  backend question with a start-here paragraph; the bug-report template asks for the backend, CLI
+  version and `agent-intern doctor` output instead of agy details only; the example custom preset
+  is now a proposal review panel; and the repository gains a `SECURITY.md` and a Code of Conduct
+  (Contributor Covenant 2.1).
+
+### Fixed
+
+- **agy 1.5 timeouts in image swarm workers and watched image runs are reported as timeouts**, not
+  as "no image file produced". A serialized image worker no longer hides agy's own error.
+- **codex: the sandbox-downgrade warning also works when codex prints no header.** The bridge reads
+  the session's rollout instead, and finds it by file name rather than by scanning every session.
+- **agy 1.5: a `--print-timeout` that exits 3 is reported as a timeout again, with the partial
+  answer.** agy 1.5.0 made an expired print timeout exit 3 (it exited 0 before). Ask, continue, watch
+  mode and Antigravity swarm workers now report it as a timeout and attach the partial answer.
+
 ## [0.34.0] - 2026-11-02
 
 ### Changed

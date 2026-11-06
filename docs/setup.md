@@ -14,13 +14,36 @@ Every install path, per-backend prerequisites, and the `*_BIN` overrides for CLI
   and run `copilot` then `/login` once (or set a `COPILOT_GITHUB_TOKEN`/`GH_TOKEN` env var).
 - **Cursor:** install `cursor-agent` (`curl https://cursor.com/install -fsSL | bash`) and run
   `cursor-agent login` once (or set a `CURSOR_API_KEY` env var).
-- **opencode:** install `opencode` (`npm i -g opencode-ai`). **That's it** — its free `opencode/*`
+- **opencode:** install `opencode` (`npm i -g @opencode/cli` for 2.x; 1.x, `npm i -g opencode-ai`,
+  still works). **That's it** — its free `opencode/*`
   models answer with no account. Run `opencode auth login` only if you want to point it at your own
   Anthropic/OpenAI/… key.
 
 You don't need all eight — the tools for a missing CLI simply report "not found" via their `*_status`
-tool. If you have no subscriptions at all, start with opencode. To leave the ones you don't use out of
+tool. To check what's installed and signed in, run `uvx agent-intern doctor` (see
+[Check your setup](#check-your-setup)). If you have no subscriptions at all, start with opencode. To leave the ones you don't use out of
 Claude's context, see [Load only the backends you use](#load-only-the-backends-you-use).
+
+### Check your setup
+
+```bash
+uvx agent-intern doctor
+```
+
+`doctor` does what the plugin's `/agent-intern:doctor` skill does, in any host or in a plain
+terminal. It runs the same checks as the `*_status` tools for every backend that
+[`AGENT_INTERN_BACKENDS`](#load-only-the-backends-you-use) leaves on, and shows each backend as
+`ready`, `warning` or `unusable` with the next step to fix it. It spends no quota.
+
+| Flag | What it does |
+|---|---|
+| `-v`, `--verbose` | show every check, not just the summary line per backend |
+| `--json` | print the result as JSON, for scripts |
+
+The exit code is **0** when at least one backend is usable, **1** when none is, and **2** on a usage
+error. `uvx agent-intern --version` (or `-V`) prints the bridge version. Your home
+directory shows as `~`, e-mail addresses as `<email>` and API keys with a known prefix as `<key>`;
+still read the output before you post it in a public issue.
 
 ### Recommended — the Claude Code plugin
 
@@ -72,6 +95,98 @@ uvx agent-intern@latest      # fetch + run the newest release (refreshes uv's ca
 > [!TIP]
 > Prefer hands-off auto-updates? Put `"args": ["agent-intern@latest"]` in the config instead —
 > every launch runs the newest release. Convenient, but it pulls new code without asking each time.
+
+### Antigravity (the `agy` CLI)
+
+The same server runs in Antigravity. Register it with one command; `agy` writes
+`~/.gemini/config/mcp_config.json` for you, so there is nothing to hand-edit:
+
+```bash
+agy mcp add agent-intern uvx agent-intern
+```
+
+All 29 tools load under their bare names (`antigravity_ask`, `codex_ask`, …) with no prefix, and every
+`agy` run picks the registration up with no restart (verified on agy 1.5.1).
+
+```bash
+# load only some backends (see "Load only the backends you use" below)
+agy mcp add --env AGENT_INTERN_BACKENDS=opencode,antigravity agent-intern uvx agent-intern
+
+agy mcp remove agent-intern     # take it out again
+```
+
+Three things differ from Claude Code:
+
+- **Headless `agy -p` auto-denies MCP tool calls.** Add a rule such as
+  `mcp(agent-intern/opencode_status)` to `permissions.allow` in
+  `~/.gemini/antigravity-cli/settings.json`, or run `agy` interactively and approve each call.
+  Wildcard rules haven't been tested here.
+- **The server's routing guide doesn't reach the model**, so name the tool in your prompt: *"use
+  opencode_ask to review this diff"*.
+- **There are no slash commands** (they belong to the Claude Code plugin). Run
+  `uvx agent-intern doctor` instead.
+
+Tested: `antigravity_ask` called from inside `agy` answers, with no lock or conversation clash with
+the host. Not tested: `watch=true` under `agy`, and the Antigravity IDE, which keeps its own MCP
+server list that `agy mcp add` doesn't touch.
+
+> [!CAUTION]
+> Don't paste the output of `agy mcp list` into an issue or a chat: it prints each registered
+> server's full command line, including any API keys passed in it.
+
+### GitHub Copilot CLI
+
+The same command shape registers it; `copilot mcp add` writes `~/.copilot/mcp-config.json` for you
+(with `tools: ["*"]`):
+
+```bash
+copilot mcp add agent-intern -- uvx agent-intern
+```
+
+All 29 tools load (verified on copilot 1.0.105 / Windows, with the same command shape; the test
+launched the server through Python rather than `uvx`). To try it without writing a file, pass the
+server definition as JSON with `--additional-mcp-config '<json>'`.
+
+Differences from Claude Code:
+
+- **Tool names are `<server>-<tool>`**, e.g. `agent-intern-opencode_status`, not the bare names.
+- **The server's routing guide reaches the model only with `--allow-all-mcp-server-instructions`.**
+  Without it, it doesn't: pass the flag, or name the tool in your prompt (*"use opencode_ask to
+  review this diff"*).
+- Headless `copilot -p … -s` called the tool with no extra allow flag.
+- There are no slash commands. Run `uvx agent-intern doctor` instead.
+
+### Cursor CLI (`cursor-agent`)
+
+Add the server to `.cursor/mcp.json` in your project, or to `~/.cursor/mcp.json` for every project:
+
+```json
+{
+  "mcpServers": {
+    "agent-intern": {
+      "command": "uvx",
+      "args": ["agent-intern"]
+    }
+  }
+}
+```
+
+All 29 tools load and the server's routing guide reaches the model (verified on cursor-agent
+2026.11.05 / Windows). **Only the project file was tested**; `~/.cursor/mcp.json` follows Cursor's
+documented format and wasn't run.
+
+Differences from Claude Code:
+
+- **Headless runs reject MCP calls unless the run has both `--approve-mcps` and `--force`.** After
+  that, the approval persists per workspace. Interactive runs just ask. Be aware that `--force` also
+  lets `cursor-agent` itself write files without asking.
+- There are no slash commands. Run `uvx agent-intern doctor` instead.
+
+Not tested: the Cursor IDE.
+
+> [!NOTE]
+> Using opencode as the host, or any other stdio MCP host, *should* work with the same `command` and
+> `args`, but none has been tested yet.
 
 ### From source
 
@@ -171,11 +286,11 @@ change.
 ## Requirements
 
 - Python 3.10+
-- **For the Antigravity tools:** [`agy`](https://antigravity.google/) 1.0.0+ on `PATH` (state-file layout re-verified on **1.0.15**; behaviour re-verified on **1.4.12**) and an active Antigravity / AI Pro session
+- **For the Antigravity tools:** [`agy`](https://antigravity.google/) 1.0.0+ on `PATH` (state-file layout re-verified on **1.0.15**; behaviour re-verified on **1.5.1**) and an active Antigravity / AI Pro session
 - **For the Codex tools:** [`codex`](https://developers.openai.com/codex/) on `PATH` and logged in (`codex login`) — verified on **codex-cli 0.162.1** (note its [Windows sandbox caveat](security.md#security))
-- **For the Copilot tools:** [`copilot`](https://docs.github.com/en/copilot/how-tos/copilot-cli) on `PATH` and logged in (`copilot` → `/login`, or a `COPILOT_GITHUB_TOKEN`/`GH_TOKEN` env) — verified on **copilot 1.0.97**
-- **For the Cursor tools:** [`cursor-agent`](https://cursor.com/cli) on `PATH` and logged in (`cursor-agent login`, or a `CURSOR_API_KEY` env) — verified on **cursor-agent 2026.10.14**
-- **For the opencode tools:** [`opencode`](https://opencode.ai/) on `PATH` (`npm i -g opencode-ai`) — **no login needed** for its free `opencode/*` models; `opencode auth login` (or a provider env var) for everything else — verified end-to-end on **opencode 1.18.29**, re-verified on **1.19.0**
+- **For the Copilot tools:** [`copilot`](https://docs.github.com/en/copilot/how-tos/copilot-cli) on `PATH` and logged in (`copilot` → `/login`, or a `COPILOT_GITHUB_TOKEN`/`GH_TOKEN` env) — verified on **copilot 1.0.105**
+- **For the Cursor tools:** [`cursor-agent`](https://cursor.com/cli) on `PATH` and logged in (`cursor-agent login`, or a `CURSOR_API_KEY` env) — verified on **cursor-agent 2026.11.05**
+- **For the opencode tools:** [`opencode`](https://opencode.ai/) on `PATH` (`npm i -g @opencode/cli` for 2.x, `npm i -g opencode-ai` for 1.x) — **no login needed** for its free `opencode/*` models; `opencode auth login` (or a provider env var) for everything else — verified live through the bridge on **opencode 2.2.5** (free models, Windows); 1.x verified end-to-end on **1.18.29**, re-verified on **1.19.5**. Any other major version, or one the bridge can't read, is refused with a clear message instead of running unfenced
 - **For the Grok tools (experimental):** [`grok`](https://docs.x.ai/build/overview) on `PATH` and logged in (`grok login`, or an `XAI_API_KEY` env) plus a SuperGrok / X Premium+ subscription — flag surface verified on **grok 1.0.3**, [answer path unverified](backends.md#experimental-backends)
 - **For the Muse tools (experimental):** [`muse`](https://dev.meta.ai/docs/muse-code) installed and logged in (`muse login`, or a `META_API_KEY` env) with a Muse Code plan — the whole exec pipeline verified on **Muse Code 1.3.0** through its offline echo provider, [real model unverified](backends.md#experimental-backends)
 - **For the Kimi tools (experimental):** [`kimi`](https://github.com/MoonshotAI/kimi-code) on `PATH` and logged in (`kimi login`, or an API key in `~/.kimi-code/config.toml`) — flag surface verified on **kimi 0.29.1**, [answer path unverified](backends.md#experimental-backends)

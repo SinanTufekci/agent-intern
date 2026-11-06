@@ -90,7 +90,7 @@ def _opencode_event_to_watch_lines(ev: dict) -> list[tuple[str, str]]:
         if isinstance(err, dict):
             data = err.get("data")
             msg = str(data.get("message")) if isinstance(data, dict) and data.get("message") else ""
-            msg = msg or str(err.get("name") or "")
+            msg = msg or str(err.get("message") or err.get("name") or "")  # 2.x: message
         return [("result", f"error: {msg}"[:200])]
     return []
 
@@ -173,19 +173,22 @@ async def opencode_ask(
     agent's final message, reconstructed from opencode's `--format json` events.
     Point `workspace` at a project dir for context-aware answers.
 
-    ⚠️ The free models are SLOW (queue-scheduled — a one-word answer has taken
-    minutes), which is why timeout_s defaults to 300 here. Prefer a configured
-    paid model for anything long, and don't mistake slowness for a hang.
+    The free models answer a short prompt in seconds (2.5-6.5 s measured on
+    opencode 1.19.5). They used to be queue-scheduled and take minutes, so
+    timeout_s still defaults to a 300 s ceiling; a run that finishes early never
+    notices it.
 
     Args:
         prompt: Question or instruction for opencode.
-        workspace: Working root (`--dir`). Defaults to the server cwd.
-        sandbox: Permission policy, applied via opencode's OPENCODE_PERMISSION and
-                 enforced by the agent on every platform alike: "read-only"
-                 (default — no edit/bash/subagent/network tools, `.env` files
-                 denied), "workspace-write" (edit and shell inside the workspace;
-                 reaching outside it is denied), or "danger-full-access"
-                 (opencode's own `--auto`, no policy — avoid).
+        workspace: Working root (the run directory). Defaults to the server cwd.
+        sandbox: Permission policy, which opencode enforces itself on every
+                 platform alike: "read-only" (default — no edit/shell/subagent/
+                 network tools, `.env` files denied), "workspace-write" (edit and
+                 shell allowed), or "danger-full-access" (opencode's own `--auto`,
+                 no policy — avoid). On opencode 1.x workspace-write also refuses
+                 reaching outside the workspace. On 2.x the shell is not
+                 confined (it can write anywhere and read `.env` files); edit
+                 confinement is derived from source, not verified live.
                  ⚠️ Agent-enforced, NOT an OS boundary: a determined tool call is
                  refused by opencode, not by the kernel. For a hard boundary, use
                  codex.

@@ -574,6 +574,89 @@ def test_run_text_worker_print_timeout_fails_with_the_partial(monkeypatch, tmp_p
     assert swarm._ISOLATION_OK is True  # the answer's "please sign in" did not latch
 
 
+_PRINT_TIMEOUT_STDERR_EXIT3 = (
+    "[agy] print timeout after 5s with turn in progress; returning partial output\n"
+    'AGY_ERROR: {"status":"DEADLINE_EXCEEDED","reason":"print_timeout"}\n'
+)
+
+
+def test_run_text_worker_print_timeout_exit_3_fails_with_the_partial(monkeypatch, tmp_path):
+    """agy 1.5.0+ exits 3 on an expired --print-timeout: a failed result, not a raise."""
+
+    class _Cut:
+        returncode = 3
+        stdout = _PARTIAL_ANSWER
+        stderr = _PRINT_TIMEOUT_STDERR_EXIT3
+
+    monkeypatch.setattr(swarm.proc_tree, "run_captured", lambda *a, **k: _Cut())
+    monkeypatch.setattr(server, "_run_agy", lambda *a, **k: pytest.fail("must not retry"))
+    res = swarm._run_text_worker(0, "hi", str(tmp_path), None, 5)
+    assert res.ok is False
+    assert "5s timeout" in res.error and _PARTIAL_ANSWER in res.error
+    assert "agy exited" not in res.error
+    assert swarm._ISOLATION_OK is True  # the answer's "please sign in" did not latch
+
+
+def test_run_text_worker_exit_3_without_a_timeout_mark_stays_the_generic_error(
+    monkeypatch, tmp_path
+):
+    class _Fail:
+        returncode = 3
+        stdout = '{"status":"ERROR"}'
+        stderr = 'AGY_ERROR: {"status":"INTERNAL"}'
+
+    monkeypatch.setattr(swarm.proc_tree, "run_captured", lambda *a, **k: _Fail())
+    res = swarm._run_text_worker(0, "hi", str(tmp_path), None, 5)
+    assert res.ok is False
+    assert "agy exited 3" in res.error and "INTERNAL" in res.error
+    assert "hit its" not in res.error
+
+
+def test_run_text_worker_watched_print_timeout_exit_3_fails_with_the_partial(monkeypatch, tmp_path):
+    class _Popen:
+        returncode = 3
+
+        def __init__(self, *a, **k):
+            self.stdout = io.StringIO(_PARTIAL_ANSWER)
+            self.stderr = io.StringIO(_PRINT_TIMEOUT_STDERR_EXIT3)
+
+        def poll(self):
+            return 3
+
+    finished = []
+    monkeypatch.setattr(swarm.proc_tree, "popen", lambda *a, **k: _Popen())
+    monkeypatch.setattr(server, "_run_agy", lambda *a, **k: pytest.fail("must not retry"))
+    monkeypatch.setattr(swarm_watch, "worker_update", lambda i, **kw: None)
+    monkeypatch.setattr(
+        swarm_watch, "worker_finish", lambda i, s, a, e, **kw: finished.append((s, a))
+    )
+    res = swarm._run_text_worker_watched(0, "hi", str(tmp_path), None, 5)
+    assert res.ok is False
+    assert "5s timeout" in res.error and _PARTIAL_ANSWER in res.error
+    assert "agy exited" not in res.error
+    assert finished == [("error", res.error)]
+    assert swarm._ISOLATION_OK is True
+
+
+def test_run_text_worker_watched_exit_3_without_a_timeout_mark_stays_generic(monkeypatch, tmp_path):
+    class _Popen:
+        returncode = 3
+
+        def __init__(self, *a, **k):
+            self.stdout = io.StringIO('{"status":"ERROR"}')
+            self.stderr = io.StringIO('AGY_ERROR: {"status":"INTERNAL"}')
+
+        def poll(self):
+            return 3
+
+    monkeypatch.setattr(swarm.proc_tree, "popen", lambda *a, **k: _Popen())
+    monkeypatch.setattr(swarm_watch, "worker_update", lambda i, **kw: None)
+    monkeypatch.setattr(swarm_watch, "worker_finish", lambda *a, **kw: None)
+    res = swarm._run_text_worker_watched(0, "hi", str(tmp_path), None, 5)
+    assert res.ok is False
+    assert "agy exited 3" in res.error and "timeout" not in res.error
+
+
 def test_run_text_worker_watched_print_timeout_fails_with_the_partial(monkeypatch, tmp_path):
     class _Popen:
         returncode = 0
@@ -947,3 +1030,183 @@ def test_run_copilot_worker_never_pins(monkeypatch):
     r = swarm._run_copilot_worker(0, "hello", os.getcwd(), "read-only", None, 5)
     assert r.ok and r.answer == "ans:hello" and r.backend == "copilot"
     assert seen["pin"] is False
+
+
+# --------------------------------------------------------------------------
+# Image workers when agy cuts the turn at --print-timeout (exit 3 on 1.5.0+, exit 0
+# before): no image + the timeout mark = a timeout error, not "no image file found"
+# --------------------------------------------------------------------------
+
+_IMG_TIMEOUT_STDERR = (
+    "[agy] print timeout after 5s with turn in progress; returning partial output\n"
+    'AGY_ERROR: {"status":"DEADLINE_EXCEEDED","reason":"print_timeout"}\n'
+)
+
+
+def _png_at(path):
+    with open(path, "wb") as f:
+        f.write(_PNG_HEAD)
+    return str(path)
+
+
+def test_finalize_or_timeout_reports_the_timeout_when_no_image_was_produced(tmp_path):
+    with pytest.raises(RuntimeError) as exc:
+        swarm._finalize_or_timeout(
+            tmp_path, str(tmp_path / "nope.png"), None, 0.0, _IMG_TIMEOUT_STDERR, 5
+        )
+    msg = str(exc.value)
+    assert "agy hit its 5s timeout" in msg and "Raise timeout_s" in msg
+    assert msg.endswith(")") and "(" in msg  # the underlying "no image" error rides along
+
+
+def test_finalize_or_timeout_re_raises_the_original_without_the_mark(tmp_path):
+    target = str(tmp_path / "nope.png")
+    with pytest.raises(RuntimeError) as plain:
+        swarm._finalize_image_isolated(tmp_path, target, None, 0.0)
+    with pytest.raises(RuntimeError) as wrapped:
+        swarm._finalize_or_timeout(tmp_path, target, None, 0.0, "some other stderr", 5)
+    assert str(wrapped.value) == str(plain.value)
+    assert "hit its" not in str(wrapped.value)
+
+
+def test_finalize_or_timeout_returns_an_image_written_before_the_cut(tmp_path):
+    target = _png_at(tmp_path / "out.png")
+    final, fmt, size = swarm._finalize_or_timeout(
+        tmp_path, target, None, 0.0, _IMG_TIMEOUT_STDERR, 5
+    )
+    assert fmt == "PNG" and final.endswith(".png") and size > 0
+
+
+class _ImgRun:
+    def __init__(self, returncode, stderr, stdout=""):
+        self.returncode = returncode
+        self.stderr = stderr
+        self.stdout = stdout
+
+
+@pytest.mark.parametrize("returncode", [3, 0])
+def test_image_worker_no_image_after_a_print_timeout_says_timeout(
+    monkeypatch, tmp_path, returncode
+):
+    target = str(tmp_path / "out.png")
+    run = _ImgRun(returncode, _IMG_TIMEOUT_STDERR)
+    monkeypatch.setattr(swarm.proc_tree, "run_captured", lambda *a, **k: run)
+    res = swarm._run_image_worker(0, "draw", target, str(tmp_path), 5)
+    assert res.ok is False
+    assert "agy hit its 5s timeout" in res.error and "Raise timeout_s" in res.error
+    assert swarm._ISOLATION_OK is True  # a timeout is not a sign-in failure
+
+
+@pytest.mark.parametrize("returncode", [3, 0])
+def test_image_worker_keeps_an_image_written_before_the_cut(monkeypatch, tmp_path, returncode):
+    target = _png_at(tmp_path / "out.png")
+    run = _ImgRun(returncode, _IMG_TIMEOUT_STDERR)
+    monkeypatch.setattr(swarm.proc_tree, "run_captured", lambda *a, **k: run)
+    res = swarm._run_image_worker(0, "draw", target, str(tmp_path), 5)
+    assert res.ok is True and res.image_path == target and res.image_format == "PNG"
+
+
+def test_image_worker_exit_3_without_the_mark_is_still_a_missing_image(monkeypatch, tmp_path):
+    target = str(tmp_path / "out.png")
+    run = _ImgRun(3, 'AGY_ERROR: {"status":"INTERNAL"}')
+    monkeypatch.setattr(swarm.proc_tree, "run_captured", lambda *a, **k: run)
+    res = swarm._run_image_worker(0, "draw", target, str(tmp_path), 5)
+    assert res.ok is False
+    assert "hit its" not in res.error
+
+
+def _watched_popen(returncode, stderr):
+    class _Popen:
+        def __init__(self, *a, **k):
+            self.returncode = returncode
+            self.stdout = io.StringIO("")
+            self.stderr = io.StringIO(stderr)
+
+        def poll(self):
+            return self.returncode
+
+    return _Popen
+
+
+@pytest.fixture
+def quiet_swarm_watch(monkeypatch):
+    finished = []
+    monkeypatch.setattr(swarm_watch, "worker_update", lambda i, **kw: None)
+    monkeypatch.setattr(swarm_watch, "worker_append", lambda i, lines: None)
+    monkeypatch.setattr(
+        swarm_watch, "worker_finish", lambda i, s, a, e, **kw: finished.append((s, a))
+    )
+    return finished
+
+
+@pytest.mark.parametrize("returncode", [3, 0])
+def test_watched_image_worker_no_image_after_a_print_timeout_says_timeout(
+    monkeypatch, tmp_path, quiet_swarm_watch, returncode
+):
+    target = str(tmp_path / "out.png")
+    monkeypatch.setattr(
+        swarm.proc_tree, "popen", lambda *a, **k: _watched_popen(returncode, _IMG_TIMEOUT_STDERR)()
+    )
+    res = swarm._run_image_worker_watched(0, "draw", target, str(tmp_path), 5)
+    assert res.ok is False
+    assert "agy hit its 5s timeout" in res.error
+    assert quiet_swarm_watch == [("error", res.error)]
+    assert swarm._ISOLATION_OK is True
+
+
+def test_watched_image_worker_keeps_an_image_written_before_the_cut(
+    monkeypatch, tmp_path, quiet_swarm_watch
+):
+    target = _png_at(tmp_path / "out.png")
+    monkeypatch.setattr(
+        swarm.proc_tree, "popen", lambda *a, **k: _watched_popen(3, _IMG_TIMEOUT_STDERR)()
+    )
+    res = swarm._run_image_worker_watched(0, "draw", target, str(tmp_path), 5)
+    assert res.ok is True and res.image_path == target
+    assert quiet_swarm_watch[0][0] == "done"
+
+
+def test_serialized_image_worker_keeps_the_agy_error_next_to_the_finalize_error(
+    monkeypatch, tmp_path
+):
+    target = str(tmp_path / "out.png")
+
+    def agy_fails(*a, **k):
+        raise RuntimeError("agy hit its 5s timeout before finishing")
+
+    def no_image(t, txt, start):
+        raise RuntimeError("no image file produced")
+
+    monkeypatch.setattr(server, "_run_agy", agy_fails)
+    monkeypatch.setattr(server, "_finalize_image", no_image)
+    res = swarm._run_image_worker_serialized(0, "draw", target, str(tmp_path), 5, 0.0)
+    assert res.ok is False
+    assert res.error == (
+        "no image file produced (agy also failed: agy hit its 5s timeout before finishing)"
+    )
+
+
+def test_serialized_image_worker_without_an_agy_error_reports_only_the_finalize_error(
+    monkeypatch, tmp_path
+):
+    target = str(tmp_path / "out.png")
+
+    def no_image(t, txt, start):
+        raise RuntimeError("no image file produced")
+
+    monkeypatch.setattr(server, "_run_agy", lambda *a, **k: "")
+    monkeypatch.setattr(server, "_finalize_image", no_image)
+    res = swarm._run_image_worker_serialized(0, "draw", target, str(tmp_path), 5, 0.0)
+    assert res.error == "no image file produced"
+
+
+def test_serialized_image_worker_still_returns_an_image_when_agy_failed(monkeypatch, tmp_path):
+    target = str(tmp_path / "out.png")
+
+    def agy_fails(*a, **k):
+        raise RuntimeError("agy hit its 5s timeout")
+
+    monkeypatch.setattr(server, "_run_agy", agy_fails)
+    monkeypatch.setattr(server, "_finalize_image", lambda t, txt, start: (target, "png", 9))
+    res = swarm._run_image_worker_serialized(0, "draw", target, str(tmp_path), 5, 0.0)
+    assert res.ok is True and res.image_path == target

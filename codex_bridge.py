@@ -198,6 +198,149 @@ def _policy_note(blocked: int, sandbox: str) -> str:
     )
 
 
+# --- the sandbox codex actually ran under --------------------------------------
+# On Windows codex DOWNGRADES a writable sandbox to read-only unless a Windows
+# sandbox backend is configured (`windows.sandbox` = mxc | unelevated | elevated,
+# in ~/.codex/config.toml or as `-c windows.sandbox=...`). `-s workspace-write`
+# is accepted without complaint, and only the run's header says otherwise.
+# Verified on codex-cli 0.166.0 / Windows, header-only (no model turn): `codex exec
+# -s workspace-write` printed "sandbox: read-only", and adding
+# `-c windows.sandbox=unelevated` printed "sandbox: workspace-write [workdir, /tmp,
+# $TMPDIR]". Under --json the header is not printed at all (stderr empty), but the
+# session's rollout records the same thing as turn_context.sandbox_policy.type.
+# The bridge reports the downgrade; it does not pass -c windows.sandbox itself, since
+# no real model run has verified that backend, and the config key is the user's
+# switch.
+CODEX_CONFIG = CODEX_HOME / "config.toml"
+_SANDBOX_HEADER_RE = re.compile(r"^sandbox:\s*([a-z][a-z-]*)")
+_SESSION_HEADER_RE = re.compile(r"^session id:\s*(\S+)")
+_HEADER_RULE_RE = re.compile(r"^-{4,}\s*$")
+_WINDOWS_SANDBOX_VALUES = ("mxc", "unelevated", "elevated")
+
+
+def _header_block(stderr: Optional[str]) -> list[str]:
+    """The lines of `codex exec`'s plain-text header: between the first two
+    "--------" rules at the top of stderr ("OpenAI Codex vX", rule, workdir/model/
+    sandbox/session id..., rule, then the transcript). [] when there is no such
+    block, so a "sandbox:" line in the transcript (a prompt, a command's output)
+    is never mistaken for codex's own report."""
+    lines = (stderr or "").splitlines()
+    rules = [i for i, ln in enumerate(lines[:40]) if _HEADER_RULE_RE.match(ln)]
+    if len(rules) < 2:
+        return []
+    return lines[rules[0] + 1 : rules[1]]
+
+
+def _header_field(stderr: Optional[str], pattern: re.Pattern) -> Optional[str]:
+    for line in _header_block(stderr):
+        m = pattern.match(line.strip())
+        if m:
+            return m.group(1)
+    return None
+
+
+def _header_sandbox(stderr: Optional[str]) -> Optional[str]:
+    """The sandbox mode named in `codex exec`'s plain-text header, or None."""
+    return _header_field(stderr, _SANDBOX_HEADER_RE)
+
+
+def _header_session_id(stderr: Optional[str]) -> Optional[str]:
+    """The `session id:` named in `codex exec`'s plain-text header, or None."""
+    return _header_field(stderr, _SESSION_HEADER_RE)
+
+
+def _rollout_sandbox(path: Optional[Path]) -> Optional[str]:
+    """turn_context.sandbox_policy.type from a rollout file, or None."""
+    if path is None:
+        return None
+    try:
+        with path.open(encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                if '"turn_context"' not in line:
+                    continue
+                try:
+                    payload = json.loads(line).get("payload") or {}
+                except ValueError:
+                    continue
+                policy = payload.get("sandbox_policy")
+                if isinstance(policy, dict) and isinstance(policy.get("type"), str):
+                    return policy["type"]
+    except OSError:
+        return None
+    return None
+
+
+def _sandbox_downgrade_note(requested: str, effective: Optional[str]) -> str:
+    """A visible warning when codex ran under a different sandbox than requested.
+
+    Empty when they match or the effective mode is unknown (no header, no rollout):
+    silence is better than a guess."""
+    if not effective or effective == requested:
+        return ""
+    note = (
+        f"\n\n---\n[agent-intern] WARNING: you asked for sandbox={requested!r}, but codex "
+        f"ran this under sandbox={effective!r}"
+    )
+    if os.name == "nt" and requested != "read-only" and effective == "read-only":
+        note += (
+            ", so it could not write anything. On Windows codex drops to read-only "
+            'unless a Windows sandbox is configured: set `sandbox = "unelevated"` (or '
+            '"elevated" / "mxc") under `[windows]` in ~/.codex/config.toml '
+            "(codex's `windows.sandbox` key). codex_status shows whether it is set."
+        )
+    else:
+        note += "."
+    return note
+
+
+def windows_sandbox_setting() -> Optional[str]:
+    """The `windows.sandbox` value in codex's config.toml, or None if unset/unreadable.
+
+    Reads `[windows] sandbox = "..."` and the dotted `windows.sandbox = "..."` form.
+    tomllib where it exists (3.11+); a line scan on 3.10, enough for those two forms.
+    """
+    try:
+        text = CODEX_CONFIG.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    try:
+        import tomllib
+    except ImportError:  # Python 3.10
+        tomllib = None
+    if tomllib is not None:
+        try:
+            value = (tomllib.loads(text).get("windows") or {}).get("sandbox")
+        except (tomllib.TOMLDecodeError, AttributeError):
+            return None
+        return value if isinstance(value, str) else None
+    section = ""
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if line.startswith("[") and line.endswith("]"):
+            section = line.strip("[] ")
+            continue
+        m = re.match(r"""^(windows\.)?sandbox\s*=\s*["']([^"']*)["']$""", line)
+        # `windows.sandbox` belongs at the top level, a bare `sandbox` under [windows].
+        if m and (section == "" if m.group(1) else section == "windows"):
+            return m.group(2)
+    return None
+
+
+def windows_sandbox_status() -> tuple[bool, str]:
+    """(ok, detail) for the `windows sandbox` row. Never a failure: read-only (the
+    default) works without it; it only decides whether workspace-write can write."""
+    value = windows_sandbox_setting()
+    if value:
+        known = "" if value in _WINDOWS_SANDBOX_VALUES else " (not a value this bridge knows)"
+        return (True, f"configured: {value}{known}")
+    return (
+        True,
+        "not configured — sandbox='workspace-write' runs READ-ONLY on Windows (codex "
+        'downgrades it); set sandbox = "unelevated" under [windows] in '
+        f"{CODEX_CONFIG} to allow writes",
+    )
+
+
 # Text decoding for codex's subprocesses: it emits UTF-8, which bare text=True
 # would decode with the Windows locale codepage (cp1254/cp1252) and mangle on any
 # non-ASCII answer. Decode UTF-8 explicitly and never raise on a stray byte.
@@ -345,8 +488,16 @@ def _resume_target_for(workspace: str) -> Optional[str]:
 
 # ----------------------------------------------------------------- conversation history
 def _rollout_for_session(sid: str) -> Optional[Path]:
-    """The rollout file whose session id equals `sid` (newest wins), or None."""
-    matches = [p for p in _iter_rollouts() if _session_id_of(p) == sid]
+    """The rollout file whose session id equals `sid` (newest wins), or None.
+
+    By FILENAME first (rollout-<ts>-<uuid>.jsonl carries the id): a glob instead of
+    opening every rollout under the sessions dir. Only when no name matches does it
+    fall back to reading each file's session_meta, the old full scan."""
+    matches: list[Path] = []
+    if SESSIONS_DIR.exists() and _UUID_RE.fullmatch(sid or ""):
+        matches = list(SESSIONS_DIR.glob(f"**/rollout-*{sid}.jsonl"))
+    if not matches:
+        matches = [p for p in _iter_rollouts() if _session_id_of(p) == sid]
     if not matches:
         return None
     return max(matches, key=lambda p: p.stat().st_mtime if p.exists() else 0.0)
@@ -538,11 +689,19 @@ def run_codex(
         blocked = _policy_block_count(proc.stderr or "")
         if blocked:
             answer += _policy_note(blocked, sandbox)
+        captured = _capture_new_session(before) if (not continue_conv and pin) else None
+        if resume_session is None:  # resume inherits the session's sandbox: no -s sent
+            effective = _header_sandbox(proc.stderr)
+            if effective is None:
+                # No header to read: ask the run's rollout, found by the header's
+                # session id or the one _capture_new_session saw appear.
+                sid = _header_session_id(proc.stderr) or captured
+                if sid:
+                    effective = _rollout_sandbox(_rollout_for_session(sid))
+            answer += _sandbox_downgrade_note(sandbox, effective)
 
-        if not continue_conv and pin:
-            sid = _capture_new_session(before)
-            if sid:
-                _pin(workspace, sid)
+        if captured:
+            _pin(workspace, captured)
         return answer
     finally:
         try:
@@ -596,16 +755,23 @@ def run_codex_streaming(
         # and the answer is already in the -o file. So read stdout + stderr on daemon
         # threads (a lingering pipe can't stall us) and wait on the process itself.
         err_chunks: list[str] = []
+        thread_ids: list[str] = []  # from `thread.started`: names this run's rollout
 
         def _pump_stdout() -> None:
             try:
                 for line in proc.stdout:
                     line = line.strip()
-                    if not line or on_event is None:
+                    if not line:
                         continue
                     try:
                         ev = json.loads(line)
                     except ValueError:
+                        continue
+                    if isinstance(ev, dict) and ev.get("type") == "thread.started":
+                        tid = ev.get("thread_id")
+                        if isinstance(tid, str) and tid:
+                            thread_ids.append(tid)
+                    if on_event is None:
                         continue
                     try:
                         on_event(ev)
@@ -656,6 +822,12 @@ def run_codex_streaming(
         blocked = _policy_block_count(stderr)
         if blocked:
             answer += _policy_note(blocked, sandbox)
+        if resume_session is None:
+            # --json prints no header; the rollout records the effective policy.
+            effective = _header_sandbox(stderr)
+            if effective is None and thread_ids:
+                effective = _rollout_sandbox(_rollout_for_session(thread_ids[0]))
+            answer += _sandbox_downgrade_note(sandbox, effective)
 
         if not continue_conv and pin:
             sid = _capture_new_session(before)
@@ -724,6 +896,10 @@ def status_rows() -> list[tuple[str, bool, str]]:
 
     logged_in, detail = codex_login_status()
     rows.append(("codex auth", logged_in, detail))
+
+    if os.name == "nt":
+        ok, detail = windows_sandbox_status()
+        rows.append(("windows sandbox", ok, detail))
 
     rows.append(("sessions dir", SESSIONS_DIR.exists(), str(SESSIONS_DIR)))
 

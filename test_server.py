@@ -1828,6 +1828,96 @@ def test_run_agy_print_timeout_is_an_error_not_a_truncated_answer(fake_agy_json,
     assert server._recorded_conv_id("C:\\ws") == "cut"
 
 
+# agy 1.5.0+: the same expired --print-timeout exits 3 with status ERROR, the partial
+# text in `response`, and finished_reason print_timeout.
+_PRINT_TIMEOUT_STDERR_EXIT3 = (
+    "[agy] print timeout after 5s with turn in progress; returning partial output\n"
+    'AGY_ERROR: {"status":"DEADLINE_EXCEEDED","reason":"print_timeout"}\n'
+)
+
+
+def test_run_agy_print_timeout_exit_3_is_the_timeout_error(fake_agy_json, last_conv_file):
+    last_conv_file.write_text(json.dumps({}), encoding="utf-8")
+    fake_agy_json["returncode"] = 3
+    fake_agy_json["stderr"] = _PRINT_TIMEOUT_STDERR_EXIT3
+    fake_agy_json["stdout"] = _json_result(
+        response="The hurdle of Western movable",
+        conv="c3",
+        status="ERROR",
+        error="print timeout after 5s with turn in progress",
+        finished_reason="print_timeout",
+    )
+    with pytest.raises(RuntimeError, match="5s timeout") as exc:
+        server._run_agy("hi", "C:\\ws", continue_conv=False, timeout_s=5)
+    msg = str(exc.value)
+    assert "Raise timeout_s" in msg
+    assert "--- partial answer" in msg and "Western movable" in msg
+    assert "agy exited" not in msg  # not the generic exit-code error
+    assert server._recorded_conv_id("C:\\ws") == "c3"
+
+
+def test_run_agy_print_timeout_exit_3_unpinned_leaves_the_continue_slot(
+    fake_agy_json, last_conv_file
+):
+    last_conv_file.write_text(json.dumps({}), encoding="utf-8")
+    fake_agy_json["returncode"] = 3
+    fake_agy_json["stderr"] = _PRINT_TIMEOUT_STDERR_EXIT3
+    fake_agy_json["stdout"] = _json_result(
+        response="half", conv="c3", status="ERROR", finished_reason="print_timeout"
+    )
+    with pytest.raises(RuntimeError, match="5s timeout"):
+        server._run_agy("hi", "C:\\ws", continue_conv=False, timeout_s=5, pin=False)
+    assert server._recorded_conv_id("C:\\ws") is None
+
+
+def test_run_agy_exit_3_finished_reason_alone_is_the_timeout_error(fake_agy_json, last_conv_file):
+    # The structured field is enough on its own: the stderr wording is not a contract.
+    last_conv_file.write_text(json.dumps({}), encoding="utf-8")
+    fake_agy_json["returncode"] = 3
+    fake_agy_json["stdout"] = _json_result(
+        response="cut here", conv="c3", status="ERROR", finished_reason="print_timeout"
+    )
+    with pytest.raises(RuntimeError, match="5s timeout") as exc:
+        server._run_agy("hi", "C:\\ws", continue_conv=False, timeout_s=5)
+    assert "cut here" in str(exc.value)
+
+
+def test_run_agy_exit_3_on_the_plain_text_path_is_the_timeout_error(fake_agy, last_conv_file):
+    last_conv_file.write_text(json.dumps({}), encoding="utf-8")
+    fake_agy["returncode"] = 3
+    fake_agy["stderr"] = _PRINT_TIMEOUT_STDERR_EXIT3
+    fake_agy["stdout"] = "half an answ"
+    with pytest.raises(RuntimeError, match="5s timeout") as exc:
+        server._run_agy("hi", "C:\\ws", continue_conv=False, timeout_s=5)
+    assert "half an answ" in str(exc.value)
+
+
+def test_run_agy_exit_3_without_a_timeout_mark_stays_the_generic_error(
+    fake_agy_json, last_conv_file
+):
+    last_conv_file.write_text(json.dumps({}), encoding="utf-8")
+    fake_agy_json["returncode"] = 3
+    fake_agy_json["stderr"] = 'AGY_ERROR: {"status":"INTERNAL"}'
+    fake_agy_json["stdout"] = _json_result(response="", conv="c3", status="ERROR")
+    with pytest.raises(RuntimeError, match="agy exited 3") as exc:
+        server._run_agy("hi", "C:\\ws", continue_conv=False, timeout_s=5)
+    msg = str(exc.value)
+    assert "INTERNAL" in msg  # stderr tail
+    assert '"status": "ERROR"' in msg  # stdout tail
+    assert "timeout" not in msg
+    assert server._recorded_conv_id("C:\\ws") is None
+
+
+def test_run_agy_exit_3_quota_failure_keeps_the_quota_note(fake_agy_json, last_conv_file):
+    last_conv_file.write_text(json.dumps({}), encoding="utf-8")
+    fake_agy_json["returncode"] = 3
+    fake_agy_json["stderr"] = "RESOURCE_EXHAUSTED: quota exceeded for gemini-4-argon-high"
+    fake_agy_json["stdout"] = _json_result(response="", status="ERROR")
+    with pytest.raises(RuntimeError, match="agy exited 3") as exc:
+        server._run_agy("hi", "C:\\ws", continue_conv=False, timeout_s=5)
+    assert "timeout" not in str(exc.value).splitlines()[0]
+
+
 def test_run_agy_print_timeout_unpinned_leaves_the_continue_slot(fake_agy_json, last_conv_file):
     last_conv_file.write_text(json.dumps({}), encoding="utf-8")
     fake_agy_json["stdout"] = _json_result(response="half", conv="swarm-worker")
@@ -2194,6 +2284,49 @@ def test_watched_print_timeout_is_an_error_not_a_truncated_answer(
     assert "cut mid-sent" in str(exc.value)
     assert server._watch_snapshot()["status"] == "error"
     assert server._recorded_conv_id("C:\\ws") == "wc-cut"
+
+
+def test_watched_print_timeout_exit_3_is_the_timeout_error(
+    fake_watched_agy, brain_dir, last_conv_file
+):
+    last_conv_file.write_text(json.dumps({}), encoding="utf-8")
+    fake_watched_agy["returncode"] = 3
+    fake_watched_agy["stdout"] = _stream_lines(
+        response="cut mid-sent", conv="wc3", status="ERROR", finished_reason="print_timeout"
+    )
+    fake_watched_agy["stderr"] = _PRINT_TIMEOUT_STDERR_EXIT3
+    with pytest.raises(RuntimeError, match="5s timeout") as exc:
+        server._run_agy_watched("hi", "C:\\ws", continue_conv=False, timeout_s=5)
+    assert "cut mid-sent" in str(exc.value)
+    assert "agy exited" not in str(exc.value)
+    assert server._watch_snapshot()["status"] == "error"
+    assert server._recorded_conv_id("C:\\ws") == "wc3"
+
+
+def test_watched_exit_3_finished_reason_alone_is_the_timeout_error(
+    fake_watched_agy, brain_dir, last_conv_file
+):
+    last_conv_file.write_text(json.dumps({}), encoding="utf-8")
+    fake_watched_agy["returncode"] = 3
+    fake_watched_agy["stdout"] = _stream_lines(
+        response="cut", conv="wc3", status="ERROR", finished_reason="print_timeout"
+    )
+    with pytest.raises(RuntimeError, match="5s timeout"):
+        server._run_agy_watched("hi", "C:\\ws", continue_conv=False, timeout_s=5)
+
+
+def test_watched_exit_3_without_a_timeout_mark_stays_the_generic_error(
+    fake_watched_agy, brain_dir, last_conv_file
+):
+    last_conv_file.write_text(json.dumps({}), encoding="utf-8")
+    fake_watched_agy["returncode"] = 3
+    fake_watched_agy["stderr"] = 'AGY_ERROR: {"status":"INTERNAL"}'
+    fake_watched_agy["stdout"] = _stream_lines(response="", conv="wc3", status="ERROR")
+    with pytest.raises(RuntimeError) as exc:
+        server._run_agy_watched("hi", "C:\\ws", continue_conv=False, timeout_s=5)
+    assert "exited 3" in str(exc.value)
+    assert "timeout" not in str(exc.value)
+    assert server._watch_snapshot()["status"] == "error"
 
 
 def test_watched_finished_reason_print_timeout_is_a_timeout(
@@ -3834,3 +3967,84 @@ def test_plugin_launches_the_published_package_unpinned():
     servers = json.loads((_plugin_root() / ".mcp.json").read_text(encoding="utf-8"))
     (entry,) = servers["mcpServers"].values()
     assert entry == {"command": "uvx", "args": ["agent-intern"]}
+
+
+# --------------------------------------------------------------------------
+# _run_agy_image_watched when agy cuts the turn at --print-timeout (exit 3 on 1.5.0+,
+# exit 0 before) and no image exists: the timeout is the cause, not a missing file
+# --------------------------------------------------------------------------
+
+_IMG_PRINT_TIMEOUT = (
+    "[agy] print timeout after 5s with turn in progress; returning partial output\n"
+    'AGY_ERROR: {"status":"DEADLINE_EXCEEDED","reason":"print_timeout"}\n'
+)
+
+
+@pytest.fixture
+def watched_image_run(monkeypatch, brain_dir, last_conv_file):
+    """Run _run_agy_image_watched against a scripted agy: set .returncode/.stderr."""
+    cfg = {"returncode": 3, "stderr": _IMG_PRINT_TIMEOUT}
+    last_conv_file.write_text(json.dumps({}), encoding="utf-8")
+
+    class _Popen:
+        def __init__(self, *a, **k):
+            self.returncode = cfg["returncode"]
+            self.stdout = io.StringIO("")
+            self.stderr = io.StringIO(cfg["stderr"])
+            self._n = 2
+
+        def poll(self):
+            self._n -= 1
+            return None if self._n > 0 else self.returncode
+
+        def communicate(self, timeout=None):
+            return ("", "")
+
+        def kill(self):
+            pass
+
+    monkeypatch.setattr(server.subprocess, "Popen", lambda *a, **k: _Popen())
+    monkeypatch.setattr(server, "_ensure_watch_server", lambda: 12345)
+    monkeypatch.setattr(server, "_open_watch_window", lambda *a, **k: None)
+    monkeypatch.setattr(server.time, "sleep", lambda *a, **k: None)
+    monkeypatch.setattr(server, "_RESPONSE_POLL_DEADLINE_S", 0.0)
+    return cfg
+
+
+def _no_image(target, txt, start):
+    raise RuntimeError("no image file produced")
+
+
+@pytest.mark.parametrize("returncode", [3, 0])
+def test_watched_image_no_image_after_a_print_timeout_says_timeout(
+    watched_image_run, monkeypatch, returncode
+):
+    watched_image_run["returncode"] = returncode
+    monkeypatch.setattr(server, "_finalize_image", _no_image)
+    with pytest.raises(RuntimeError) as exc:
+        server._run_agy_image_watched("wrapped", "C:/out/art.png", "C:\\ws", 5, "draw")
+    msg = str(exc.value)
+    assert msg.startswith("agy hit its 5s timeout")
+    assert "Raise timeout_s" in msg
+    assert msg.endswith("(no image file produced)")  # the finalize error rides along
+    assert server._watch_snapshot()["status"] == "error"
+
+
+def test_watched_image_exit_3_without_the_mark_stays_the_missing_image_error(
+    watched_image_run, monkeypatch
+):
+    watched_image_run["stderr"] = 'AGY_ERROR: {"status":"INTERNAL"}'
+    monkeypatch.setattr(server, "_finalize_image", _no_image)
+    with pytest.raises(RuntimeError) as exc:
+        server._run_agy_image_watched("wrapped", "C:/out/art.png", "C:\\ws", 5, "draw")
+    assert "no image file produced" in str(exc.value)
+    assert "hit its" not in str(exc.value)
+
+
+def test_watched_image_written_before_the_cut_is_still_returned(watched_image_run, monkeypatch):
+    monkeypatch.setattr(
+        server, "_finalize_image", lambda target, txt, start: ("C:/out/art.png", "PNG", 99)
+    )
+    out = server._run_agy_image_watched("wrapped", "C:/out/art.png", "C:\\ws", 5, "draw")
+    assert "C:/out/art.png" in out and "format=PNG" in out
+    assert server._watch_snapshot()["image"] == "C:/out/art.png"
