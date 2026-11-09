@@ -5,22 +5,22 @@
 ## FAQ
 
 <details>
-<summary><b>Is this against Google's / OpenAI's / GitHub's / Cursor's Terms of Service?</b></summary>
+<summary><b>Is this against Google's / OpenAI's / GitHub's / Cursor's / Anthropic's Terms of Service?</b></summary>
 
-It runs the **official `agy`, `codex`, `copilot`, `cursor-agent` and `opencode` CLIs under your own
-logins** (and the experimental `grok`, `kimi` and `muse`) — no private APIs, no token theft, no quota
+It runs the **official `agy`, `codex`, `copilot`, `cursor-agent`, `opencode` and `claude` CLIs under
+your own logins** (and the experimental `grok`, `kimi` and `muse`) — no private APIs, no token theft, no quota
 abuse. It just bridges what the CLIs already do. That said, the terms of each provider you use apply
-(Google AI Pro / Antigravity, OpenAI / Codex, GitHub Copilot, Cursor, opencode and the model
-provider behind it), and you're responsible for staying within them.
+(Google AI Pro / Antigravity, OpenAI / Codex, GitHub Copilot, Cursor, Anthropic / Claude Code,
+opencode and the model provider behind it), and you're responsible for staying within them.
 </details>
 
 <details>
-<summary><b>Do I need all eight CLIs?</b></summary>
+<summary><b>Do I need all nine CLIs?</b></summary>
 
 No. Each backend is independent — install only the CLI(s) you want. The tools for a missing backend
 report "not found" via their `*_status` tool (`antigravity_status` / `codex_status` /
-`copilot_status` / `cursor_status` / `opencode_status` / `grok_status` / `kimi_status` /
-`muse_status`) and never
+`copilot_status` / `cursor_status` / `opencode_status` / `claude_status` / `grok_status` /
+`kimi_status` / `muse_status`) and never
 crash the server. If you hold no subscriptions at all, opencode is the one that still answers.
 </details>
 
@@ -70,7 +70,11 @@ second coding opinion alongside Codex — noting its sandbox is **best-effort**,
 GPT, Claude, Grok, and Composer, all via `model` — noting its sandbox is **agent-enforced**, like
 Copilot's. Use **opencode** when you have no subscription, when you want a model family none of the
 others cover, or to spare a paid quota — its free models answer with zero
-credentials, and its sandbox behaves the same on every OS.
+credentials, and its sandbox behaves the same on every OS. Use **Claude Code** (`claude_ask`) when
+your host *isn't* Claude Code and you want Claude's judgment on your own Claude plan: inside Claude
+Code it is hidden, since delegating to yourself spends the same quota twice. Its `workspace-write`
+confines file edits to the workspace and runs no shell, so it can't run tests or builds, and no mode
+is an OS boundary for edits.
 
 **Grok**, **Kimi** and **Muse** are [experimental and unverified](backends.md#experimental-backends) —
 reach for them to help verify them, or if they're the subscription you actually have. Grok is the more
@@ -79,7 +83,7 @@ no sandbox and no swarm/watch yet. Muse's whole pipeline is verified through its
 provider, but no real model has answered yet.
 
 All of them let you choose a `model` (Kimi and Muse pass it through without validating it); in a swarm
-you can mix seven of the eight (everything but Kimi). See
+you can mix eight of the nine (everything but Kimi). See
 [The backends at a glance](backends.md#the-backends-at-a-glance).
 </details>
 

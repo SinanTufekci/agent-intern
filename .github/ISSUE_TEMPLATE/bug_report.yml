@@ -35,7 +35,7 @@ body:
     attributes:
       label: CLI version
       description: Output of the backend's `--version` (`agy --version`, `codex --version`, ...).
-      placeholder: "agy 1.5.1"
+      placeholder: "agy 1.5.3"
     validations:
       required: true
 

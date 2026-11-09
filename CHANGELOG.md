@@ -10,6 +10,51 @@ summary.
 
 ## [Unreleased]
 
+### Added
+
+- **A Claude Code backend: `claude_ask`, `claude_continue` and `claude_status`, for hosts other than
+  Claude Code.** An Antigravity, Codex, Copilot, Cursor or opencode session can now delegate to
+  Claude Code on your own Claude login (`claude auth login`) or an `ANTHROPIC_API_KEY`; `agent_swarm`
+  takes `backend: "claude"` too (aliases `claude-code` and `anthropic`). **Inside Claude Code the
+  tools are hidden automatically**, since the server sees `CLAUDECODE=1` and delegating to yourself
+  spends the same quota twice; name `claude` in `AGENT_INTERN_BACKENDS` to turn them on anyway, and
+  the status tools' `backends` row says which case you are in. That makes 32 tools, or 29 inside
+  Claude Code. `read-only` (the default) reads and searches files: no Write, Edit or Bash.
+  `workspace-write` confines file edits to the workspace and runs **no shell**, so it can't run
+  tests or builds. `danger-full-access` skips every permission check and is **not verified live**.
+  All three are enforced by Claude Code itself and none is an OS boundary for file edits. `model`
+  takes an alias (`haiku`, `sonnet`, `opus`, `fable`) or a full id. `CLAUDE_BIN` overrides the
+  binary; claude 2.1.259 or newer is needed. `claude_status` shows the version and how you're
+  signed in (method, plan, login expiry), never your e-mail or organisation. Verified live on
+  claude 2.1.319 / Windows: hidden in Claude Code (29 tools), present in the Antigravity CLI (32
+  tools, `claude_ask` answered; `claude_status` answered in Copilot CLI, Cursor CLI and opencode
+  too), the `read-only` and `workspace-write` behaviour above. Not in this
+  release: a usage or limits row (there is no free way to read it); a run that hits the plan's limit
+  says so in its error.
+- **`agent-intern rules` prints the routing guide.** It is byte for byte the server's MCP
+  instructions for the backends `AGENT_INTERN_BACKENDS` leaves on, as UTF-8, to paste into the rules
+  file of a host that doesn't show MCP instructions to its model (the agy CLI; Copilot without
+  `--allow-all-mcp-server-instructions`; opencode is unconfirmed). Run it as
+  `uvx agent-intern rules > AGENTS.md`: agy, Copilot CLI, Cursor CLI and opencode all read that
+  file (measured; home-level rules files weren't tested).
+- **A nesting limit across every backend.** Each agent agent-intern starts gets
+  `AGENT_INTERN_DEPTH` one higher, and a copy of agent-intern two agents deep refuses to start
+  another, with a clear message, so agents can't recurse without end. A backend that loads
+  agent-intern can delegate one level further, and no deeper.
+- **`agent-intern doctor` checks Claude Code** along with the other backends.
+
+### Changed
+
+- **The server's guidance now fits every host.** The MCP instructions shrank from 5,062 to 3,407
+  characters, so Claude Code (which cuts them at 4,096) no longer truncates them: the offer trigger,
+  the backend picker and the `workspace` rule come first and the security note last. Every tool
+  description now leads with when to use the tool and carries the `workspace` rule, and parameter
+  notes are held to 600 characters; the detail that moved out (the `schema`, `plan` and `model`
+  notes, the Windows codex caveat, the `agent_swarm` backend aliases and per-backend sandbox notes)
+  is in [docs/tools.md](docs/tools.md).
+- **Re-verified on agy 1.5.3. No break.** Ask, continue, an image, a two-worker swarm and the
+  timeout error ran through this release's code.
+
 ## [0.35.0] - 2026-11-09
 
 ### Added
