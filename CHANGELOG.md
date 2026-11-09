@@ -10,6 +10,8 @@ summary.
 
 ## [Unreleased]
 
+## [0.36.0] - 2026-11-09
+
 ### Added
 
 - **A Claude Code backend: `claude_ask`, `claude_continue` and `claude_status`, for hosts other than
@@ -2021,7 +2023,8 @@ caller might copy becomes a guaranteed rejected call.
 
 - **BREAKING:** `antigravity_ask_stream` (superseded by watch mode).
 
-[Unreleased]: https://github.com/SinanTufekci/agent-intern/compare/v0.35.0...HEAD
+[Unreleased]: https://github.com/SinanTufekci/agent-intern/compare/v0.36.0...HEAD
+[0.36.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.35.0...v0.36.0
 [0.35.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.34.0...v0.35.0
 [0.34.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.33.0...v0.34.0
 [0.33.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.32.1...v0.33.0
