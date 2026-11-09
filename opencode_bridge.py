@@ -334,9 +334,13 @@ _V2_READ_ONLY_RULES = [
 # edits, then deny the parent-relative and absolute forms. An earlier rule set
 # allowed only "<absolute workspace>/*", which an inside edit never matches: it
 # denied the edit tool everywhere, and the "inside write" seen live was the shell.
-# These rules are SOURCE-DERIVED and not yet live-verified (free tier rate-limited
-# at the time). If they are wrong in the open direction, an edit can leave the
-# workspace, which a shell command already can on 2.x.
+# Verified live on 2.2.5 (2026-11-09, free model, the write tool doing every write,
+# shell denied for the test): sub/dir/nested.txt inside was written; ../x, an
+# absolute C:/... path and a backslashed C:\... path outside were all refused, by
+# the external_directory deny ("Permission denied: external_directory") before the
+# edit denies were reached, so those stand as a second layer. A .env inside CAN be
+# written: the env rules cover reads only. With the real rules (shell allowed) the
+# write tool wrote a file in a subdirectory.
 _V2_WORKSPACE_WRITE_RULES = [
     {"action": "shell", "resource": "*", "effect": "allow"},
     {"action": "edit", "resource": "*", "effect": "allow"},

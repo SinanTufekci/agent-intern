@@ -207,24 +207,27 @@ with a clear message rather than run unfenced.
 
 - **`read-only`** — no edits, no shell, no subagents, no web. Checked live: a shell write and an
   edit write were both refused and no file was created.
-- **`workspace-write`** — edits and shell are allowed. **A shell command is not confined:** it
-  can write anywhere your user can. A shell redirect into the parent directory succeeded, because
-  on 2.x denying `external_directory` doesn't stop it (verified). Whether the edit tool itself is
-  confined to the workspace is derived from opencode's source and **not yet verified live**; the
-  earlier writes seen outside the workspace were probably shell writes. There is no per-run
-  warning for this; the `opencode_ask` tool description states it. **That includes `.env` files:**
+- **`workspace-write`** — edits and shell are allowed. **File edits stay inside the workspace**
+  (verified on 2.2.5 with the shell denied, so only the edit tool could write: an edit to
+  `sub/dir/nested.txt` inside the workspace was written, while `../x`, an absolute `C:/…` path and a
+  backslashed `C:\…` path outside were all refused with "Permission denied: external_directory").
+  **A shell command is not confined:** it can write anywhere your user can. A shell redirect into
+  the parent directory succeeded, because on 2.x denying `external_directory` doesn't stop it
+  (verified). There is no per-run warning for this; the `opencode_ask` tool description states it.
+  **That includes `.env` files:**
   opencode's read tool is refused `.env` and `.env.local` (and allowed `.env.example` and other
   files) in both modes, but in `workspace-write` a shell command can still read them. A
-  `.env.local` leaked that way once, probably through `cat`. On opencode 2.x, `workspace-write` does
-  not protect `.env` files or paths outside the workspace from shell commands; only `read-only`
-  does. Treat `workspace-write` on 2.x as "the agent may run any command", and use a container or VM
+  `.env.local` leaked that way once, probably through `cat`. The edit tool can also write a `.env`
+  file inside the workspace: the `.env` rules block reads only. On opencode 2.x, `workspace-write`
+  keeps file edits inside the workspace, but shell commands are not confined: they can write
+  anywhere your user can and read `.env` files. Only `read-only` protects them. Treat `workspace-write` on 2.x as "the agent may run any command", and use a container or VM
   if that isn't acceptable.
 - **`danger-full-access`** — unchanged: no policy.
 
 **Checked** on opencode 2.2.5 / Windows with free models, through the bridge: `read-only`
-refusals, the shell write outside the workspace under `workspace-write`, and the `.env` read rules.
-**Not checked on 2.x:** edit-tool confinement under `workspace-write`, `--auto`, macOS and Linux,
-and a configured provider key. On 1.x, `workspace-write`
+refusals, the shell write outside the workspace under `workspace-write`, edit-tool confinement
+under `workspace-write` (dated 2026-11-09), and the `.env` read rules.
+**Not checked on 2.x:** `--auto`, macOS and Linux, and a configured provider key. On 1.x, `workspace-write`
 still refuses reaching outside the workspace, as above; that has not been re-checked on 1.x
 recently.
 
@@ -286,8 +289,8 @@ shim.
   Kimi can and do act outside it; Codex is bounded by its enforced `sandbox`; Grok by its OS profile
   on Linux/macOS and by a tool allowlist elsewhere; Copilot by its best-effort tool/path permissions;
   Cursor by its agent-enforced mode/force; opencode by a permission policy that denies leaving the
-  run directory (on opencode 2.x it doesn't stop shell commands, and edit-tool confinement isn't
-  verified live yet).
+  run directory (on opencode 2.x it holds file edits inside the workspace, but doesn't stop shell
+  commands).
 - An Antigravity or Kimi call effectively runs **arbitrary code with your user privileges**. A Copilot
   or Cursor call does too outside its best-effort denials; a Grok call does on Windows outside its
   allowlist; a Codex call does unless you keep it at `read-only`.

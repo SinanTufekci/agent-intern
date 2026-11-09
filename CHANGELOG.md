@@ -27,10 +27,12 @@ summary.
   (an ordered rule list in `OPENCODE_CONFIG_CONTENT`) and a private `--standalone` server, so the
   per-run fence isn't ignored by the shared background service. 1.x keeps working; any other major
   version, or one the bridge can't read, is refused with a clear message instead of running
-  unfenced. **On 2.x, `workspace-write` lets the shell write anywhere your user can** (verified); whether
-  the edit tool is confined to the workspace is derived from opencode's source and not yet verified
-  live. `read-only` blocks edits, shell, subagents and web. The read tool is refused `.env` and `.env.local` in both modes, but in
-  `workspace-write` a shell command can still read them. Checked live on opencode 2.2.5 / Windows
+  unfenced. **On 2.x, `workspace-write` keeps file edits inside the workspace** (verified: an edit
+  to a subdirectory was written; `../x` and absolute paths outside were refused), **but shell
+  commands are not confined**: they can write anywhere your user can and read `.env` files. The edit
+  tool can also write a `.env` file inside the workspace; only reading one is blocked.
+  `read-only` blocks edits, shell, subagents and web. The read tool is refused `.env` and
+  `.env.local` in both modes. Checked live on opencode 2.2.5 / Windows
   with free models; not checked on 2.x: `--auto`, macOS/Linux and a configured provider key. `opencode_status`
   reads the credentials row from `opencode auth list` on 2.x, and `agent-intern doctor` recommends
   the 2.x package.
@@ -66,7 +68,7 @@ summary.
   tool reference and tool descriptions drop "slow" and "allow minutes". The 300 s default timeout
   stays, now only a ceiling.
 - **CI also tests Python 3.14 and 3.15**, and the package metadata lists them.
-- **Docs only:** the README gains a "Works in" section (Claude Code, the Antigravity CLI, Copilot CLI and Cursor CLI), a demo
+- **Docs only:** the README gains a "Works in" section (Claude Code, the Antigravity CLI, Copilot CLI, Cursor CLI and opencode), a demo
   animation near the top, a "by hand vs. with agent-intern" table and a where-to-start line; the FAQ
   now covers opencode and Muse in its backend, terms-of-service and cost answers and opens its
   backend question with a start-here paragraph; the bug-report template asks for the backend, CLI

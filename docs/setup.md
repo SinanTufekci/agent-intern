@@ -184,9 +184,49 @@ Differences from Claude Code:
 
 Not tested: the Cursor IDE.
 
+### opencode
+
+The same command shape registers it. Without `--global` it writes `opencode.json` in the current
+directory (your project):
+
+```bash
+opencode mcp add agent-intern -- uvx agent-intern
+```
+
+`--global` writes `~/.config/opencode/opencode.jsonc` instead; that wasn't run. To write the entry
+by hand:
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "agent-intern": {
+        "type": "local",
+        "command": ["uvx", "agent-intern"]
+      }
+    }
+  }
+}
+```
+
+All 29 tools load (verified on opencode 2.2.5 / Windows, with a free model and the same command
+shape; the test launched the server through Python rather than `uvx`).
+
+Differences from Claude Code:
+
+- **opencode 2.x doesn't expose MCP tools as separate tools.** The model reaches them through
+  opencode's Code Mode `execute` tool, as `tools["agent-intern"].opencode_status()`. Any opencode
+  policy that denies `execute` makes them unreachable (per opencode's docs).
+- **The server's routing guide didn't reach the model** (one run, one free model): name the tool in
+  your prompt (*"use opencode_ask to review this diff"*).
+- Headless `opencode run` called the tool with no extra approval.
+- **Don't use `opencode mcp list` as a load check:** it printed "No MCP servers configured" while
+  the server was loaded.
+- There are no slash commands. Run `uvx agent-intern doctor` instead.
+
 > [!NOTE]
-> Using opencode as the host, or any other stdio MCP host, *should* work with the same `command` and
-> `args`, but none has been tested yet.
+> Any other stdio MCP host *should* work with the same `command` and `args`, but none has been
+> tested yet.
 
 ### From source
 

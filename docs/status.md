@@ -18,13 +18,18 @@ Version-by-version compatibility notes: what changed upstream, what the bridge d
   - **A run applies none of that unless it is `--standalone`.** By default 2.x connects to a shared
     background service that ignores the run's environment: the same new-format read-only policy let a
     shell write through in default mode and fenced it with `--standalone`.
-  - **Workspace-write does not confine the shell.** `external_directory` denied did not stop a shell
-    redirect into the parent directory, in a plain directory and in a git repository, and a shell can
-    read a `.env` file the read rules refuse. Whether the edit tool can be confined is **not settled**:
-    opencode matches an edit inside the run's directory against a location-relative path (`sub/a.txt`),
-    so a rule written with the absolute workspace path may never match it. The source, the rule set
-    that follows from it and the one live test that settles it are in
-    [backends.md](backends.md#opencode-2).
+  - **Workspace-write confines the edit tool, not the shell.** `external_directory` denied did not
+    stop a shell redirect into the parent directory, in a plain directory and in a git repository,
+    and a shell can read a `.env` file the read rules refuse. The edit tool is another matter. My
+    first attempt used an allow rule with the absolute workspace path and I reported that it worked:
+    that was wrong. opencode matches an edit inside the run's directory against a location-relative
+    path (`sub/a.txt`), so the rule never matched, and the file I saw written was most likely the
+    shell's (it was allowed, and I had not recorded which tool wrote). The same slip probably lay
+    behind my note that the edit tool wrote outside the workspace under an `external_directory` deny. Rules built from the source
+    (`edit` allow, then deny `../*`, `?:/*` and `/*`) were run live on 2026-11-09 with the shell
+    denied: a nested edit inside was written, and a `../` path, an absolute path and a backslashed
+    path outside were all refused by the `external_directory` deny, with the `edit` denies as a second
+    layer. [backends.md](backends.md#opencode-2) has the details and the source lines.
   - Unchanged: the `--format json` events, `-s`, `-c`, `-m` and `--`. A fenced call's error text
     changed (*"This non-interactive run cannot ask the user for permission, so the request was
     rejected"*), `opencode providers list` is gone (`opencode auth list`), and `--version` prints
@@ -33,9 +38,25 @@ Version-by-version compatibility notes: what changed upstream, what the bridge d
     `OPENCODE_CONFIG_CONTENT`, and refuses any major other than 1 or 2 instead of running it unfenced.
     Through it on 2.2.5: a read-only ask answered, a shell write and an edit write were both refused,
     `-s` resumed a session, and the read tool was refused `.env` and `.env.local`.
-  - Not checked on 2.x: `--auto`, `--agent`, `--fork`, a configured provider, macOS and Linux, and
-    opencode as a *host* for the server. The free tier then answered `provider.free-limit` to every
-    model for about 13 hours, which stopped the nested-edit test as well.
+  - **opencode as a host** for this server (2.2.5, free model, 2026-11-09): it loads and lists all 29
+    tools, `opencode_status` ran with no approval flag, and the tools are reached through opencode's
+    Code Mode as `await tools["agent-intern"].opencode_status()`, not as separate tools. The model
+    said it had no `OFFER IT` instructions (one run). Details in
+    [backends.md](backends.md#opencode-2).
+  - Not checked on 2.x: `--auto`, `--agent`, `--fork`, a configured provider, macOS and Linux. The
+    free tier answered `provider.free-limit` to every model for about 13 hours after the first
+    round of probes, so the edit and host checks ran once it lifted, on 2026-11-09.
+- ✅ **Copilot CLI and Cursor CLI load this server as a host.** Checked on 2026-11-05 on Windows with
+  this branch's server (all 29 tools listed; `opencode_status` called, no quota spent; default
+  models). **Copilot CLI 1.0.105:** `copilot mcp add <name> -- <command>` registers it (the per-run
+  `--additional-mcp-config` takes the same JSON); `-p` called the tool with no approval flag, but the
+  model only saw the `OFFER IT` server instructions with `--allow-all-mcp-server-instructions`.
+  **Cursor CLI 2026.11.05:** a project `.cursor/mcp.json` registers it; a headless `-p` run needs
+  **`--approve-mcps --force`** (without them every call came back *"User rejected MCP"*, and
+  `--approve-mcps` alone was not enough), and the instructions reached the model. Two more hosts
+  are recorded in this file: opencode 2.x in its entry above (the tools sit behind Code Mode and the
+  instructions were not seen) and agy in the agy 1.5.1 entry below. In both runs here the user's own
+  MCP config was left as it was ([opencode details](backends.md#opencode-2)).
 - ✅ **Re-verified on agy 1.5.1, copilot 1.0.105, cursor-agent 2026.11.05 and opencode 1.19.5. One
   change touches the bridge: an expired `--print-timeout` now exits 3.** Run against this branch's code
   on Windows, 2026-11-05, on gemini-3.8-flash-high / gemini-4-argon-high and free opencode models only.

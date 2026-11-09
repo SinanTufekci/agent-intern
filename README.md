@@ -175,9 +175,49 @@ but wasn't run. Differences from Claude Code:
 
 </details>
 
+<details>
+<summary><b>opencode</b> · <code>opencode mcp add agent-intern -- uvx agent-intern</code></summary>
+
+The same command shape registers it. Without `--global` it writes `opencode.json` in the current
+directory (your project):
+
+```bash
+opencode mcp add agent-intern -- uvx agent-intern
+```
+
+Or write the entry by hand:
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "agent-intern": {
+        "type": "local",
+        "command": ["uvx", "agent-intern"]
+      }
+    }
+  }
+}
+```
+
+All 29 tools load (verified on opencode 2.2.5 / Windows, with a free model and the same command
+shape; the test launched the server through Python rather than `uvx`). `--global` writes
+`~/.config/opencode/opencode.jsonc` instead; that wasn't run. Differences from Claude Code:
+
+- **opencode 2.x doesn't expose MCP tools as separate tools.** The model reaches them through
+  opencode's Code Mode `execute` tool, as `tools["agent-intern"].opencode_status()`. An opencode
+  policy that denies `execute` makes them unreachable (per opencode's docs).
+- **The routing guide didn't reach the model** (one run, one free model), so name the tool in your
+  prompt.
+- Headless `opencode run` called the tool with no extra approval.
+- **Don't use `opencode mcp list` as a load check:** it printed "No MCP servers configured" while
+  the server was loaded.
+
+</details>
+
 `uvx agent-intern doctor` does what `/agent-intern:doctor` does, in any host or in a plain terminal
-(`--verbose` for every check, `--json` for scripts). Any other host that speaks stdio MCP, opencode
-included, *should* work with the same `command` and `args`, but none has been tested yet.
+(`--verbose` for every check, `--json` for scripts). Any other host that speaks stdio MCP *should* work
+with the same `command` and `args`, but none has been tested yet.
 
 ## What it's for
 
@@ -300,8 +340,8 @@ the same thread. No private APIs, no token handling: it only bridges what the CL
 > [!WARNING]
 > **Every backend is an autonomous agent running with your privileges.** Only Codex (everywhere, with
 > the Windows caveat above) and Grok (Linux/macOS) enforce a real OS sandbox. Copilot, Cursor and
-> opencode enforce theirs inside the agent (on opencode 2.x, `workspace-write` lets the shell write
-> anywhere and read `.env` files); Antigravity has none unless you opt into `plan=True`, and
+> opencode enforce theirs inside the agent (on opencode 2.x, `workspace-write` keeps file
+> edits inside the workspace, but the shell can write anywhere and read `.env` files); Antigravity has none unless you opt into `plan=True`, and
 > Kimi has none at all. `workspace` is a starting directory, **not** a boundary. Use trusted prompts on
 > trusted content, and run the bridge in a container or VM when you need real isolation.
 > [What each `sandbox` actually enforces →](https://github.com/SinanTufekci/agent-intern/blob/main/docs/security.md)

@@ -400,25 +400,29 @@ finds. `opencode models` still lists one `provider/model` per line, now with ten
   shell redirect into the parent directory, in a plain directory and in a git repository. A shell
   command is raw text to the policy (the docs call directory inference from it best effort), so a
   shell write cannot be confined, and a shell can `cat` a `.env` file the read rules refuse.
-  **Whether the edit tool can be confined is not settled.** Two things were seen and one was
-  withdrawn. Seen: with the shell denied, an `edit` rule that allows only the workspace and denies
-  the rest refused a write outside it (the `write` tool's part came back with an error). Withdrawn:
-  an earlier note said a write *inside* the workspace went through under an absolute-path allow rule
-  such as `C:/<workspace>/*`. The shell was allowed in that run and which tool wrote the file was
-  not recorded, so it proves nothing. The source says why it may not work: for a path inside the
-  run's directory (or inside the project's worktree) opencode matches the rule against a
-  **location-relative path with forward slashes**, such as `sub/dir/nested.txt` or, for a sibling in
-  the worktree, `../other/file.txt` (`packages/core/src/file-access.ts` lines 94 to 105 at tag
-  v2.2.5), and against the **absolute** path only for a path outside both (line 115). So an allow
-  rule written with the absolute workspace path does not match an inside edit. Patterns are
-  whole-value, `*` matches any run of characters including `/`, `?` matches one character, both sides
-  have `\` turned into `/`, and matching ignores case on Windows
-  (`packages/core/src/util/wildcard.ts` lines 3 to 14); the last matching rule wins
-  (`packages/core/src/permission.ts` lines 86 to 95). A rule set that would confine the edit tool by
-  that reading, **not run live yet**: `edit` `*` allow, then `edit` `../*` deny, `edit` `?:/*` deny
-  and `edit` `/*` deny. Settling it takes one nested edit inside the workspace and one outside it,
-  with the shell denied so the tool that wrote the file is known. Until then treat 2.x workspace-write
-  as agent-enforced and best effort, like Copilot's.
+  **The edit tool can be confined, and with these rules it was.** Rules: `edit` `*` allow, then `edit`
+  `../*` deny, `edit` `?:/*` deny, `edit` `/*` deny, and `external_directory` `*` deny. Checked live on
+  2.2.5 on 2026-11-09 with a free model and the shell denied for the test, so the `write` tool did
+  every write: `sub/dir/nested.txt` inside the workspace was written, and `../rel_outside.txt`, an
+  absolute `C:/…` path and a backslashed `C:\…` path outside were all refused, each with
+  `Permission denied: external_directory` before the `edit` rules were reached. The `edit` denies are
+  a second layer. With the shell allowed, as workspace-write really runs, the `write` tool wrote a
+  file in a subdirectory. A `.env` inside the workspace can still be written: those rules cover
+  reads only.
+  **Why the first attempt was wrong.** An earlier allow rule named the absolute workspace path
+  (`C:/<workspace>/*`) and an earlier note said it let a write inside through. It could not have: for
+  a path inside the run's directory (or inside the project's worktree) opencode matches the rule
+  against a **location-relative path with forward slashes**, such as `sub/dir/nested.txt` or, for a
+  sibling in the worktree, `../other/file.txt` (`packages/core/src/file-access.ts` lines 94 to 105 at
+  tag v2.2.5), and against the **absolute** path only for a path outside both (line 115). The shell
+  was allowed in that run and the file was most likely the shell's. The same goes for an earlier note
+  that the edit tool wrote outside the workspace under an `external_directory` deny: the shell was
+  allowed then too, and with it denied the deny held. Patterns are whole-value, `*` matches any run of
+  characters including `/`, `?` matches one character, both sides have `\` turned into `/`, and
+  matching ignores case on Windows (`packages/core/src/util/wildcard.ts` lines 3 to 14); the last
+  matching rule wins (`packages/core/src/permission.ts` lines 86 to 95).
+  So 2.x workspace-write is: the edit tool confined to the workspace, the shell not. Treat it as
+  agent-enforced and best effort, like Copilot's.
 - **The old object form still works as a deprecated key**: `OPENCODE_CONFIG_CONTENT` with
   `{"permission": {"bash": "ask", ...}}` and `--standalone` fenced a shell write. The schema marks
   `permission` deprecated, so the array is the one to build on.
@@ -431,10 +435,21 @@ rather than run unfenced. Its own diagnostics (`models`, `auth list`) put `--sta
 the subcommand: on 2.2.5 each of them starts the shared background service otherwise, and
 `--standalone` after the subcommand did not prevent it (`--version` starts nothing).
 
-Not tried on 2.x: `--auto`, `--agent`, `--fork`, a configured provider, macOS and Linux, and running
-the bridge's server as an MCP server inside opencode (the free tier was rate-limited for about 13
-hours after the other probes, with `provider.free-limit` and `retryAfterMs` 46152000). The shared
+Not tried on 2.x: `--auto`, `--agent`, `--fork`, a configured provider, and macOS and Linux. (The free
+tier answered `provider.free-limit` to every model for about 13 hours after the first round of
+probes, with `retryAfterMs` 46152000, which is why some checks ran on 2026-11-09.) The shared
 background service keeps running after a default-mode call; `opencode service stop` ends it.
+
+**opencode as a host for this server** (2.2.5, free model, `--standalone`). The server loads and all
+29 tools are available, but opencode 2 does not give the model one tool per MCP tool: it reaches them
+through its Code Mode `execute` tool as JavaScript, `await tools["agent-intern"].opencode_status()`.
+`opencode_status` ran without any approval flag. One run asked for the `OFFER IT` server instructions
+and the model said it had none. A permission rule that denies `execute` removes Code Mode and with it
+these tools. To register it, `opencode mcp add agent-intern -- uvx agent-intern` writes an
+`opencode.json` in the current directory (`--global` writes `~/.config/opencode/opencode.jsonc`):
+`{"mcp": {"servers": {"agent-intern": {"type": "local", "command": ["uvx", "agent-intern"]}}}}`. The
+`uvx` form was written from the venv-python run, not executed. `opencode mcp list` printed "No MCP
+servers configured" with the server loaded, so it is no check.
 
 <a id="grok-bridge"></a>
 

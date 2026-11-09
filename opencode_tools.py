@@ -186,9 +186,9 @@ async def opencode_ask(
                  network tools, `.env` files denied), "workspace-write" (edit and
                  shell allowed), or "danger-full-access" (opencode's own `--auto`,
                  no policy — avoid). On opencode 1.x workspace-write also refuses
-                 reaching outside the workspace. On 2.x the shell is not
-                 confined (it can write anywhere and read `.env` files); edit
-                 confinement is derived from source, not verified live.
+                 reaching outside the workspace. On 2.x file edits stay inside
+                 the workspace, but the shell is not confined (it can write
+                 anywhere and read `.env` files).
                  ⚠️ Agent-enforced, NOT an OS boundary: a determined tool call is
                  refused by opencode, not by the kernel. For a hard boundary, use
                  codex.
