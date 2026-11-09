@@ -71,7 +71,8 @@ summary.
   stays, now only a ceiling.
 - **CI also tests Python 3.14 and 3.15**, and the package metadata lists them.
 - **Docs only:** the README gains a "Works in" section (Claude Code, the Antigravity CLI, Copilot CLI, Cursor CLI and opencode), a demo
-  animation near the top, a "by hand vs. with agent-intern" table and a where-to-start line; the FAQ
+  animation under Quick start, a "by hand vs. with agent-intern" table, a where-to-start line, a
+  card banner (`assets/card.svg`) and a refreshed social preview; the FAQ
   now covers opencode and Muse in its backend, terms-of-service and cost answers and opens its
   backend question with a start-here paragraph; the bug-report template asks for the backend, CLI
   version and `agent-intern doctor` output instead of agy details only; the example custom preset
