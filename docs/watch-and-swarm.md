@@ -151,10 +151,10 @@ quota/rate-limit pressure for wall-clock.
   `sandbox: "read-only"` means plan mode). Swarm workers are
   **one-shot** — there is no `*_continue` for a swarm worker's session.
 - **Per-backend timeout floor** — `timeout_s` is shared by every worker and
-  defaults to 180 s, which is right for Codex/Copilot/Cursor and wrong for
-  opencode, whose free models were measured at **152–428 s**. An opencode worker is
-  therefore given **at least 300 s** whatever you pass; the budget is only raised,
-  never lowered, and a paid model simply finishes early.
+  defaults to 180 s, which is right for Codex/Copilot/Cursor but was too short for
+  opencode in earlier measurements. An opencode worker is therefore given
+  **at least 300 s** whatever you pass; the budget is only raised, never lowered,
+  and a model that finishes early simply returns early.
 - **Error isolation** — a worker that fails is reported in place; the others still
   return.
 - **`watch=true`** — opens a thin live **Agent Swarm** dashboard (one card per
@@ -175,10 +175,10 @@ quota/rate-limit pressure for wall-clock.
 `agent_swarm` needs a task list built by hand. A **preset** is that list written down once: who sits
 on the panel (a role, a backend, optionally a model and a sandbox), what each member is told, and
 what Claude should do with the answers. You run it with one call, and the same panel runs every time,
-so two runs (two applications, two drafts of a plan) can be compared.
+so two runs (two pitches, two drafts of a plan) can be compared.
 
 ```
-preset_swarm(preset="jury", material="<the full application text>")
+preset_swarm(preset="jury", material="<the full pitch text>")
 ```
 
 | Preset | Kind | Members | What you get back |
@@ -215,13 +215,13 @@ save and edit. A preset is a JSON file named `<preset>.json`:
 
 ```json
 {
-  "description": "Grant panel: our foundation's three criteria",
+  "description": "Proposal review panel: our team's three criteria",
   "kind": "jury",
-  "brief": "Evaluate the grant application as a member of the foundation's panel.",
+  "brief": "Evaluate the proposal as a member of the review panel.",
   "members": [
     {"role": "Technical juror", "backend": "codex", "brief": "Judge the method and plan."},
     {"role": "Impact juror", "backend": "antigravity", "brief": "Judge who benefits and how much."},
-    {"role": "Budget juror", "backend": "cursor", "model": "auto", "brief": "Judge the budget."}
+    {"role": "Cost juror", "backend": "cursor", "model": "auto", "brief": "Judge the cost and effort."}
   ],
   "rubric": [
     {"id": "excellence", "label": "Excellence", "weight": 0.4, "guide": "Is the approach sound and new?"},
@@ -230,7 +230,7 @@ save and edit. A preset is a JSON file named `<preset>.json`:
   ],
   "scale": [1, 5],
   "disagree_at": 2,
-  "synthesis": "Give the table, then a funding recommendation with the three main reasons."
+  "synthesis": "Give the table, then a go / no-go recommendation with the three main reasons."
 }
 ```
 

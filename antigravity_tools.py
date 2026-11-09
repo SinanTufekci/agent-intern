@@ -62,8 +62,9 @@ async def antigravity_ask(
         model: Optional model slug to run this conversation on (agy's --model),
                e.g. "gemini-4-argon-high" or "gemini-3.8-flash-low". Omit to use
                the model set in agy's settings.json, or agy's own default when
-               none is set (Gemini 4 Argon (Medium) as of agy 1.4.12). Must be one
-               of `agy models` — an unknown slug is rejected up front. agy renames
+               none is set (Gemini 4 Argon (Medium) as of agy 1.5.1). Must be one
+               of `agy models`, or one of them without its effort suffix
+               ("gemini-4-argon") — an unknown slug is rejected up front. agy renames
                and drops models between releases, often with no changelog entry,
                so a slug from older docs may be gone; see antigravity_status /
                `agy models` for the valid ones. Quota is counted per model family:
@@ -166,7 +167,7 @@ async def antigravity_continue(
         prompt: Follow-up message.
         workspace: Working directory used by the prior conversation. Defaults to cwd.
         model: Optional model slug for this turn (agy's --model), e.g.
-               "claude-sonnet-5-5-high". agy's model is per-invocation, not baked into
+               "gemini-4-argon-high". agy's model is per-invocation, not baked into
                the conversation, so a follow-up can run on a different model than
                the original ask — omit to use agy's settings.json default.
                Validated against `agy models`; an unknown slug is rejected (agy

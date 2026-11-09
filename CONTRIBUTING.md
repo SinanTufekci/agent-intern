@@ -8,7 +8,7 @@ Thanks for helping. Here are the most useful contributions, roughly in order of 
    takes about a minute and is worth more than any code change.
 2. **Report upstream drift.** The CLIs behind the bridge update themselves, so most breakage is a CLI
    that changed, not a bridge bug. [A bug report](https://github.com/SinanTufekci/agent-intern/issues/new?template=bug_report.yml)
-   that includes the relevant `*_status` output and the CLI's version usually pins it down straight away.
+   that includes the output of `uvx agent-intern doctor --verbose` and the CLI's version usually pins it down straight away.
 3. **Confirm macOS and Linux.** Development happens on Windows. CI runs on all three platforms, but
    only against fakes, so a real run elsewhere is very welcome.
 4. **Code.** For anything bigger than a small fix, open an issue or a
@@ -29,7 +29,7 @@ ruff check .
 ruff format --check .
 pytest test_server.py test_swarm.py test_codex.py test_copilot.py test_cursor.py \
        test_grok.py test_kimi.py test_opencode.py test_proc_tree.py test_muse.py \
-       test_presets.py -q
+       test_presets.py test_doctor.py -q
 ```
 
 These unit tests are offline: they use fake CLIs and spend no quota. `test_smoke.py` is different.

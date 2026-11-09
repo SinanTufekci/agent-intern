@@ -24,7 +24,7 @@ must have logged in interactively at least once via the Antigravity IDE or
 platform filesystem reads under `~/.gemini/antigravity-cli/`.
 
 Model: defaults to agy's settings.json "model" field, and to agy's own default
-where that is unset (Gemini 4 Argon (Medium) on agy 1.4.12, checked in a clean HOME).
+where that is unset (Gemini 4 Argon (Medium) on agy 1.4.12 and 1.5.1, checked in a clean HOME).
 agy 1.0.5 added a --model flag (and a `models` subcommand); through
 ~1.0.14 switching to a DIFFERENT model in -p HUNG the call (verified on 1.0.5:
 the active label returned in seconds, any other hung >60s), so the bridge kept
@@ -44,11 +44,11 @@ unchecked. `agy models` itself must be
 run with stdin closed (it blocks on an interactive terminal otherwise), same as
 -p is spawned with DEVNULL stdin.
 
-Model SLUGS (agy 1.1.5, list re-checked live on 1.4.12) — the label format CHANGED
+Model SLUGS (agy 1.1.5, list re-checked live on 1.5.1) — the label format CHANGED
 and every old example is now invalid. 1.1.5 introduced "stable, user-facing model
 slugs" that the /model picker shows and --model accepts, and `agy models` emits
 those slugs (bare through 1.1.10; as `<slug>\t<human label>` from 1.1.11 on — see
-_parse_models_output). The live list (re-read on 1.4.12) is:
+_parse_models_output). The live list (re-read on 1.5.1) is:
 gemini-4-argon-{low,medium,high}, gemini-3.8-flash-{low,medium,high},
 claude-opus-5-5-{low,medium,high}, claude-sonnet-5-5-{low,medium,high},
 gpt-oss-120b-medium. 1.1.6 ADDED the gemini-3.6-flash family and moved the
@@ -526,7 +526,7 @@ free `opencode/*` models answer with zero credentials, so reach for it when the 
 user has no other plan, when you want a model family none of the others cover, \
 or to spare a paid quota. Add a key for Claude/GPT-class models. Sandbox is \
 agent-enforced (a permission policy), not an OS boundary, but it behaves the \
-same on every platform. Free models are SLOW — allow minutes, not seconds.""",
+same on every platform. Its free models answer a short prompt in seconds.""",
     "kimi": """\
 - kimi_* (Kimi Code, Moonshot — EXPERIMENTAL, never live-verified) — Kimi K2 \
 family; like antigravity it has NO sandbox and auto-executes tools, so trusted \
@@ -651,7 +651,7 @@ SERVER_INSTRUCTIONS = _server_instructions(ENABLED_BACKENDS)
 # installed package metadata, which goes stale on editable installs). Keep in
 # sync with pyproject.toml's version. Compared at startup against the latest
 # tag on GitHub so a long-lived clone learns when to `git pull`.
-__version__ = "0.34.0"
+__version__ = "0.35.0"
 
 # Passed explicitly: without it the MCP handshake's serverInfo.version reports
 # fastmcp's own version, not the bridge's.
@@ -687,6 +687,18 @@ _AGY_LOCK = threading.Lock()
 # Latest agy version the bridge's state-file assumptions were verified against.
 # Newer agy releases may change paths/schemas (the SQLite migration is the known
 # risk), so we warn at startup if the installed agy is newer than this.
+#
+# 1.5.1 re-verification (live, Windows, 2026-11-05, this branch): two releases and
+# one REAL change. Ask, continue in the same conversation, an image, a two-worker
+# swarm, `agy models` (the same 13 suffixed slugs), `/usage` and `/model` held, and
+# an antigravity_ask through this server hosted by agy itself answered. 1.5.0 made
+# an expired --print-timeout EXIT 3 (status ERROR, finished_reason print_timeout,
+# an AGY_ERROR DEADLINE_EXCEEDED line plus the old stderr mark), where 1.2.0-1.4.x
+# exited 0; every runner here raised "agy exited 3" before its timeout check ran.
+# The check now comes first (see _run_agy), verified live with a 6 s timeout. agy
+# also accepts an effort-less base name (`--model gemini-4-argon`), which
+# validate_model now does too. Not re-checked: watch mode, image swarm, plan mode,
+# schema.
 #
 # 1.4.12 re-verification (live, Windows): fourteen releases and a minor bump, no
 # break. Ask on the default model, continue in the same conversation, an image, a
@@ -759,7 +771,7 @@ _AGY_LOCK = threading.Lock()
 # transcript and status went green -- so an empty newest-conversation is a stale
 # artifact, not a regression. (Issue #8: the row now skips such conversations, and
 # ones still running or whose turn failed; see _transcript_status_row.)
-VERIFIED_AGY_VERSION = (1, 4, 12)
+VERIFIED_AGY_VERSION = (1, 5, 1)
 
 # First agy version whose print mode understands `--output-format json` (1.1.8).
 # Below this the flag is unknown to agy's parser, so the bridge must not pass it
@@ -1610,7 +1622,13 @@ def _collect_status() -> list[tuple[str, bool, str]]:
     AGY_BRIDGE_NO_UPDATE_CHECK is set) makes one best-effort GitHub call to report
     whether a newer bridge release exists.
     """
-    rows: list[tuple[str, bool, str]] = _bridge_status_rows()
+    return _bridge_status_rows() + _agy_status_rows()
+
+
+def _agy_status_rows() -> list[tuple[str, bool, str]]:
+    """agy's own rows of _collect_status, without the bridge rows every backend
+    shares (`agent-intern doctor` prints those once, not per backend)."""
+    rows: list[tuple[str, bool, str]] = []
 
     version = _parse_agy_version(_get_agy_version() or "")
     if version is None:
@@ -2345,13 +2363,41 @@ def validate_model(model: Optional[str]) -> Optional[str]:
     loud rejection listing the new names, not a silent run on the wrong model. The
     same exactness is what turns a model agy RETIRES into a loud failure rather
     than a silent fallback — 1.1.25 dropped the whole gemini-3.5-flash family.
+
+    A BASE name, a listed slug minus its effort suffix (gemini-4-argon for
+    gemini-4-argon-high), is accepted too: `agy models` lists only suffixed slugs,
+    but agy runs the base name on the family's default effort. Verified live on
+    1.5.1 for the Gemini families only: `--model gemini-4-argon` and `--model
+    gemini-3.8-flash` both answered. Any other listed family's base name
+    (gpt-oss-120b, ...) is passed to agy the same way without having been tried.
+    Still exact per name, so a base name agy no longer lists any slug for fails.
     """
     if not model:
         return model
     known = list_agy_models()
-    if known and model not in known:
-        raise ValueError(f"unknown agy model {model!r}; expected one of: {', '.join(known)}")
+    bases = _agy_base_names(known)
+    if known and model not in known and model not in bases:
+        hint = f" (or a base name without the effort: {', '.join(bases)})" if bases else ""
+        raise ValueError(f"unknown agy model {model!r}; expected one of: {', '.join(known)}{hint}")
     return model
+
+
+# The effort suffixes agy puts on its model slugs (gemini-4-argon-high). Matched
+# whole, so a base name never swallows part of a version number.
+_AGY_EFFORT_SUFFIXES = ("minimal", "low", "medium", "high", "xhigh", "max")
+_AGY_EFFORT_RE = re.compile(r"^(.+)-(?:" + "|".join(_AGY_EFFORT_SUFFIXES) + r")$")
+
+
+def _agy_base_names(slugs: list[str]) -> list[str]:
+    """The effort-less base names of `slugs`, in first-seen order: gemini-4-argon
+    for gemini-4-argon-{low,medium,high}. A slug without an effort suffix
+    (gpt-oss-120b, if agy listed it bare) yields nothing: it is its own name."""
+    bases: list[str] = []
+    for slug in slugs:
+        m = _AGY_EFFORT_RE.match(slug)
+        if m and m.group(1) not in bases:
+            bases.append(m.group(1))
+    return bases
 
 
 def _agy_base_args(timeout_s: int, plan: bool = False) -> list[str]:
@@ -2590,6 +2636,21 @@ def _run_agy(
             **_spawn_kwargs(),  # keep agy's TTY writes out of the host terminal
         )
         log.debug("agy exited %s in %.1fs", proc.returncode, time.time() - start)
+        stdout_answer = (proc.stdout or "").strip()
+        result = _parse_json_result(stdout_answer) if use_json else None
+        reason = _finished_reason(result)
+        if _print_timed_out(proc.stderr) or reason == "print_timeout":
+            # Checked BEFORE the exit code: agy 1.5.0 made an expired --print-timeout
+            # exit 3 (status ERROR, finished_reason print_timeout, the partial text
+            # in `response`), where 1.2.0-1.4.x exited 0. Both are the same cut turn
+            # and get the same error — see _print_timeout_error. Still record the
+            # conversation: it is this workspace's newest thread, and leaving the
+            # previous id in place would point a later continue at an older one.
+            conv_id = (result or {}).get("conversation_id") or ""
+            if conv_id and pin:
+                _record_conv_id(workspace, conv_id)
+            partial = (result.get("response") or "") if result is not None else stdout_answer
+            raise _print_timeout_error(timeout_s, partial)
         if proc.returncode != 0:
             raise RuntimeError(
                 _with_quota_note(
@@ -2609,9 +2670,9 @@ def _run_agy(
         # SQLite formats). Older agy — and, per the 1.0.15 changelog, non-Windows
         # platforms — still leave stdout empty; those fall through to the
         # transcript/.db scrape below, unchanged. A --sandbox run likewise writes
-        # nothing to stdout, so it too uses the fallback.
-        stdout_answer = (proc.stdout or "").strip()
-
+        # nothing to stdout, so it too uses the fallback. (stdout_answer is read above,
+        # before the exit check.)
+        #
         # agy 1.1.8+: stdout is a structured result object rather than bare text
         # (we asked for it via --output-format json). Parsing it beats trusting the
         # text layout — `response` is a contractual field, and `conversation_id`
@@ -2619,19 +2680,14 @@ def _run_agy(
         # from shared state. Record that id so a later continue pins to this thread.
         # A None result means agy gave us plain text after all (an agy that ignored
         # the flag), which falls through to the text path below unchanged.
-        result = _parse_json_result(stdout_answer) if use_json else None
-        reason = _finished_reason(result)
-        if _print_timed_out(proc.stderr) or reason in _FINISHED_EARLY_REASONS:
-            # Exit 0 and status SUCCESS, but the turn was cut — see _print_timeout_error
-            # and _FINISHED_EARLY_REASONS. Still record the conversation: it is this
-            # workspace's newest thread, and leaving the previous id in place would
-            # point a later continue at an older one.
+        if reason in _FINISHED_EARLY_REASONS:
+            # Exit 0 and status SUCCESS, but the turn was cut (interrupted or error;
+            # a timeout was handled above) — see _FINISHED_EARLY_REASONS. Record the
+            # conversation for the same reason as above.
             conv_id = (result or {}).get("conversation_id") or ""
             if conv_id and pin:
                 _record_conv_id(workspace, conv_id)
             partial = (result.get("response") or "") if result is not None else stdout_answer
-            if _print_timed_out(proc.stderr) or reason == "print_timeout":
-                raise _print_timeout_error(timeout_s, partial)
             raise _finished_early_error(reason, partial, proc.stderr, model)
         if reason:
             # A value newer than this bridge. The field is documented as present only
@@ -2860,6 +2916,14 @@ def _run_agy_watched(
             feed.pump()  # drain transcript entries flushed right before exit
         out_t.join(timeout=5)  # let the last events land before reading the result
         err_t.join(timeout=5)
+        reason = _finished_reason(stream.result if stream is not None else None)
+        if _print_timed_out("".join(err_chunks)) or reason == "print_timeout":
+            # Before the exit code, as in _run_agy: agy 1.5.0+ exits 3 here, older 0.
+            if stream is not None and stream.conv_id:
+                _record_conv_id(workspace, stream.conv_id)
+            partial = ((stream.result or {}).get("response") or "") if stream is not None else ""
+            _watch_finish(rid, "error", "(timed out)", time.time() - start)
+            raise _print_timeout_error(timeout_s, partial)
         if proc.returncode != 0:
             _watch_finish(rid, "error", f"(agy exited {proc.returncode})", time.time() - start)
             stderr_text = "".join(err_chunks)
@@ -2870,16 +2934,11 @@ def _run_agy_watched(
                     model,
                 )
             )
-        reason = _finished_reason(stream.result if stream is not None else None)
-        timed_out = _print_timed_out("".join(err_chunks)) or reason == "print_timeout"
-        if timed_out or reason in _FINISHED_EARLY_REASONS:
-            # Same cut-short-but-exit-0 turn as _run_agy — see _print_timeout_error.
+        if reason in _FINISHED_EARLY_REASONS:
+            # Same cut-short-but-exit-0 turn as _run_agy (a timeout was handled above).
             if stream is not None and stream.conv_id:
                 _record_conv_id(workspace, stream.conv_id)
             partial = ((stream.result or {}).get("response") or "") if stream is not None else ""
-            if timed_out:
-                _watch_finish(rid, "error", "(timed out)", time.time() - start)
-                raise _print_timeout_error(timeout_s, partial)
             _watch_finish(rid, "error", f"(ended early: {reason})", time.time() - start)
             raise _finished_early_error(reason, partial, "".join(err_chunks), model)
         if reason:
@@ -3045,6 +3104,10 @@ def _run_agy_image_watched(
             final_path, fmt, size = _finalize_image(target, agy_text, start)
         except RuntimeError as fin_err:
             _watch_finish(rid, "error", f"no image produced: {fin_err}", time.time() - start)
+            if _print_timed_out("".join(_err)):
+                # No image AND agy cut the turn at --print-timeout (exit 3 on 1.5.0+,
+                # 0 before): the timeout is the cause, not a missing file.
+                raise RuntimeError(f"{_print_timeout_error(timeout_s)} ({fin_err})") from fin_err
             if agy_error is not None:
                 raise RuntimeError(f"{fin_err} (agy also failed: {agy_error})") from agy_error
             raise
@@ -3154,12 +3217,31 @@ def __getattr__(name: str):
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-def main() -> None:
+# The first argument that makes `agent-intern` a terminal command instead of the
+# stdio server. Anything else, including no argument at all, runs the server exactly
+# as before: an MCP host config that passes an unrelated argument must keep working.
+_CLI_COMMANDS = frozenset({"doctor", "help", "--help", "-h"})
+_VERSION_FLAGS = frozenset({"--version", "-V"})
+
+
+def main(argv: Optional[list[str]] = None) -> None:
     """Console entry point (also `python server.py`).
 
     Exposed as the `agent-intern` script so the bridge can be launched with
     `uvx agent-intern` (isolated, always-latest) instead of a hardcoded path.
+
+    `agent-intern --version` and `agent-intern doctor` are terminal commands; they
+    print to stdout and exit. Only they write there: the server path below never
+    does, since stdout is its JSON-RPC channel.
     """
+    args = sys.argv[1:] if argv is None else argv
+    if args and args[0] in _VERSION_FLAGS:
+        print(f"agent-intern {__version__}")
+        return
+    if args and args[0] in _CLI_COMMANDS:
+        import doctor  # only the terminal commands pay for it
+
+        sys.exit(doctor.cli(args))
     _configure_logging()
     _startup_checks()
     mcp.run()

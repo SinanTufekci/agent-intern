@@ -6,6 +6,115 @@ Version-by-version compatibility notes: what changed upstream, what the bridge d
 
 ## Status & caveats
 
+- 🐛 **opencode 2.x: the 1.x bridge fails on every call, and its read-only fence would have been open.**
+  The owner's global install moved to opencode 2.2.5 (`@opencode/cli`; 1.19.x stays the 1.x line).
+  Found live on Windows with free models; [full table and policies →](backends.md#opencode-2).
+  - **`--dir` is gone.** `opencode run --dir <workspace> …` exits 1 with *"Unrecognized flag: --dir"*.
+    The directory is now the process's working directory.
+  - **`OPENCODE_PERMISSION` is not read.** With the bridge's read-only policy set that way, a shell
+    write succeeded and the file was created. The policy now goes in `OPENCODE_CONFIG_CONTENT` as an
+    ordered `permissions` array of `{action, resource, effect}` rules (`bash` became `shell`, `task`
+    became `subagent`).
+  - **A run applies none of that unless it is `--standalone`.** By default 2.x connects to a shared
+    background service that ignores the run's environment: the same new-format read-only policy let a
+    shell write through in default mode and fenced it with `--standalone`.
+  - **Workspace-write confines the edit tool, not the shell.** `external_directory` denied did not
+    stop a shell redirect into the parent directory, in a plain directory and in a git repository,
+    and a shell can read a `.env` file the read rules refuse. The edit tool is another matter. My
+    first attempt used an allow rule with the absolute workspace path and I reported that it worked:
+    that was wrong. opencode matches an edit inside the run's directory against a location-relative
+    path (`sub/a.txt`), so the rule never matched, and the file I saw written was most likely the
+    shell's (it was allowed, and I had not recorded which tool wrote). The same slip probably lay
+    behind my note that the edit tool wrote outside the workspace under an `external_directory` deny. Rules built from the source
+    (`edit` allow, then deny `../*`, `?:/*` and `/*`) were run live on 2026-11-09 with the shell
+    denied: a nested edit inside was written, and a `../` path, an absolute path and a backslashed
+    path outside were all refused by the `external_directory` deny, with the `edit` denies as a second
+    layer. [backends.md](backends.md#opencode-2) has the details and the source lines.
+  - Unchanged: the `--format json` events, `-s`, `-c`, `-m` and `--`. A fenced call's error text
+    changed (*"This non-interactive run cannot ask the user for permission, so the request was
+    rejected"*), `opencode providers list` is gone (`opencode auth list`), and `--version` prints
+    `opencode v2.2.5`. Free models answered in 1.4–14 s.
+  - **The bridge** now passes `--standalone` and no `--dir` on 2.x, sets the policy through
+    `OPENCODE_CONFIG_CONTENT`, and refuses any major other than 1 or 2 instead of running it unfenced.
+    Through it on 2.2.5: a read-only ask answered, a shell write and an edit write were both refused,
+    `-s` resumed a session, and the read tool was refused `.env` and `.env.local`.
+  - **opencode as a host** for this server (2.2.5, free model, 2026-11-09): it loads and lists all 29
+    tools, `opencode_status` ran with no approval flag, and the tools are reached through opencode's
+    Code Mode as `await tools["agent-intern"].opencode_status()`, not as separate tools. The model
+    said it had no `OFFER IT` instructions (one run). Details in
+    [backends.md](backends.md#opencode-2).
+  - Not checked on 2.x: `--auto`, `--agent`, `--fork`, a configured provider, macOS and Linux. The
+    free tier answered `provider.free-limit` to every model for about 13 hours after the first
+    round of probes, so the edit and host checks ran once it lifted, on 2026-11-09.
+- ✅ **Copilot CLI and Cursor CLI load this server as a host.** Checked on 2026-11-05 on Windows with
+  this branch's server (all 29 tools listed; `opencode_status` called, no quota spent; default
+  models). **Copilot CLI 1.0.105:** `copilot mcp add <name> -- <command>` registers it (the per-run
+  `--additional-mcp-config` takes the same JSON); `-p` called the tool with no approval flag, but the
+  model only saw the `OFFER IT` server instructions with `--allow-all-mcp-server-instructions`.
+  **Cursor CLI 2026.11.05:** a project `.cursor/mcp.json` registers it; a headless `-p` run needs
+  **`--approve-mcps --force`** (without them every call came back *"User rejected MCP"*, and
+  `--approve-mcps` alone was not enough), and the instructions reached the model. Two more hosts
+  are recorded in this file: opencode 2.x in its entry above (the tools sit behind Code Mode and the
+  instructions were not seen) and agy in the agy 1.5.1 entry below. In both runs here the user's own
+  MCP config was left as it was ([opencode details](backends.md#opencode-2)).
+- ✅ **Re-verified on agy 1.5.1, copilot 1.0.105, cursor-agent 2026.11.05 and opencode 1.19.5. One
+  change touches the bridge: an expired `--print-timeout` now exits 3.** Run against this branch's code
+  on Windows, 2026-11-05, on gemini-3.8-flash-high / gemini-4-argon-high and free opencode models only.
+  - **agy 1.5.1** (two releases from 1.4.12). Held: ask, continue in the same conversation, one image
+    (a valid PNG), a two-worker antigravity swarm, `agy models`, `/usage` and `/model`. The change is
+    **1.5.0's**: a `--print-timeout` that cuts a turn short used to exit 0 with status `SUCCESS` (since
+    1.2.0). It now **exits 3**, prints `AGY_ERROR: {"status":"DEADLINE_EXCEEDED","reason":"print_timeout",…}`
+    and `[agy] print timeout after Ns…` on stderr, and writes a JSON result with status `ERROR` and
+    `finished_reason` `print_timeout`. The bridge treated any non-zero exit as a plain failure before
+    its timeout handling ran, so the "raise `timeout_s`" message and the conversation pin were lost
+    (seen through `antigravity_ask`: *"agy exited 3 …"*). The timeout is now recognised first, and a
+    6 s timeout through the branch's `_run_agy` raises *"agy hit its 6s timeout before finishing…"*. The
+    partial text was empty in both runs, so the partial-answer path was not exercised again.
+    Also: `-p` without `--print-timeout` now waits for background tasks instead of stopping at a
+    hidden 30 minutes (the bridge always passes the flag). `agy models` still lists 13 slugs, all with
+    an effort suffix, and **agy accepts a base name without one**: `--model gemini-4-argon` and
+    `--model gemini-3.8-flash` both answered (a Claude base name was not tried). The default is still
+    **Gemini 4 Argon (Medium)**, read with `/model` in a clean home directory; this machine's
+    `settings.json` pins High. Not re-checked on 1.5.1: watch mode, `antigravity_image_swarm`, plan
+    mode, `schema`. `agy acp`, `--remote-agent` and `/projects` are off the bridge's path.
+  - **agy as a host.** Reported by the live Antigravity check, not rerun here: the agy CLI loads MCP
+    servers from `~/.gemini/config/mcp_config.json` (add one with `agy mcp add`), not from
+    `~/.gemini/antigravity/`; a headless run needs allow-rules to call them; the server's instructions
+    do not reach the model; the Antigravity IDE is untested.
+  - **copilot 1.0.105** (eight releases from 1.0.97). Every flag the bridge passes still parses.
+    Ask, continue in the same session and a read-only run that was asked to write a file (it refused,
+    nothing was created) all passed. 1.0.98 added Gemini 4 Argon models, 1.0.100 `--trust-folder` and
+    `--disable-client-telemetry`, and there is a `copilot sandbox` subcommand; none is adopted.
+  - **cursor-agent 2026.11.05** (from 2026.10.14). Ask, continue in the same chat and a refused
+    read-only write passed. cursor.com's changelog lists nothing for the CLI in October or November.
+  - **opencode 1.19.5** (from 1.19.0; 1.19.2 keeps 1.x installs on the 1.x line). Ask and continue in
+    the same session answered; the read-only fence held (a shell write was auto-rejected, no file written) and
+    workspace-write wrote. 1.19.5 runs a tool named `bash` as `shell` with the same permissions,
+    which changed nothing here. A fenced run whose model then says nothing raises *"opencode produced
+    no text"* rather than the refusal.
+  - **Free models are fast now.** Six calls through the bridge, read-only: the default 4.8 s,
+    `nemotron-3.5-lightning-free` 3.8 s, `mimo-v2.6-flash-free` 6.5 s, `deepseek-v4.1-flash-free` 3.1 s,
+    `glm-5.3-flash-free` 3.4 s and `beam-free` 2.5 s, all answering. The free list is nine ids now;
+    `mimo-v2.5-free` is gone. Once, after about 25 quick calls, the free tier answered
+    `provider.free-limit` (HTTP 429), and later calls went through. This settles the 0.33.0 follow-up:
+    the "slow, allow minutes" guidance described September and early October.
+- ✅ **codex 0.166.0: an ask answered, and the project's `AGENTS.md` still reaches it. The rest was not
+  re-checked, and `workspace-write` on Windows has a problem.** The README's verified version stays
+  0.162.1, because the Codex quota ran out partway (it resets 2026-11-22). The machine's only codex
+  was a standalone 0.153.4, below the version last verified; `codex update` brought it to 0.166.0.
+  - **`AGENTS.md` (the 0.33.0 follow-up).** 0.150.0 stopped loading project `AGENTS.md` in "untrusted"
+    projects. With the bridge's flags (`exec -s read-only -C <dir> --skip-git-repo-check`), in a
+    directory outside any git repository and with no trust entry, the model returned a token that
+    exists only in that directory's `AGENTS.md`, and the session's rollout shows the file injected.
+    Not tried: a directory explicitly marked `trust_level = "untrusted"`, and a git repository.
+  - **`-s workspace-write` ran as read-only.** On this Windows machine `codex exec -s workspace-write`
+    prints `sandbox: read-only` in its header, and any `-c windows.sandbox=…` makes it
+    `workspace-write`. `codex sandbox` itself writes inside a workspace and is refused outside it
+    ([details](backends.md#codex-bridge)). Whether the old "every command refused" caveat has the same
+    cause is a hypothesis; the test that settles it needs a model call and is written down there.
+  - The changelogs from 0.163.0 to 0.166.0 hold nothing else on the bridge's path: resuming restores
+    the session's permissions, `codex exec` stopped repeating a diff, GPT-6.1 Terra joined the model
+    catalog. `exec resume`, `-o`, `--json` and `--skip-git-repo-check` still parse.
 - ✅ **Re-verified on agy 1.4.12. No break, but agy's default model moved.** Fourteen releases from
   1.3.5. These held, live on Windows: ask on the default model, continue in the same conversation,
   an image, a two-worker swarm, `--model gemini-4-argon-high`, and `/usage` and `/changelog`, which

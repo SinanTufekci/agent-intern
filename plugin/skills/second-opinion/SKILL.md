@@ -31,7 +31,7 @@ medium or low confidence, and say "no issues found" rather than invent some.
   - `codex_ask`
   - `copilot_ask` or `cursor_ask`
   - `antigravity_ask`
-  - `opencode_ask`. Its free models are slow, so warn the user it can take several minutes.
+  - `opencode_ask`. Its free models need no account and usually answer in seconds.
 - **`--council`, or the user wants several opinions:** run the `council` preset:
   `preset_swarm(preset="council", material=<the brief from step 1>, workspace=<repo root>)`. It
   runs Codex, Copilot and Gemini reviewers read-only, in parallel, each told to work independently.

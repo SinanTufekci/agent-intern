@@ -40,8 +40,8 @@ After the table:
   upgrade command it names.
 - **An unknown name in `AGENT_INTERN_BACKENDS`:** if a `backends` row flags one, say so once and give
   the valid names it lists.
-- **No backend ready:** recommend opencode. `npm i -g opencode-ai` needs no account, and its free
-  models answer with zero credentials, just slowly.
+- **No backend ready:** recommend opencode. `npm i -g @opencode/cli` needs no account, and its free
+  models answer with zero credentials.
 - **Grok, Kimi and Muse:** mark them experimental, because no real model has ever answered through
   them. If the user has one of those subscriptions, point them to
   https://github.com/SinanTufekci/agent-intern/issues/new?template=backend_verification.yml.

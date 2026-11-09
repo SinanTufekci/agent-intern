@@ -1,6 +1,6 @@
 [project]
 name = "agent-intern"
-version = "0.34.0"
+version = "0.35.0"
 description = "MCP server bridging the Antigravity (agy), OpenAI Codex, GitHub Copilot, Cursor, opencode, Grok Build, Kimi Code, and Muse Code CLIs so Claude Code can drive them as sub-agents"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -16,6 +16,8 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
     "Topic :: Software Development :: Code Generators",
     "Topic :: Utilities",
 ]
@@ -63,6 +65,7 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools]
 py-modules = [
     "server",
+    "doctor",
     "antigravity_tools",
     "swarm",
     "swarm_watch",
