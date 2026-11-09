@@ -600,6 +600,7 @@ def list_models() -> list[str]:
     try:
         proc = proc_tree.run_captured(
             [_refresh_bin(), *_diagnostic_prefix(), "models"],
+            starts_agent=False,  # a probe, not an agent run
             stdin=subprocess.DEVNULL,
             timeout=30,
             env=_env(),
@@ -947,6 +948,7 @@ def _read_version() -> Optional[str]:
     try:
         proc = proc_tree.run_captured(
             [OPENCODE_BIN, "--version"],
+            starts_agent=False,  # a probe, not an agent run
             stdin=subprocess.DEVNULL,
             timeout=20,
             env=_env(),
@@ -979,6 +981,7 @@ def auth_status() -> tuple[bool, str]:
     try:
         proc = proc_tree.run_captured(
             [OPENCODE_BIN, "providers", "list"],
+            starts_agent=False,  # a probe, not an agent run
             stdin=subprocess.DEVNULL,
             timeout=30,
             env=_env(),
@@ -1017,6 +1020,7 @@ def _auth_status_v2() -> tuple[bool, str]:
     try:
         proc = proc_tree.run_captured(
             [OPENCODE_BIN, *_diagnostic_prefix(), "auth", "list"],
+            starts_agent=False,  # a probe, not an agent run
             stdin=subprocess.DEVNULL,
             timeout=30,
             env=_env(),

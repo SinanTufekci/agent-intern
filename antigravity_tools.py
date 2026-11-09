@@ -48,76 +48,44 @@ async def antigravity_ask(
     schema: Optional[Union[dict, str]] = None,
     ctx: Optional[Context] = None,
 ) -> str:
-    """Ask Antigravity (agy CLI, Gemini by default) a question in a NEW conversation.
-
-    Uses your existing AI Pro authentication (silent-auth via Windows Credential
-    Manager). Returns the model's final response as text. Good for fast
-    tool-calling and short tasks; for heavier reasoning pick a bigger `model` or
-    use the host model directly.
+    """Best for fast, cheap tool-calling and short tasks on Gemini (agy CLI), in a NEW
+    conversation. Pass workspace=<project dir>; without it the sub-agent sees no repo.
+    Follow up with antigravity_continue. Uses your AI Pro login; pick a bigger `model`
+    for heavier reasoning. No real sandbox (plan=True is agent-enforced read-only).
+    Autonomous agent: trusted prompts only.
 
     Args:
         prompt: Question or instruction for Antigravity.
         workspace: Working directory for the conversation. Defaults to cwd.
                    Choose an existing project dir for context-aware responses.
-        model: Optional model slug to run this conversation on (agy's --model),
-               e.g. "gemini-4-argon-high" or "gemini-3.8-flash-low". Omit to use
-               the model set in agy's settings.json, or agy's own default when
-               none is set (Gemini 4 Argon (Medium) as of agy 1.5.1). Must be one
-               of `agy models`, or one of them without its effort suffix
-               ("gemini-4-argon") — an unknown slug is rejected up front. agy renames
-               and drops models between releases, often with no changelog entry,
-               so a slug from older docs may be gone; see antigravity_status /
-               `agy models` for the valid ones. Quota is counted per model family:
-               if a call fails on quota, the error lists each family's quota and a
-               model from a family that still has some.
+        model: Optional model slug (agy's --model), e.g. "gemini-4-argon-high" or
+               "gemini-3.8-flash-low", or one without its effort suffix
+               ("gemini-4-argon"). Omit for agy's settings.json default (Gemini 4
+               Argon (Medium) as of agy 1.5.1). Checked against `agy models`: an
+               unknown slug is rejected up front, since agy renames and drops models
+               between releases. Quota is per model family; a quota failure names a
+               family that still has some.
         timeout_s: Max seconds to wait for agy to complete. Default 180.
         watch: If true, open a live "watch" view in your browser that streams
                agy's steps (narration + the real commands it runs) as it works.
                agy still runs headless; the same final text is returned. Best-
                effort and cross-platform — if the browser can't open, the run
                completes normally. Default false.
-        plan: If true, run agy in PLAN mode (agy 1.1.12+): it investigates and
-              writes an implementation plan instead of touching anything. Verified
-              on 1.1.20 that a file write and a shell command are both refused and
-              diverted into a plan document under agy's own directory — even when
-              the prompt insists, and even though the bridge still passes
-              --dangerously-skip-permissions — while file READS answer normally.
-              Use it to point Antigravity at a repo you don't want it editing.
-              Two caveats. It is agent-enforced, not an OS sandbox: it constrains
-              agy's agent loop, so treat it as a strong default rather than a
-              boundary you'd rely on against a hostile prompt (Codex has the real
-              one — see codex_ask's sandbox, and its Windows caveat: as of codex
-              0.162.1 a sandboxed run there refuses every command and answers
-              anyway). And it is exclusive with the bridge's
-              slash-command shield, because agy silently disables plan mode when
-              that shield is on; a prompt whose first token is a slash command is
-              therefore rejected up front rather than run. Raises on agy older than
-              1.1.12, which ignores --mode in print mode, rather than silently
-              running your prompt unrestricted. Default false.
-        schema: Optional JSON Schema (an object, or its JSON text). When given, agy
-                is asked to produce output matching it (agy 1.1.8's --json-schema)
-                and this tool returns the VALIDATED OBJECT as JSON text instead of
-                prose — json.loads it. What comes back is agy's own
-                `structured_output`, which carries exactly the declared fields;
-                agy's prose `response` on the same run also picks up its internal
-                toolAction/toolSummary keys and can be prefixed with a sentence, so
-                the two are NOT interchangeable. If agy produces no structured
-                output the call RAISES rather than handing back prose you would
-                have to parse anyway. Needs agy 1.1.8+.
-
-                IMPORTANT — write the prompt so the ANSWER is in the turn, and let
-                the schema only shape it. agy fills the schema in a finishing pass
-                that does not re-reason about the content, so a field the turn never
-                established gets guessed from the schema itself. Measured on 1.1.20
-                with "this broke my build and wasted my whole afternoon": with
-                enum ["positive","negative"] it answered "positive" 3 times out of 4,
-                and simply REVERSING the enum to ["negative","positive"] flipped it
-                to "negative" 2 out of 2 — it was following field order, not the
-                sentence. Adding a `reason` field did not help; the reason came back
-                "Completed sentiment classification task." Asking the prompt to state
-                the verdict and why, and keeping the same biased enum, was correct
-                3 out of 3. So: extraction of what the model has already worked out
-                is reliable; a judgment delegated to the schema is not.
+        plan: If true, run agy in PLAN mode (agy 1.1.12+): it reads and answers, and
+              diverts file writes and shell commands into a plan document instead
+              (verified even when the prompt insists). Use it to point Antigravity
+              at a repo you don't want edited. Agent-enforced, not an OS sandbox
+              (codex has the real one). A prompt whose first token is a slash
+              command is rejected in plan mode, and an agy older than 1.1.12 raises
+              rather than running unrestricted. Default false.
+        schema: Optional JSON Schema (an object, or its JSON text). Returns agy's
+                VALIDATED object (`structured_output`) as JSON text instead of prose;
+                json.loads it. Raises if agy produces none. Needs agy 1.1.8+.
+                IMPORTANT: write the prompt so the ANSWER is worked out in the turn,
+                and let the schema only shape it. agy fills the schema in a final
+                pass that does not re-reason, so a judgment left to the schema gets
+                guessed (measured: flipping an enum's order flipped the verdict).
+                Extraction is reliable; delegated judgment is not.
     """
     ws = server._normalize_workspace(workspace)
     server.validate_model(model)  # fail fast on a typo (agy would silently ignore it)
@@ -154,14 +122,12 @@ async def antigravity_continue(
     schema: Optional[Union[dict, str]] = None,
     ctx: Optional[Context] = None,
 ) -> str:
-    """Continue the Antigravity conversation rooted at this workspace.
-
-    Resumes the exact conversation id recorded for `workspace` (via agy's
-    --conversation flag), not agy's global "most recent", so it stays correct
-    even if agy was used elsewhere in between. On agy 1.1.8+ that id is the one
-    agy itself reported for this bridge's last run in the workspace, so a
-    follow-up resumes THIS thread even if you have since started a separate
-    conversation in the same folder from Antigravity's own interface.
+    """Continue the Antigravity conversation: resumes the thread rooted at this workspace,
+    so pass the same workspace=<project dir> as the ask (without it the sub-agent sees
+    no repo). It resumes the exact conversation id the bridge recorded there, not agy's
+    global most recent, so a conversation started elsewhere in between cannot take its
+    place. `model`, `plan` and `schema` apply per turn. Autonomous agent: trusted
+    prompts only.
 
     Args:
         prompt: Follow-up message.
@@ -218,17 +184,12 @@ async def antigravity_image(
     watch: bool = False,
     ctx: Optional[Context] = None,
 ) -> str:
-    """Generate an image with Antigravity (Gemini image model via agy CLI).
-
-    Drives agy to produce a raster image on your existing AI Pro quota, saves it,
-    and returns the absolute file path plus its real format and byte size. The
-    host can then read the path to view the image.
-
-    agy picks the image format itself (JPEG for photo-like images, PNG for flat
-    graphics), so the returned path's extension is corrected to match the actual
-    bytes (a requested out.png may come back as out.jpg). Runs a normal,
-    unsandboxed agy session — same privileges/caveats as the other tools (see the
-    module SECURITY note).
+    """Your only image generator: makes an image with Gemini (agy CLI) on the user's AI Pro
+    quota, saves it, and returns its absolute path, real format and byte size (read the
+    path to view it). agy picks the format, so the extension is corrected to the bytes
+    (out.png may come back as out.jpg). Relative paths land in `workspace`. For several
+    images, use antigravity_image_swarm. Runs an unsandboxed agy session: trusted
+    prompts only.
 
     Args:
         prompt: Description of the image to generate.
@@ -302,13 +263,10 @@ def antigravity_image_swarm(
     timeout_s: int = 240,
     watch: bool = False,
 ) -> str:
-    """Generate several images IN PARALLEL with Antigravity (one worker per prompt).
-
-    Like antigravity_image, but runs N image generations concurrently in isolated
-    workers (capped at `max_concurrency`). Returns one block listing each image's
-    final path/format/size (or its error). Extensions are corrected to the real
-    bytes, exactly like antigravity_image. Same unsandboxed privileges/caveats as
-    antigravity_swarm.
+    """Best for several images at once: like antigravity_image, but one isolated worker per
+    prompt, run in parallel (capped at `max_concurrency`). Returns each image's path,
+    format and size, or its error; extensions are corrected to the real bytes.
+    Unsandboxed agy workers: trusted prompts only.
 
     Args:
         prompts: One image description per parallel worker.
@@ -347,19 +305,12 @@ def antigravity_image_swarm(
     }
 )
 def antigravity_status() -> str:
-    """Report diagnostics for the agy bridge setup (spends no AI Pro quota).
-
-    Reports the bridge's own version and whether a newer release is available
-    (best-effort GitHub check; honors AGY_BRIDGE_NO_UPDATE_CHECK), then checks
-    whether agy is on PATH (and its version/compat), how much AI Pro quota is left
-    per model family (agy 1.1.11+ answers `/usage` in print mode for free — a
-    family at 0% is reported as a problem, since every call against it will fail
-    until its window resets), whether agy's state directories exist, whether the
-    bridge can still read agy's answers (the newest conversation that has one;
-    empty, still-running and failed ones are skipped), and whether the SQLite
-    conversation store is present. Use this to debug empty or failed responses —
-    or to see if the bridge itself is out of date, or if you are simply out of
-    quota — before spending quota.
+    """Check the agy (Antigravity) setup. Spends no quota; run it first when a call says
+    "not found". Its `bridge version` row says when a newer agent-intern release is out:
+    if so, tell the user. Also checks agy's version, the AI Pro quota left per model
+    family (a family at 0% fails every call until it resets), agy's state directories,
+    and whether the bridge can still read agy's answers. Use it to debug empty or failed
+    answers before spending quota.
     """
     rows = server._collect_status()
     width = max(len(label) for label, _, _ in rows)

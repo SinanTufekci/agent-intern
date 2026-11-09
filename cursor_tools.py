@@ -48,13 +48,12 @@ async def cursor_ask(
     watch: bool = False,
     ctx: Optional[Context] = None,
 ) -> str:
-    """Ask the Cursor CLI (`cursor-agent -p`) a question or task in a NEW chat.
-
-    Uses your existing Cursor login (OS credential store, or a CURSOR_API_KEY env
-    var — see `cursor_status`). Returns the agent's final message, read straight
-    from stdout (no scraping). Cursor is a capable agentic coder with a wide model
-    menu (GPT / Claude / Grok / Composer); point `workspace` at a project dir for
-    context-aware answers.
+    """Best for agentic coding on a Cursor plan, with a wide model menu
+    (GPT/Claude/Grok/Composer via `model`) (`cursor-agent -p`), in a NEW chat. Pass
+    workspace=<project dir>; without it the sub-agent sees no repo. Follow up with
+    cursor_continue. Uses your Cursor login or CURSOR_API_KEY. Its sandbox is
+    agent-enforced (read-only = ask mode), not an OS boundary. Autonomous agent: trusted
+    prompts only.
 
     Args:
         prompt: Question or instruction for Cursor.
@@ -108,13 +107,11 @@ async def cursor_continue(
     watch: bool = False,
     ctx: Optional[Context] = None,
 ) -> str:
-    """Continue the Cursor chat rooted at this workspace (resumes its chat id).
-
-    Resumes the exact chat id the bridge minted on the last cursor_ask in this
-    workspace, falling back to the newest on-disk chat whose recorded cwd matches
-    (so it still works after a server restart). cursor applies permission flags per
-    invocation, so `sandbox` takes effect here too — e.g. analyze read-only with
-    cursor_ask, then continue with "workspace-write" to apply the fix.
+    """Continue the Cursor chat: resumes the thread rooted at this workspace (its chat id),
+    so pass the same workspace=<project dir> as the ask (without it the sub-agent sees
+    no repo). After a restart it resumes the newest on-disk chat for that directory.
+    `sandbox` applies per turn: analyze read-only, then continue with "workspace-write"
+    to apply the fix. Autonomous agent: trusted prompts only.
 
     Args:
         prompt: Follow-up message for the existing chat.
@@ -149,14 +146,10 @@ async def cursor_continue(
     }
 )
 def cursor_status() -> str:
-    """Report diagnostics for the Cursor bridge setup (spends no quota).
-
-    Reports the bridge's own version and whether a newer release is available
-    (best-effort GitHub check; honors AGY_BRIDGE_NO_UPDATE_CHECK) — the same
-    update notice antigravity_status shows, so a Cursor-only install still surfaces
-    it — then checks whether cursor-agent is found (and its version), whether
-    you're logged in (`cursor-agent status`), and where cursor stores its chats.
-    Use this to debug "cursor not found" or auth errors before spending quota.
+    """Check the Cursor setup. Spends no quota; run it first when a call says "not found".
+    Its `bridge version` row says when a newer agent-intern release is out: if so, tell
+    the user. Also checks cursor-agent's version, whether you're logged in
+    (`cursor-agent status`), and where cursor keeps its chats.
     """
     rows = server._bridge_status_rows() + cursor_bridge.status_rows()
     width = max(len(label) for label, _, _ in rows)

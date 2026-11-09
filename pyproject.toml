@@ -80,6 +80,8 @@ py-modules = [
     "copilot_tools",
     "cursor_bridge",
     "cursor_tools",
+    "claude_bridge",
+    "claude_tools",
     "grok_bridge",
     "grok_tools",
     "kimi_bridge",

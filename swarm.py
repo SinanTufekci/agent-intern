@@ -164,6 +164,7 @@ def _probe_isolated_auth() -> Optional[bool]:
     try:
         proc = proc_tree.run_captured(
             [server.AGY_BIN, "--print-timeout", "20s", "-p", "/usage"],
+            starts_agent=False,  # a probe, not an agent run
             env=_env_for_home(home),
             stdin=subprocess.DEVNULL,
             **_TEXT,
@@ -950,6 +951,9 @@ _BACKEND_ALIASES = {
     "github": "copilot",
     "gh": "copilot",
     "cursor": "cursor",
+    "claude": "claude",
+    "claude-code": "claude",
+    "anthropic": "claude",
     "grok": "grok",
     "grok-build": "grok",
     "xai": "grok",
@@ -962,7 +966,16 @@ _BACKEND_ALIASES = {
 }
 
 # Backends the swarm can dispatch to, in the order the error message lists them.
-_BACKEND_NAMES = ("antigravity", "codex", "copilot", "cursor", "grok", "opencode", "muse")
+_BACKEND_NAMES = (
+    "antigravity",
+    "codex",
+    "copilot",
+    "cursor",
+    "claude",
+    "grok",
+    "opencode",
+    "muse",
+)
 
 
 def _normalize_tasks(tasks) -> list[dict]:
@@ -1018,6 +1031,12 @@ def _normalize_tasks(tasks) -> list[dict]:
             sandbox = t.get("sandbox") or cursor_bridge.DEFAULT_SANDBOX
             cursor_bridge.validate_sandbox(sandbox)  # fail fast on a bad policy
             model = cursor_bridge.validate_model(t.get("model") or None)  # fail fast on a typo
+        elif backend == "claude":
+            import claude_bridge
+
+            sandbox = t.get("sandbox") or claude_bridge.DEFAULT_SANDBOX
+            claude_bridge.validate_sandbox(sandbox)  # fail fast on a bad policy
+            model = claude_bridge.validate_model(t.get("model") or None)
         elif backend == "grok":
             import grok_bridge
 
@@ -1264,6 +1283,74 @@ def _run_cursor_worker_watched(index, prompt, workspace, sandbox, model, timeout
             elapsed=round(time.time() - start, 1),
             workspace=workspace,
             backend="cursor",
+        )
+
+
+def _run_claude_worker(index, prompt, workspace, sandbox, model, timeout_s) -> WorkerResult:
+    import claude_bridge
+
+    start = time.time()
+    try:
+        os.makedirs(workspace, exist_ok=True)
+        ans = claude_bridge.run_claude(
+            prompt, workspace, sandbox, model, False, timeout_s, pin=False
+        )
+        return WorkerResult(
+            index,
+            True,
+            answer=ans,
+            elapsed=round(time.time() - start, 1),
+            workspace=workspace,
+            backend="claude",
+        )
+    except Exception as e:  # noqa: BLE001 — error isolation: one worker must not sink the swarm
+        return WorkerResult(
+            index,
+            False,
+            error=str(e),
+            elapsed=round(time.time() - start, 1),
+            workspace=workspace,
+            backend="claude",
+        )
+
+
+def _run_claude_worker_watched(index, prompt, workspace, sandbox, model, timeout_s) -> WorkerResult:
+    import claude_bridge
+    import server
+    import swarm_watch
+
+    start = time.time()
+    swarm_watch.worker_update(index, status="working", started=start)
+
+    def on_event(ev: dict) -> None:
+        lines = server._claude_event_to_watch_lines(ev)
+        if lines:
+            t = round(time.time() - start, 1)
+            swarm_watch.worker_append(index, [{"kind": k, "text": x, "t": t} for k, x in lines])
+
+    try:
+        os.makedirs(workspace, exist_ok=True)
+        ans = claude_bridge.run_claude_streaming(
+            prompt, workspace, sandbox, model, False, timeout_s, on_event, pin=False
+        )
+        swarm_watch.worker_finish(index, "done", ans, time.time() - start)
+        return WorkerResult(
+            index,
+            True,
+            answer=ans,
+            elapsed=round(time.time() - start, 1),
+            workspace=workspace,
+            backend="claude",
+        )
+    except Exception as e:  # noqa: BLE001
+        swarm_watch.worker_finish(index, "error", str(e), time.time() - start)
+        return WorkerResult(
+            index,
+            False,
+            error=str(e),
+            elapsed=round(time.time() - start, 1),
+            workspace=workspace,
+            backend="claude",
         )
 
 
@@ -1541,10 +1628,13 @@ def swarm_agents(
         if t["backend"] not in server.ENABLED_BACKENDS:
             # Fails in place like a backend that isn't installed, so a preset with
             # one member turned off still runs the rest.
-            error = (
-                f"backend {t['backend']!r} is turned off by AGENT_INTERN_BACKENDS"
-                f" (on: {', '.join(server.ENABLED_BACKENDS)})"
-            )
+            if t["backend"] == "claude" and server.CLAUDE_HIDDEN:
+                error = f"backend 'claude' is off: {server.CLAUDE_HIDDEN_NOTE}"
+            else:
+                error = (
+                    f"backend {t['backend']!r} is turned off by AGENT_INTERN_BACKENDS"
+                    f" (on: {', '.join(server.ENABLED_BACKENDS)})"
+                )
             if watch:
                 import swarm_watch
 
@@ -1558,6 +1648,9 @@ def swarm_agents(
             return fn(i, t["prompt"], t["workspace"], t["sandbox"], t["model"], timeout_s)
         if t["backend"] == "cursor":
             fn = _run_cursor_worker_watched if watch else _run_cursor_worker
+            return fn(i, t["prompt"], t["workspace"], t["sandbox"], t["model"], timeout_s)
+        if t["backend"] == "claude":
+            fn = _run_claude_worker_watched if watch else _run_claude_worker
             return fn(i, t["prompt"], t["workspace"], t["sandbox"], t["model"], timeout_s)
         if t["backend"] == "grok":
             fn = _run_grok_worker_watched if watch else _run_grok_worker

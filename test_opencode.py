@@ -22,6 +22,7 @@ import pytest
 import opencode_bridge
 import server
 import swarm
+from conftest import hide_env
 
 # A real session id from a live run (opencode's own format: "ses_" + base62).
 SAMPLE_SID = "ses_f7eb4c38affeqZ8CxUdONNt7Gz"
@@ -371,7 +372,7 @@ def test_resume_flags_continue_falls_back_to_dash_c(tmp_path):
 def _fake_run(stdout="", stderr="", returncode=0, seen=None):
     def _run(args, **kwargs):
         if seen is not None:
-            seen.append((args, kwargs))
+            seen.append((args, hide_env(kwargs)))
         return _P(stdout, stderr, returncode)
 
     return _run
@@ -383,7 +384,7 @@ def _fake_popen(stdout="", stderr="", returncode=0, seen=None, hang=False):
     class _FP:
         def __init__(self, args, **kwargs):
             if seen is not None:
-                seen.append((args, kwargs))
+                seen.append((args, hide_env(kwargs)))
             self.pid = -1  # never a real pid: _kill_tree must be stubbed in tests
             self.stdout = io.StringIO(stdout)
             self.stderr = io.StringIO(stderr)
@@ -1175,7 +1176,10 @@ def test_permission_policy_and_env_default_to_major_1():
     assert opencode_bridge._permission_policy("read-only") == opencode_bridge._permission_policy(
         "read-only", 1
     )
-    assert opencode_bridge._env("read-only") == opencode_bridge._env("read-only", 1)
+    default, explicit = opencode_bridge._env("read-only"), opencode_bridge._env("read-only", 1)
+    # names and per-key equality only: a mismatch must never print the values
+    assert default.keys() == explicit.keys()
+    assert all(default[k] == explicit[k] for k in default)
     assert opencode_bridge._permission_policy("danger-full-access") is None
 
 

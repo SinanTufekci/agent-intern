@@ -194,6 +194,7 @@ def kimi_version() -> Optional[str]:
     try:
         proc = proc_tree.run_captured(
             [KIMI_BIN, "--version"],
+            starts_agent=False,  # a probe, not an agent run
             stdin=subprocess.DEVNULL,
             text=True,
             timeout=15,
@@ -217,6 +218,7 @@ def auth_status() -> tuple[bool, str]:
     try:
         proc = proc_tree.run_captured(
             [KIMI_BIN, "provider", "list"],
+            starts_agent=False,  # a probe, not an agent run
             stdin=subprocess.DEVNULL,
             text=True,
             timeout=20,

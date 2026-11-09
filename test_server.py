@@ -24,9 +24,11 @@ import pytest
 import codex_bridge
 import copilot_bridge
 import cursor_bridge
+import doctor
 import server
 import swarm
 import watch_server
+from conftest import hide_env
 
 # --------------------------------------------------------------------------
 # _normalize_workspace
@@ -549,15 +551,15 @@ def test_instructions_never_mention_a_backend_that_is_off():
     assert "- codex_* (" in text
     for word in ("antigravity", "Gemini", "EXPERIMENTAL", "copilot", "opencode", "kimi"):
         assert word not in text
-    assert "an external coding CLI — OpenAI Codex —" in text
-    assert "your tokens or gets a second model-family opinion." in text
+    assert text.startswith("This server runs OpenAI Codex as sub-agents on the USER'S OWN quota.")
+    assert "instead of your tokens and gets a second model-family opinion." in text
     assert "agent_swarm" in text  # codex can be a swarm worker
 
 
 def test_instructions_without_a_swarm_backend_drop_the_swarm_triggers():
     text = server._server_instructions(("kimi",))
     assert "agent_swarm" not in text and "preset_swarm" not in text
-    assert "experimental backends are unproven" in text
+    assert "Run an EXPERIMENTAL backend's *_status first" in text
 
 
 def test_every_tool_belongs_to_one_module_public_all():
@@ -614,7 +616,7 @@ def test_bridge_status_rows_add_the_backends_row_only_when_filtered(monkeypatch)
     monkeypatch.setattr(server, "ENABLED_BACKENDS", ("antigravity", "codex"))
     _, (label, ok, detail) = server._bridge_status_rows()
     assert label == "backends" and ok is True
-    assert detail.startswith("on: antigravity, codex; off: copilot, cursor, grok,")
+    assert detail.startswith("on: antigravity, codex; off: copilot, cursor, claude, grok,")
 
 
 def test_backends_status_flags_an_unknown_name(monkeypatch):
@@ -1412,7 +1414,7 @@ def fake_agy(monkeypatch, brain_dir, last_conv_file):
 
     def fake_run(args, **kwargs):
         cap["args"] = args
-        cap["kwargs"] = kwargs
+        cap["kwargs"] = hide_env(kwargs)
         return subprocess.CompletedProcess(
             args, cap["returncode"], stdout=cap["stdout"], stderr=cap["stderr"]
         )
@@ -4048,3 +4050,425 @@ def test_watched_image_written_before_the_cut_is_still_returned(watched_image_ru
     out = server._run_agy_image_watched("wrapped", "C:/out/art.png", "C:\\ws", 5, "draw")
     assert "C:/out/art.png" in out and "format=PNG" in out
     assert server._watch_snapshot()["image"] == "C:/out/art.png"
+
+
+# --------------------------------------------------------------------------
+# The tool surface: names, parameter names and which are required. Rewording the
+# instructions or the descriptions must never rename a tool or change a signature:
+# clients, the plugin skills and users' saved prompts all name them.
+# --------------------------------------------------------------------------
+
+_TOOL_SURFACE = {
+    "agent_swarm": (["tasks", "max_concurrency", "timeout_s", "watch"], ["tasks"]),
+    "antigravity_ask": (
+        ["prompt", "workspace", "model", "timeout_s", "watch", "plan", "schema"],
+        ["prompt"],
+    ),
+    "antigravity_continue": (
+        ["prompt", "workspace", "model", "timeout_s", "watch", "plan", "schema"],
+        ["prompt"],
+    ),
+    "antigravity_image": (["prompt", "output_path", "workspace", "timeout_s", "watch"], ["prompt"]),
+    "antigravity_image_swarm": (
+        ["prompts", "output_paths", "workspaces", "max_concurrency", "timeout_s", "watch"],
+        ["prompts"],
+    ),
+    "antigravity_status": ([], []),
+    "claude_ask": (["prompt", "workspace", "sandbox", "model", "timeout_s", "watch"], ["prompt"]),
+    "claude_continue": (["prompt", "workspace", "sandbox", "timeout_s", "watch"], ["prompt"]),
+    "claude_status": ([], []),
+    "codex_ask": (["prompt", "workspace", "sandbox", "model", "timeout_s", "watch"], ["prompt"]),
+    "codex_continue": (["prompt", "workspace", "timeout_s", "watch"], ["prompt"]),
+    "codex_status": ([], []),
+    "copilot_ask": (["prompt", "workspace", "sandbox", "model", "timeout_s", "watch"], ["prompt"]),
+    "copilot_continue": (["prompt", "workspace", "sandbox", "timeout_s", "watch"], ["prompt"]),
+    "copilot_status": ([], []),
+    "cursor_ask": (["prompt", "workspace", "sandbox", "model", "timeout_s", "watch"], ["prompt"]),
+    "cursor_continue": (["prompt", "workspace", "sandbox", "timeout_s", "watch"], ["prompt"]),
+    "cursor_status": ([], []),
+    "grok_ask": (["prompt", "workspace", "sandbox", "model", "timeout_s", "watch"], ["prompt"]),
+    "grok_continue": (["prompt", "workspace", "sandbox", "timeout_s", "watch"], ["prompt"]),
+    "grok_status": ([], []),
+    "kimi_ask": (["prompt", "workspace", "model", "timeout_s"], ["prompt"]),
+    "kimi_continue": (["prompt", "workspace", "timeout_s"], ["prompt"]),
+    "kimi_status": ([], []),
+    "muse_ask": (["prompt", "workspace", "sandbox", "model", "timeout_s", "watch"], ["prompt"]),
+    "muse_continue": (["prompt", "workspace", "sandbox", "timeout_s", "watch"], ["prompt"]),
+    "muse_status": ([], []),
+    "opencode_ask": (["prompt", "workspace", "sandbox", "model", "timeout_s", "watch"], ["prompt"]),
+    "opencode_continue": (["prompt", "workspace", "sandbox", "timeout_s", "watch"], ["prompt"]),
+    "opencode_status": ([], []),
+    "preset_swarm": (
+        ["preset", "material", "workspace", "timeout_s", "max_concurrency", "watch"],
+        ["preset", "material"],
+    ),
+    "swarm_presets": (["name", "workspace"], []),
+}
+
+
+def _tool_surface():
+    lister = getattr(server.mcp, "list_tools", None)
+    if lister is not None:
+        tools = asyncio.run(lister())
+    else:
+        tools = list(asyncio.run(server.mcp.get_tools()).values())
+    out = {}
+    for t in tools:
+        params = t.parameters or {}
+        out[t.name] = (list(params.get("properties", {})), list(params.get("required", [])))
+    return out
+
+
+def test_the_tool_surface_is_unchanged():
+    got = _tool_surface()
+    assert sorted(got) == sorted(_TOOL_SURFACE), (
+        f"added: {sorted(set(got) - set(_TOOL_SURFACE))}, "
+        f"removed: {sorted(set(_TOOL_SURFACE) - set(got))}"
+    )
+    changed = {n: (got[n], _TOOL_SURFACE[n]) for n in got if got[n] != _TOOL_SURFACE[n]}
+    assert not changed, f"signature changed: {changed}"
+
+
+def test_there_are_thirty_two_tools():
+    assert len(_TOOL_SURFACE) == 32 and len(_tool_surface()) == 32
+
+
+# --------------------------------------------------------------------------
+# The instructions and tool descriptions are a budget: every host loads them into the
+# model's context on every session. They are capped, ordered so the routing facts come
+# first (a host may truncate), and every fact a model relies on is also in the tool
+# descriptions, not only in the instructions. Phrase checks collapse whitespace,
+# because docstrings wrap and a phrase can span lines.
+# --------------------------------------------------------------------------
+
+_INSTRUCTIONS_CAP = 3_800
+_EARLY_FACTS_BY = 1_900  # the trigger, the picker and the workspace rule end before this
+_TOOL_DESCRIPTION_CAP = 900
+_PARAM_DESCRIPTION_CAP = 600
+_EXPERIMENTAL = {"grok", "kimi", "muse"}
+
+
+def _all_subsets():
+    return [
+        tuple(b for i, b in enumerate(server.BACKENDS) if mask >> i & 1)
+        for mask in range(1, 1 << len(server.BACKENDS))
+    ]
+
+
+def _words(text):
+    return " ".join((text or "").split())
+
+
+@pytest.fixture(scope="module")
+def instructions_by_subset():
+    return {s: server._server_instructions(s) for s in _all_subsets()}
+
+
+def test_every_subset_of_backends_has_instructions_within_the_cap(instructions_by_subset):
+    assert len(instructions_by_subset) == 2 ** len(server.BACKENDS) - 1
+    over = {s: len(t) for s, t in instructions_by_subset.items() if len(t) > _INSTRUCTIONS_CAP}
+    assert not over, (
+        f"{len(over)} subsets exceed {_INSTRUCTIONS_CAP} chars, e.g. {list(over.items())[:2]}"
+    )
+
+
+def test_the_all_backends_variant_is_the_longest_and_leaves_headroom(instructions_by_subset):
+    everything = server._server_instructions(server.BACKENDS)
+    assert len(everything) == max(len(t) for t in instructions_by_subset.values())
+    assert len(everything) <= _INSTRUCTIONS_CAP
+
+
+_ORDER = (
+    "OFFER IT",
+    "Pick: ",
+    "ALWAYS pass workspace=<the project dir>",
+    "Backends:",
+    "Mechanics:",
+    "Security:",
+)
+
+
+def test_the_sections_come_in_the_documented_order_for_every_subset(instructions_by_subset):
+    for subset, text in instructions_by_subset.items():
+        positions = [text.find(marker) for marker in _ORDER]
+        assert -1 not in positions, f"{subset}: missing {_ORDER[positions.index(-1)]!r}"
+        assert positions == sorted(set(positions)), f"{subset}: sections out of order"
+
+
+def test_security_is_the_last_paragraph_for_every_subset(instructions_by_subset):
+    for subset, text in instructions_by_subset.items():
+        last = text.rstrip().split("\n\n")[-1]
+        assert last.startswith("Security:"), f"{subset}: {last[:40]!r} comes after Security"
+
+
+def test_the_routing_facts_are_all_in_the_first_1900_characters(instructions_by_subset):
+    for subset, text in instructions_by_subset.items():
+        head = text[:_EARLY_FACTS_BY]
+        assert "OFFER IT" in head and "Pick: " in head, subset
+        workspace_line = text[text.index("ALWAYS pass workspace=") :].split("\n")[0]
+        end = text.index(workspace_line) + len(workspace_line)
+        assert end <= _EARLY_FACTS_BY, f"{subset}: the workspace rule ends at char {end}"
+
+
+def test_the_workspace_rule_says_why(instructions_by_subset):
+    text = instructions_by_subset[server.BACKENDS]
+    assert "sees no repo" in text and "server's cwd" in text
+
+
+def test_the_opening_names_exactly_the_enabled_backends(instructions_by_subset):
+    for subset, text in instructions_by_subset.items():
+        titles = [server._BACKEND_TITLES[b] for b in subset]
+        named = titles[0] if len(titles) == 1 else ", ".join(titles[:-1]) + " and " + titles[-1]
+        assert text.startswith(
+            f"This server runs {named} as sub-agents on the USER'S OWN quota."
+        ), subset
+
+
+def test_images_are_mentioned_only_with_antigravity(instructions_by_subset):
+    for subset, text in instructions_by_subset.items():
+        assert ("generate images" in text) == ("antigravity" in subset), subset
+        assert ("antigravity_image" in text) == ("antigravity" in subset), subset
+
+
+def test_the_swarm_triggers_appear_only_with_a_swarm_backend(instructions_by_subset):
+    for subset, text in instructions_by_subset.items():
+        swarmable = bool(server._SWARM_BACKENDS & set(subset))
+        assert ("agent_swarm" in text) == swarmable, subset
+        assert ("preset_swarm" in text) == swarmable, subset
+
+
+def test_the_picker_lists_exactly_the_enabled_backends(instructions_by_subset):
+    for subset, text in instructions_by_subset.items():
+        picker = text[text.index("Pick: ") :].split("\n")[0]
+        assert picker == "Pick: " + "; ".join(server._BACKEND_PICKS[b] for b in subset) + ".", (
+            subset
+        )
+        for backend in server.BACKENDS:
+            assert (f"{backend}_* " in picker) == (backend in subset), (subset, backend)
+
+
+def test_the_backend_lines_exist_only_for_enabled_backends(instructions_by_subset):
+    for subset, text in instructions_by_subset.items():
+        for backend in server.BACKENDS:
+            assert (f"- {backend}_* (" in text) == (backend in subset), (subset, backend)
+
+
+def test_a_disabled_backend_is_never_named_anywhere(instructions_by_subset):
+    for subset, text in instructions_by_subset.items():
+        for backend in server.BACKENDS:
+            if backend not in subset:
+                assert f"{backend}_" not in text, (subset, backend)
+
+
+def test_the_experimental_warning_appears_only_with_an_experimental_backend(
+    instructions_by_subset,
+):
+    for subset, text in instructions_by_subset.items():
+        has = bool(_EXPERIMENTAL & set(subset))
+        assert ("Run an EXPERIMENTAL backend's *_status first" in text) == has, subset
+        if not has:
+            assert "EXPERIMENTAL" not in text, subset
+
+
+def test_the_mechanics_paragraph_carries_the_operating_rules(instructions_by_subset):
+    for subset, text in instructions_by_subset.items():
+        mechanics = _words(text[text.index("Mechanics:") : text.index("Security:")])
+        for phrase in (
+            "*_continue resumes the thread rooted at that workspace",
+            "spends no quota",
+            "bridge version",
+            "tell the user",
+            "watch=true",
+        ):
+            assert phrase in mechanics, f"{subset}: Mechanics lacks {phrase!r}"
+
+
+def test_the_security_paragraph_says_to_use_trusted_prompts_only(instructions_by_subset):
+    for text in instructions_by_subset.values():
+        assert "trusted prompts" in text[text.index("Security:") :]
+
+
+def test_one_backend_still_reads_naturally():
+    text = server._server_instructions(("codex",))
+    assert text.startswith("This server runs OpenAI Codex as sub-agents on the USER'S OWN quota.")
+    assert "Pick: codex_*" in text and "agent_swarm" in text
+    for word in ("antigravity", "Gemini", "EXPERIMENTAL", "copilot", "opencode", "kimi"):
+        assert word not in text
+
+
+# ---- tool descriptions
+
+
+@pytest.fixture(scope="module")
+def tool_docs():
+    """{name: (description, {param: description})} for every registered tool."""
+    lister = getattr(server.mcp, "list_tools", None)
+    tools = asyncio.run(lister()) if lister else list(asyncio.run(server.mcp.get_tools()).values())
+    out = {}
+    for t in tools:
+        props = (t.parameters or {}).get("properties", {})
+        out[t.name] = (
+            _words(t.description),
+            {k: _words(v.get("description")) for k, v in props.items()},
+        )
+    return out
+
+
+def _tools(tool_docs, suffix):
+    return {n: d for n, d in tool_docs.items() if n.endswith(suffix)}
+
+
+def test_every_tool_description_is_within_the_cap(tool_docs):
+    assert len(tool_docs) == 32
+    long = {n: len(d) for n, (d, _) in tool_docs.items() if len(d) > _TOOL_DESCRIPTION_CAP}
+    assert not long, f"over {_TOOL_DESCRIPTION_CAP} chars: {long}"
+
+
+def test_every_parameter_description_is_within_the_cap(tool_docs):
+    long = {
+        f"{n}.{p}": len(d)
+        for n, (_, params) in tool_docs.items()
+        for p, d in params.items()
+        if len(d) > _PARAM_DESCRIPTION_CAP
+    }
+    assert not long, f"over {_PARAM_DESCRIPTION_CAP} chars: {long}"
+
+
+def test_every_ask_continue_and_the_swarm_tool_carry_the_workspace_rule(tool_docs):
+    names = [n for n in tool_docs if n.endswith(("_ask", "_continue")) or n == "agent_swarm"]
+    assert len(names) == 9 * 2 + 1
+    for n in names:
+        d = tool_docs[n][0]
+        for phrase in ("workspace=<project dir>", "sees no repo", "trusted prompts only"):
+            assert phrase in d, f"{n} lacks {phrase!r}"
+
+
+def test_every_ask_starts_with_best_for_and_points_at_its_continue(tool_docs):
+    asks = _tools(tool_docs, "_ask")
+    assert len(asks) == 9
+    for n, (d, _) in asks.items():
+        assert d.startswith("Best for"), n
+        assert f"{n.removesuffix('_ask')}_continue" in d, n
+
+
+def test_the_swarm_tools_start_with_best_for(tool_docs):
+    assert tool_docs["agent_swarm"][0].startswith("Best for")
+    assert tool_docs["preset_swarm"][0].startswith("Best for")
+
+
+def test_every_continue_says_which_thread_it_resumes(tool_docs):
+    continues = _tools(tool_docs, "_continue")
+    assert len(continues) == 9
+    for n, (d, _) in continues.items():
+        assert "rooted at this workspace" in d, n
+
+
+def test_every_status_tool_relays_the_bridge_version_and_spends_no_quota(tool_docs):
+    statuses = _tools(tool_docs, "_status")
+    assert len(statuses) == 9
+    for n, (d, _) in statuses.items():
+        for phrase in ("Spends no quota", '"not found"', "bridge version", "tell the user"):
+            assert phrase in d, f"{n} lacks {phrase!r}"
+
+
+def test_the_claude_tools_say_they_are_for_other_hosts(tool_docs):
+    for n in ("claude_ask", "claude_continue", "claude_status"):
+        assert "for hosts other than Claude Code" in tool_docs[n][0], n
+
+
+def test_the_image_tool_says_it_is_the_only_generator(tool_docs):
+    assert tool_docs["antigravity_image"][0].startswith("Your only image generator")
+
+
+def test_the_antigravity_swarm_sandbox_exception_survives_the_shortening(tool_docs):
+    tasks = tool_docs["agent_swarm"][1]["tasks"]
+    assert "ANTIGRAVITY" in tasks
+    assert '"read-only" is plan mode' in tasks
+    assert '"workspace-write" is refused' in tasks
+    assert "UNRESTRICTED" in tasks
+    assert "set one" in tasks
+
+
+def test_every_routing_fact_in_the_instructions_is_also_in_the_tool_descriptions(tool_docs):
+    # A host may show only the tools, or truncate the instructions: what the model
+    # must know to call a tool correctly cannot live in the instructions alone.
+    for n, (d, _) in tool_docs.items():
+        if n.endswith(("_ask", "_continue")):
+            assert "workspace" in d, n
+        if n.endswith("_ask"):
+            assert "_continue" in d, n
+
+
+# ---- the tool surface does not move while the words do
+
+
+def test_rewording_kept_every_parameter_description_present(tool_docs):
+    # shortening a description must not empty one: a model reads these to fill the call
+    empty = [
+        f"{n}.{p}"
+        for n, (_, params) in tool_docs.items()
+        for p, d in params.items()
+        if p not in ("watch", "timeout_s") and not d
+    ]
+    assert not empty, f"parameters with no description: {empty}"
+
+
+# ---- `agent-intern rules`
+
+
+def test_rules_is_a_terminal_command_dispatched_lazily():
+    assert "rules" in server._CLI_COMMANDS
+
+
+def test_rules_prints_exactly_the_server_instructions_as_utf8(monkeypatch):
+    raw = io.BytesIO()
+    fake = io.TextIOWrapper(raw, encoding="cp1252", errors="strict", write_through=True)
+    monkeypatch.setattr(sys, "stdout", fake)
+    assert doctor.cli(["rules"]) == 0
+    fake.flush()
+    assert raw.getvalue() == (server.SERVER_INSTRUCTIONS + "\n").encode("utf-8")
+
+
+def test_rules_prints_the_enabled_backends_guide(monkeypatch, capsys):
+    monkeypatch.setattr(server, "SERVER_INSTRUCTIONS", server._server_instructions(("codex",)))
+    assert doctor.cli(["rules"]) == 0
+    out = capsys.readouterr().out
+    assert out == server._server_instructions(("codex",)) + "\n"
+    assert "codex_*" in out and "antigravity_*" not in out
+
+
+def test_rules_falls_back_to_text_when_stdout_has_no_buffer(monkeypatch):
+    out = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", out)
+    assert doctor.cli(["rules"]) == 0
+    assert out.getvalue().rstrip("\n") == server.SERVER_INSTRUCTIONS
+
+
+def test_main_rules_exits_zero_without_starting_the_server(monkeypatch, capsys):
+    started = []
+    monkeypatch.setattr(server.mcp, "run", lambda *a, **k: started.append(1))
+    with pytest.raises(SystemExit) as exc:
+        server.main(["rules"])
+    assert exc.value.code == 0 and started == []
+    assert capsys.readouterr().out.rstrip("\n") == server.SERVER_INSTRUCTIONS
+
+
+def test_help_lists_rules(capsys):
+    with pytest.raises(SystemExit):
+        doctor.cli(["--help"])
+    assert "rules" in capsys.readouterr().out
+
+
+def test_rules_in_a_real_process_honours_agent_intern_backends():
+    env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
+    env["AGENT_INTERN_BACKENDS"] = "codex"
+    proc = subprocess.run(
+        [sys.executable, str(Path(__file__).parent / "server.py"), "rules"],
+        capture_output=True,
+        timeout=120,
+        env=env,
+        cwd=Path(__file__).parent,
+    )
+    assert proc.returncode == 0, proc.stderr.decode("utf-8", "replace")[-300:]
+    assert proc.stdout == (server._server_instructions(("codex",)) + "\n").encode("utf-8")
+    assert b"antigravity" not in proc.stdout

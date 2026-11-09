@@ -164,34 +164,23 @@ async def opencode_ask(
     watch: bool = False,
     ctx: Optional[Context] = None,
 ) -> str:
-    """Ask opencode (`opencode run`) a question or task in a NEW session.
-
-    The one backend here that needs NO subscription: opencode's own free hosted
-    models (`opencode/*-free`, see `opencode models`) answer with zero credentials
-    configured, so this works on a machine that has never logged in to anything.
-    Add a key with `opencode auth login` for Claude/GPT-class models. Returns the
-    agent's final message, reconstructed from opencode's `--format json` events.
-    Point `workspace` at a project dir for context-aware answers.
-
-    The free models answer a short prompt in seconds (2.5-6.5 s measured on
-    opencode 1.19.5). They used to be queue-scheduled and take minutes, so
-    timeout_s still defaults to a 300 s ceiling; a run that finishes early never
-    notices it.
+    """Best for users with no subscription: opencode's free `opencode/*-free` models
+    answer with zero credentials, in seconds (`opencode run`, NEW session). Also for a
+    model family no other backend covers: `opencode auth login` adds Claude/GPT-class
+    models. Pass workspace=<project dir>; without it the sub-agent sees no repo. Follow
+    up with opencode_continue. Its sandbox is agent-enforced, not an OS boundary;
+    timeout_s defaults to a 300 s ceiling. Autonomous agent: trusted prompts only.
 
     Args:
         prompt: Question or instruction for opencode.
         workspace: Working root (the run directory). Defaults to the server cwd.
-        sandbox: Permission policy, which opencode enforces itself on every
-                 platform alike: "read-only" (default — no edit/shell/subagent/
-                 network tools, `.env` files denied), "workspace-write" (edit and
-                 shell allowed), or "danger-full-access" (opencode's own `--auto`,
-                 no policy — avoid). On opencode 1.x workspace-write also refuses
-                 reaching outside the workspace. On 2.x file edits stay inside
-                 the workspace, but the shell is not confined (it can write
-                 anywhere and read `.env` files).
-                 ⚠️ Agent-enforced, NOT an OS boundary: a determined tool call is
-                 refused by opencode, not by the kernel. For a hard boundary, use
-                 codex.
+        sandbox: Permission policy opencode enforces itself, the same on every OS
+                 (agent-enforced, NOT an OS boundary; codex has a real one):
+                 "read-only" (default: no edit/shell/subagent/web tools, `.env` reads
+                 denied), "workspace-write" (edits and shell), or "danger-full-access"
+                 (`--auto`, no policy, avoid). On 1.x workspace-write refuses paths
+                 outside the workspace. On 2.x file edits stay inside it, but the
+                 shell is not confined: it can write anywhere and read `.env` files.
         model: Optional model id (`-m`, "provider/model" — e.g.
                "opencode/nemotron-3.5-lightning-free"); validated against
                `opencode models` and rejected on a typo. Omit for opencode's
@@ -233,16 +222,11 @@ async def opencode_continue(
     watch: bool = False,
     ctx: Optional[Context] = None,
 ) -> str:
-    """Continue the opencode session rooted at this workspace.
-
-    Resumes the exact session id opencode reported on the last opencode_ask in this
-    workspace (`-s <id>`), falling back to opencode's own "most recent session for
-    this directory" (`-c`) when that in-memory pin is gone — so it still works after
-    a server restart. Session scoping is per directory (verified live: the same
-    `-c` from a different directory starts a fresh session), so pass the same
-    `workspace` you asked in. The permission policy applies per invocation, so
-    `sandbox` takes effect here too: analyze read-only with opencode_ask, then
-    continue with "workspace-write" to apply the fix.
+    """Continue the opencode session: resumes the thread rooted at this workspace (`-s
+    <id>`, else opencode's own `-c` for that directory), so pass the same
+    workspace=<project dir> as the ask (without it the sub-agent sees no repo).
+    `sandbox` applies per turn: analyze read-only, then continue with "workspace-write"
+    to apply the fix. Autonomous agent: trusted prompts only.
 
     Args:
         prompt: Follow-up message for the existing session.
@@ -277,14 +261,11 @@ async def opencode_continue(
     }
 )
 def opencode_status() -> str:
-    """Report diagnostics for the opencode bridge setup (spends no quota).
-
-    Reports the bridge's own version and any newer release (same update notice
-    antigravity_status shows), then checks whether `opencode` is found (and its
-    version), how many provider credentials are configured, which model ids are
-    available, and where opencode keeps its data. "0 credentials" is NOT a failure
-    here — opencode's free `opencode/*` models still answer — so that row stays ok
-    as long as models are listed.
+    """Check the opencode setup. Spends no quota; run it first when a call says "not
+    found". Its `bridge version` row says when a newer agent-intern release is out: if
+    so, tell the user. Also checks opencode's version (1.x or 2.x), configured
+    credentials ("none" is fine: the free models still answer), the model ids available,
+    and where opencode keeps its data.
     """
     rows = server._bridge_status_rows() + opencode_bridge.status_rows()
     width = max(len(label) for label, _, _ in rows)

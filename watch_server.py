@@ -550,6 +550,7 @@ def _open_watch_window(url: str, rid: str = _MAIN) -> None:
         try:
             proc_tree.popen(
                 [exe, f"--app={url}", f"--window-size={_WATCH_WINDOW_SIZE}"],
+                starts_agent=False,  # a probe, not an agent run
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,

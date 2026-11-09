@@ -279,6 +279,7 @@ def list_models() -> list[str]:
     try:
         proc = proc_tree.run_captured(
             [GROK_BIN, "models"],
+            starts_agent=False,  # a probe, not an agent run
             stdin=subprocess.DEVNULL,
             timeout=20,
             env=_env(),
@@ -602,6 +603,7 @@ def grok_version() -> Optional[str]:
     try:
         proc = proc_tree.run_captured(
             [GROK_BIN, "--version"],
+            starts_agent=False,  # a probe, not an agent run
             stdin=subprocess.DEVNULL,
             timeout=15,
             env=_env(),
@@ -626,6 +628,7 @@ def auth_status() -> tuple[bool, str]:
     try:
         proc = proc_tree.run_captured(
             [GROK_BIN, "models"],
+            starts_agent=False,  # a probe, not an agent run
             stdin=subprocess.DEVNULL,
             timeout=20,
             env=_env(),

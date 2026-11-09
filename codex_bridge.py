@@ -847,6 +847,7 @@ def codex_version() -> Optional[str]:
     try:
         proc = proc_tree.run_captured(
             [CODEX_BIN, "--version"],
+            starts_agent=False,  # a probe, not an agent run
             stdin=subprocess.DEVNULL,
             **_TEXT,
             timeout=15,
@@ -867,6 +868,7 @@ def codex_login_status() -> tuple[bool, str]:
     try:
         proc = proc_tree.run_captured(
             [CODEX_BIN, "login", "status"],
+            starts_agent=False,  # a probe, not an agent run
             stdin=subprocess.DEVNULL,
             **_TEXT,
             timeout=15,

@@ -46,36 +46,25 @@ async def codex_ask(
     watch: bool = False,
     ctx: Optional[Context] = None,
 ) -> str:
-    """Ask OpenAI Codex (`codex exec`) a question or task in a NEW session.
-
-    Uses your existing Codex login (ChatGPT or API key — see `codex login status`).
-    Returns the agent's final message as text, read from codex's
-    --output-last-message file (no stdout scraping). Codex is a capable coding
-    agent, so this suits heavier reasoning and real code work, not just cheap
-    tool-calling. Point `workspace` at a real project dir for context-aware answers.
+    """Best for the hardest reasoning and real code work, behind a REAL OS sandbox (OpenAI
+    Codex, `codex exec`), in a NEW session. Pass workspace=<project dir>; without it the
+    sub-agent sees no repo. Follow up with codex_continue. Uses your Codex login
+    (ChatGPT or API key). Read-only by default; sandbox="workspace-write" lets it edit.
+    On Windows the bridge flags refused commands and a silent read-only downgrade with
+    an [agent-intern] WARNING in the answer: treat such an answer as unsourced.
+    Autonomous agent: trusted prompts only.
 
     Args:
         prompt: Question or instruction for Codex.
         workspace: Working root for the session (`-C`). Defaults to the server cwd.
-        sandbox: Filesystem policy — "read-only" (default: reads and answers but
-                 writes nothing), "workspace-write" (may edit files under the
-                 workspace), or "danger-full-access" (no sandbox — avoid). `codex
-                 exec` has no interactive approval gate, so this is the real safety
-                 boundary; opt into write access deliberately.
-
-                 WINDOWS CAVEAT (codex 0.149.1-0.162.1): sandboxed runs there currently
-                 refuse EVERY command, both policies, down to `pwd` — codex's
-                 policy engine cannot classify the `pwsh -Command <...>` wrapper it
-                 builds. Shell commands are how codex reads files, so it sees none
-                 of the workspace and ANSWERS ANYWAY, from its own knowledge or a
-                 web search, with no hint that it read nothing. The bridge appends
-                 a visible "[agent-intern] WARNING" to any answer whose run had
-                 commands refused: if you see it, treat the answer as unsourced.
-                 Also on Windows (verified on 0.166.0), codex silently runs
-                 "workspace-write" as READ-ONLY unless a Windows sandbox is set
-                 (`[windows] sandbox = "unelevated"` in ~/.codex/config.toml);
-                 the bridge appends a WARNING when the sandbox codex reports
-                 differs from the one asked for, and codex_status shows the key.
+        sandbox: Filesystem policy, enforced by an OS sandbox: "read-only" (default:
+                 reads and answers, writes nothing), "workspace-write" (may edit
+                 files in the workspace), or "danger-full-access" (no sandbox, avoid).
+                 There is no approval gate, so this is the safety boundary. On Windows,
+                 workspace-write runs read-only unless `[windows] sandbox =
+                 "unelevated"` is set in ~/.codex/config.toml (see codex_status), and
+                 refused commands leave codex answering unsourced; the bridge appends
+                 an [agent-intern] WARNING in both cases.
         model: Optional model override (`-m`); omit to use codex's configured default.
         timeout_s: Max seconds to wait for codex to complete. Default 180.
         watch: If true, open a live "watch" view in your browser that streams
@@ -114,13 +103,11 @@ async def codex_continue(
     watch: bool = False,
     ctx: Optional[Context] = None,
 ) -> str:
-    """Continue the Codex session rooted at this workspace (`codex exec resume`).
-
-    Resumes the exact session id captured from the last codex_ask in this
-    workspace, falling back to the newest on-disk session whose recorded cwd
-    matches (so it still works after a server restart). The resumed session keeps
-    its original sandbox and model — those are chosen when you start it with
-    codex_ask.
+    """Continue the Codex session: resumes the thread rooted at this workspace (`codex exec
+    resume`), so pass the same workspace=<project dir> as the ask (without it the
+    sub-agent sees no repo). It resumes the session the last codex_ask there started,
+    else the newest on-disk session for that directory. The session keeps its original
+    sandbox and model. Autonomous agent: trusted prompts only.
 
     Args:
         prompt: Follow-up message for the existing session.
@@ -158,15 +145,11 @@ async def codex_continue(
     }
 )
 def codex_status() -> str:
-    """Report diagnostics for the Codex bridge setup (spends no quota).
-
-    Reports the bridge's own version and whether a newer release is available
-    (best-effort GitHub check; honors AGY_BRIDGE_NO_UPDATE_CHECK) — the same
-    update notice antigravity_status shows, so a Codex-only install still surfaces
-    it — then checks whether codex is on PATH (and its version), whether you're
-    logged in (`codex login status` — no model call, no quota), where codex stores
-    its sessions, and how many workspace sessions are pinned this run. Use this to
-    debug "codex not found" or auth errors before spending quota.
+    """Check the Codex setup. Spends no quota; run it first when a call says "not found".
+    Its `bridge version` row says when a newer agent-intern release is out: if so, tell
+    the user. Also checks codex's version, whether you're logged in (`codex login
+    status`, no model call), whether a Windows sandbox is configured (without one,
+    workspace-write runs read-only), and where codex keeps its sessions.
     """
     rows = server._bridge_status_rows() + codex_bridge.status_rows()
     width = max(len(label) for label, _, _ in rows)

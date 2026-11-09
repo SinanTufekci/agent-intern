@@ -403,6 +403,7 @@ def list_models() -> list[str]:
     try:
         proc = proc_tree.run_captured(
             [*_launch(), "models"],
+            starts_agent=False,  # a probe, not an agent run
             stdin=subprocess.DEVNULL,
             timeout=20,
             **_TEXT,
@@ -666,6 +667,7 @@ def cursor_version() -> Optional[str]:
     try:
         proc = proc_tree.run_captured(
             [*_launch(), "--version"],
+            starts_agent=False,  # a probe, not an agent run
             stdin=subprocess.DEVNULL,
             timeout=15,
             **_TEXT,
@@ -688,6 +690,7 @@ def auth_status() -> tuple[bool, str]:
     try:
         proc = proc_tree.run_captured(
             [*_launch(), "status"],
+            starts_agent=False,  # a probe, not an agent run
             stdin=subprocess.DEVNULL,
             timeout=20,
             **_TEXT,

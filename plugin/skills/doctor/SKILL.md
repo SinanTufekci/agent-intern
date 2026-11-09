@@ -1,11 +1,12 @@
 ---
 name: doctor
-description: Check which agent-intern backends (Antigravity, Codex, Copilot, Cursor, opencode, Grok, Kimi, Muse) are installed, signed in and ready, without spending any quota. Use when setting up agent-intern, when a delegation fails, or when the user asks which sub-agents they can use.
+description: Check which agent-intern backends (Antigravity, Codex, Copilot, Cursor, Claude Code, opencode, Grok, Kimi, Muse) are installed, signed in and ready, without spending any quota. Use when setting up agent-intern, when a delegation fails, or when the user asks which sub-agents they can use.
 allowed-tools:
   - mcp__plugin_agent-intern_intern__antigravity_status
   - mcp__plugin_agent-intern_intern__codex_status
   - mcp__plugin_agent-intern_intern__copilot_status
   - mcp__plugin_agent-intern_intern__cursor_status
+  - mcp__plugin_agent-intern_intern__claude_status
   - mcp__plugin_agent-intern_intern__opencode_status
   - mcp__plugin_agent-intern_intern__grok_status
   - mcp__plugin_agent-intern_intern__kimi_status
@@ -19,6 +20,7 @@ off with `AGENT_INTERN_BACKENDS` has no status tool; the `backends` row of the o
 - `codex_status`
 - `copilot_status`
 - `cursor_status`
+- `claude_status` (only if the user turned the Claude Code backend on; it is off by default here)
 - `opencode_status`
 - `grok_status`
 - `kimi_status`

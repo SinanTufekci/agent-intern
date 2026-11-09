@@ -15,6 +15,7 @@ shipped for seven of the eight bridges:
 """
 
 import ast
+import io
 import os
 import subprocess
 import sys
@@ -24,6 +25,7 @@ from pathlib import Path
 import pytest
 
 import proc_tree
+from conftest import HiddenEnv, hide_env
 
 REPO = Path(__file__).parent
 
@@ -123,7 +125,7 @@ def test_run_captured_forwards_popen_kwargs_but_pipes_the_streams(monkeypatch):
     seen = {}
 
     def _popen(args, **kwargs):
-        seen.update(kwargs)
+        seen.update(hide_env(kwargs))
         return _Proc(communicate=lambda p, t: ("", ""))
 
     monkeypatch.setattr(subprocess, "Popen", _popen)
@@ -473,6 +475,19 @@ def test_no_module_calls_subprocess_popen_directly():
         ["node", "C:/npm/opencode.js", "run"],
         ["muse-bin-1.3.0.exe", "exec"],
         ["C:/Program Files/Google/Chrome/Application/chrome.exe", "--app=http://x"],
+        # Claude Code: every way it can be started
+        ["claude", "-p", "hi"],
+        ["C:\\Users\\x\\.local\\bin\\claude.exe", "-p", "hi"],
+        ["/usr/local/bin/claude", "-p", "hi"],
+        "claude -p hi",
+        ["cmd", "/c", "C:\\Users\\x\\AppData\\Roaming\\npm\\claude.cmd", "-p", "hi"],
+        [
+            "C:\\Program Files\\nodejs\\node.exe",
+            "C:\\Users\\x\\AppData\\Roaming\\npm\\node_modules\\@anthropic-ai\\claude-code\\cli.js",
+            "-p",
+            "hi",
+        ],
+        ["npx", "@anthropic-ai/claude-code", "-p", "hi"],
     ],
 )
 def test_the_tripwire_stops_agent_clis_and_browsers(args):
@@ -498,6 +513,13 @@ def test_the_tripwire_lets_other_programs_run():
         ["C:\\work\\opencode\\tool.exe", "--help"],
         # a launcher running something unrelated
         ["node", "C:/work/site/build.js"],
+        # Claude Code's own config directory and plugin folder are not the CLI
+        ["python", "C:/Users/x/.claude/hooks/ruff_check.py"],
+        ["node", "C:/Users/x/.claude/hooks/check.js"],
+        ["bash", "/home/x/.claude/scripts/run.sh"],
+        ["bash", "plugin/.claude-plugin/build.sh"],
+        ["python", "C:/work/claude-plugin-notes/x.py"],
+        ["C:\\work\\claudette.exe", "--help"],
     ],
 )
 def test_the_tripwire_does_not_flag_look_alikes(args):
@@ -519,3 +541,585 @@ def test_the_tripwire_catches_an_attempt_the_code_swallowed():
         assert conftest._trips and conftest._trips[0].startswith("grok:")
     finally:
         conftest._trips.clear()
+
+
+# ------------------------------------------------------------ nesting depth guard
+# AGENT_INTERN_DEPTH: every child gets this server's depth + 1, and a server at
+# MAX_DEPTH starts no AGENT RUN. Probes (`--version`, auth and model checks, opening
+# a viewer) are exempt through starts_agent=False, so status and doctor keep working
+# where delegation is refused. The guard is in proc_tree.popen, which every spawn in
+# the project goes through, so the cross-backend tests below call each backend's real
+# entry point against recorders that stand in for subprocess.Popen.
+#
+# These tests never put an environment into a message or a comparison that can print:
+# a failing assertion shows what it compared, and a real environment holds tokens.
+# They record argv and the depth variable's value, wrap whole environments in
+# HiddenEnv, and report variable NAMES only.
+
+
+class _Spawned(Exception):
+    """Raised by the recorder right after it notes a spawn, to stop the run there."""
+
+
+@pytest.fixture
+def spawns(monkeypatch):
+    """Replace subprocess.Popen with a recorder of (argv, env). Nothing ever starts.
+    The env is a HiddenEnv: its repr shows no values."""
+    seen = []
+
+    def record(args, *a, **k):
+        env = k.get("env")
+        seen.append((list(args), None if env is None else HiddenEnv(env)))
+        raise _Spawned
+
+    monkeypatch.setattr(subprocess, "Popen", record)
+    monkeypatch.delenv(proc_tree.DEPTH_ENV, raising=False)
+    return seen
+
+
+@pytest.fixture
+def popen_calls(monkeypatch):
+    """Wrap proc_tree.popen to note every call: its argv, whether it declared itself
+    an agent run, and whether the nesting guard refused it."""
+    calls = []
+    real = proc_tree.popen
+
+    def wrapper(args, *, starts_agent=True, **kwargs):
+        entry = {"argv": list(args), "starts_agent": starts_agent, "refused": False}
+        calls.append(entry)
+        try:
+            return real(args, starts_agent=starts_agent, **kwargs)
+        except proc_tree.NestingTooDeep:
+            entry["refused"] = True
+            raise
+
+    monkeypatch.setattr(proc_tree, "popen", wrapper)
+    return calls
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        (None, 0),
+        ("", 0),
+        ("   ", 0),
+        ("0", 0),
+        ("1", 1),
+        (" 2 ", 2),
+        ("7", 7),
+        ("-1", 0),
+        ("-5", 0),
+        ("two", 0),
+        ("1.5", 0),
+        ("1e3", 0),
+    ],
+)
+def test_current_depth_reads_the_variable_and_falls_back_to_zero(raw, expected):
+    env = {} if raw is None else {proc_tree.DEPTH_ENV: raw}
+    assert proc_tree.current_depth(env) == expected
+
+
+def test_current_depth_defaults_to_this_process_environment(monkeypatch):
+    monkeypatch.setenv(proc_tree.DEPTH_ENV, "1")
+    assert proc_tree.current_depth() == 1
+    monkeypatch.delenv(proc_tree.DEPTH_ENV)
+    assert proc_tree.current_depth() == 0
+
+
+def test_the_limit_is_two_and_the_error_is_a_runtime_error():
+    assert proc_tree.DEPTH_ENV == "AGENT_INTERN_DEPTH"
+    assert proc_tree.MAX_DEPTH == 2
+    assert issubclass(proc_tree.NestingTooDeep, RuntimeError)
+
+
+def test_nesting_refusal_tells_the_model_to_do_the_step_itself():
+    msg = proc_tree.nesting_refusal(2)
+    assert "nested 2 agents deep" in msg and "AGENT_INTERN_DEPTH=2" in msg
+    assert "limit 2" in msg
+    assert "Do this step yourself instead of delegating it." in msg
+
+
+def test_popen_gives_the_child_one_level_more(spawns):
+    with pytest.raises(_Spawned):
+        proc_tree.popen(["tool", "x"])
+    assert spawns[0][1][proc_tree.DEPTH_ENV] == "1"
+
+
+@pytest.mark.parametrize("depth", [0, 1])
+def test_popen_increments_from_the_current_depth(spawns, monkeypatch, depth):
+    monkeypatch.setenv(proc_tree.DEPTH_ENV, str(depth))
+    with pytest.raises(_Spawned):
+        proc_tree.popen(["tool", "x"])
+    assert spawns[0][1][proc_tree.DEPTH_ENV] == str(depth + 1)
+
+
+def test_popen_keeps_a_callers_env_and_sets_the_depth_in_a_copy(spawns, monkeypatch):
+    monkeypatch.setenv(proc_tree.DEPTH_ENV, "1")
+    mine = {"PATH": "/x", "KEEP": "me", proc_tree.DEPTH_ENV: "99"}
+    with pytest.raises(_Spawned):
+        proc_tree.popen(["tool"], env=mine)
+    child_env = spawns[0][1]
+    assert child_env["KEEP"] == "me" and child_env["PATH"] == "/x"
+    # the depth is this server's, not whatever the caller's dict carried
+    assert child_env[proc_tree.DEPTH_ENV] == "2"
+    assert mine[proc_tree.DEPTH_ENV] == "99"  # the caller's dict is not touched
+
+
+def test_popen_without_an_env_passes_this_processs_environment_on(spawns, monkeypatch):
+    monkeypatch.setenv("SOME_MARKER_VAR", "present")
+    with pytest.raises(_Spawned):
+        proc_tree.popen(["tool"])
+    assert spawns[0][1]["SOME_MARKER_VAR"] == "present"
+
+
+@pytest.mark.parametrize("depth", ["2", "3", "99"])
+def test_popen_at_the_limit_refuses_an_agent_run_and_starts_nothing(spawns, monkeypatch, depth):
+    monkeypatch.setenv(proc_tree.DEPTH_ENV, depth)
+    with pytest.raises(proc_tree.NestingTooDeep, match="nested .* agents deep"):
+        proc_tree.popen(["tool", "x"])
+    with pytest.raises(proc_tree.NestingTooDeep):
+        proc_tree.popen(["tool", "x"], starts_agent=True)
+    assert spawns == []
+
+
+@pytest.mark.parametrize("depth", [2, 3, 99])
+def test_popen_at_the_limit_still_runs_a_probe(spawns, monkeypatch, depth):
+    monkeypatch.setenv(proc_tree.DEPTH_ENV, str(depth))
+    with pytest.raises(_Spawned):  # reached subprocess.Popen: not refused
+        proc_tree.popen(["tool", "--version"], starts_agent=False)
+    assert spawns[0][0] == ["tool", "--version"]
+    assert spawns[0][1][proc_tree.DEPTH_ENV] == str(depth + 1)  # the child is still counted
+
+
+def test_a_probe_below_the_limit_is_counted_like_any_spawn(spawns, monkeypatch):
+    monkeypatch.setenv(proc_tree.DEPTH_ENV, "1")
+    with pytest.raises(_Spawned):
+        proc_tree.popen(["tool"], starts_agent=False)
+    assert spawns[0][1][proc_tree.DEPTH_ENV] == "2"
+
+
+def test_the_default_is_guarded_so_a_forgotten_site_stays_safe(spawns, monkeypatch):
+    monkeypatch.setenv(proc_tree.DEPTH_ENV, "2")
+    with pytest.raises(proc_tree.NestingTooDeep):
+        proc_tree.popen(["tool"])
+    with pytest.raises(proc_tree.NestingTooDeep):
+        proc_tree.run_captured(["tool"], timeout=5)
+    assert spawns == []
+
+
+def test_popen_checks_the_shim_rule_before_the_depth(spawns, monkeypatch):
+    monkeypatch.setenv(proc_tree.DEPTH_ENV, "2")
+    with pytest.raises(Exception) as exc:
+        proc_tree.popen(["C:\\tools\\evil.cmd", "a & calc"])
+    assert not isinstance(exc.value, proc_tree.NestingTooDeep)  # check_args spoke first
+    assert spawns == []
+
+
+def test_run_captured_goes_through_the_guard(spawns, monkeypatch):
+    with pytest.raises(_Spawned):
+        proc_tree.run_captured(["tool"], timeout=5)
+    assert spawns[0][1][proc_tree.DEPTH_ENV] == "1"
+    monkeypatch.setenv(proc_tree.DEPTH_ENV, "2")
+    spawns.clear()
+    with pytest.raises(proc_tree.NestingTooDeep):
+        proc_tree.run_captured(["tool"], timeout=5)
+    assert spawns == []
+
+
+def test_run_captured_passes_starts_agent_through(spawns, monkeypatch):
+    monkeypatch.setenv(proc_tree.DEPTH_ENV, "2")
+    with pytest.raises(_Spawned):
+        proc_tree.run_captured(["tool", "--version"], timeout=5, starts_agent=False)
+    assert spawns[0][0] == ["tool", "--version"]
+
+
+def test_a_real_child_sees_the_incremented_depth(monkeypatch):
+    # The seam the recorder cannot show: the variable really reaches a child process.
+    monkeypatch.setenv(proc_tree.DEPTH_ENV, "1")
+    child = proc_tree.popen(
+        [sys.executable, "-c", f"import os; print(os.environ['{proc_tree.DEPTH_ENV}'])"],
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    out, _ = child.communicate(timeout=60)
+    assert out.strip() == "2"
+
+
+def test_a_real_probe_runs_at_the_limit_and_a_real_agent_run_does_not(monkeypatch):
+    monkeypatch.setenv(proc_tree.DEPTH_ENV, "2")
+    probe = proc_tree.run_captured(
+        [sys.executable, "-c", "print('probe ran')"], timeout=60, starts_agent=False, text=True
+    )
+    assert probe.stdout.strip() == "probe ran"
+    with pytest.raises(proc_tree.NestingTooDeep):
+        proc_tree.run_captured([sys.executable, "-c", "print('agent ran')"], timeout=60)
+
+
+# ---- every backend
+
+_PROBE_SITES = {
+    "claude_bridge": {"claude_version", "auth_status"},
+    "codex_bridge": {"codex_version", "codex_login_status"},
+    "copilot_bridge": {"copilot_version"},
+    "cursor_bridge": {"list_models", "cursor_version", "auth_status"},
+    "grok_bridge": {"list_models", "grok_version", "auth_status"},
+    "kimi_bridge": {"kimi_version", "auth_status"},
+    "muse_bridge": {"muse_version", "windows_sandbox_status"},
+    "opencode_bridge": {"list_models", "_read_version", "auth_status", "_auth_status_v2"},
+    "server": {"_get_agy_version", "_read_agy_usage", "list_agy_models"},
+    "swarm": {"_probe_isolated_auth"},
+    "swarm_watch": {"_launch"},
+    "watch_server": {"_open_watch_window"},
+}
+
+
+def _probe_sites():
+    """{module: {function}} for every call that passes starts_agent=False, found in
+    the source, plus the lines of those calls."""
+    found: dict[str, set[str]] = {}
+    lines: list[tuple[str, int, int]] = []
+    for path in sorted(REPO.glob("*.py")):
+        if path.name.startswith("test_") or path.name == "conftest.py":
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        parents = {}
+        for node in ast.walk(tree):
+            for child in ast.iter_child_nodes(node):
+                parents[child] = node
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            flags = [
+                k
+                for k in node.keywords
+                if k.arg == "starts_agent"
+                and isinstance(k.value, ast.Constant)
+                and k.value.value is False
+            ]
+            if not flags:
+                continue
+            owner = node
+            while owner in parents and not isinstance(
+                owner, (ast.FunctionDef, ast.AsyncFunctionDef)
+            ):
+                owner = parents[owner]
+            name = owner.name if isinstance(owner, (ast.FunctionDef, ast.AsyncFunctionDef)) else "?"
+            found.setdefault(path.stem, set()).add(name)
+            lines.append((path.name, node.lineno, node.end_lineno or node.lineno))
+    return found, lines
+
+
+def test_exactly_these_call_sites_are_marked_as_probes():
+    # Marking a spawn starts_agent=False exempts it from the nesting guard. Adding a
+    # site is a deliberate edit with its own entry here, never a side effect.
+    found, _ = _probe_sites()
+    assert found == _PROBE_SITES
+    assert sum(len(v) for v in found.values()) == 25
+
+
+def test_every_probe_site_says_so_in_a_comment():
+    _, lines = _probe_sites()
+    for name, first, last in lines:
+        src = (REPO / name).read_text(encoding="utf-8").splitlines()
+        window = "\n".join(src[max(0, first - 3) : last + 2])
+        assert "a probe, not an agent run" in window, f"{name}:{first} has no probe comment"
+
+
+def test_no_agent_run_is_marked_as_a_probe():
+    # The run paths must stay guarded: none of these functions may pass the flag.
+    found, _ = _probe_sites()
+    runners = {
+        "claude_bridge": {"_run_impl", "run_claude", "run_claude_streaming"},
+        "codex_bridge": {"run_codex", "run_codex_streaming"},
+        "copilot_bridge": {"run_copilot"},
+        "cursor_bridge": {"run_cursor", "create_chat"},
+        "grok_bridge": {"run_grok"},
+        "kimi_bridge": {"run_kimi"},
+        "muse_bridge": {"run_muse", "last_session"},
+        "opencode_bridge": {"_run_impl", "run_opencode", "run_opencode_streaming"},
+        "server": {"_run_agy", "_run_agy_watched", "_run_agy_image_watched"},
+        "swarm": {"_run_text_worker", "_run_image_worker", "_run_text_worker_watched"},
+    }
+    for module, funcs in runners.items():
+        assert not funcs & found.get(module, set()), f"{module}: {funcs & found[module]}"
+
+
+def _backend_entries(tmp_path):
+    """(name, callable) for every code path that starts an agent CLI, called the way
+    its tool layer calls it. Each returns, or raises, once its first spawn is
+    refused or recorded."""
+    import claude_bridge
+    import codex_bridge
+    import copilot_bridge
+    import cursor_bridge
+    import grok_bridge
+    import kimi_bridge
+    import muse_bridge
+    import opencode_bridge
+    import server
+    import swarm
+
+    ws = str(tmp_path / "ws")
+    target = str(tmp_path / "img.png")
+    return [
+        ("codex", lambda: codex_bridge.run_codex("p", ws, "read-only", None, False, 5, pin=False)),
+        (
+            "codex-stream",
+            lambda: codex_bridge.run_codex_streaming("p", ws, "read-only", None, False, 5),
+        ),
+        ("copilot", lambda: copilot_bridge.run_copilot("p", ws, "read-only", None, False, 5)),
+        ("cursor", lambda: cursor_bridge.run_cursor("p", ws, "read-only", None, False, 5)),
+        ("grok", lambda: grok_bridge.run_grok("p", ws, "read-only", None, False, 5)),
+        ("kimi", lambda: kimi_bridge.run_kimi("p", ws, None, False, 5)),
+        ("muse", lambda: muse_bridge.run_muse("p", ws, "read-only", None, False, 5)),
+        ("opencode", lambda: opencode_bridge.run_opencode("p", ws, "read-only", None, False, 5)),
+        ("claude", lambda: claude_bridge.run_claude("p", ws, "read-only", None, False, 5)),
+        ("agy", lambda: server._run_agy("p", ws, False, 5, pin=False)),
+        ("swarm-agy-text", lambda: swarm._run_text_worker(0, "p", ws, None, 5)),
+        ("swarm-agy-image", lambda: swarm._run_image_worker(0, "p", target, ws, 5)),
+    ]
+
+
+_BACKEND_ENTRY_NAMES = [
+    "codex",
+    "codex-stream",
+    "copilot",
+    "cursor",
+    "grok",
+    "kimi",
+    "muse",
+    "opencode",
+    "claude",
+    "agy",
+    "swarm-agy-text",
+    "swarm-agy-image",
+]
+
+
+def _run_entry(fn):
+    try:
+        return fn()
+    except Exception as e:  # noqa: BLE001 - the point is what was spawned, not how it ended
+        return e
+
+
+@pytest.fixture
+def no_probe_caches(monkeypatch):
+    """Version probes are cached per process; clear them so each entry point starts
+    from nothing."""
+    import claude_bridge
+    import opencode_bridge
+
+    monkeypatch.setattr(opencode_bridge, "_VERSION_CACHE", None)
+    monkeypatch.setattr(opencode_bridge, "_MAJOR_CACHE", None)
+    monkeypatch.setattr(claude_bridge, "_VERSION_CACHE", None)
+
+
+@pytest.fixture
+def gates_pinned(monkeypatch):
+    """Pin the version gates and agy's capability probes, so an agent run's own spawn is
+    the first one it makes and nothing stops it before the guard does."""
+    import claude_bridge
+    import opencode_bridge
+    import server
+    import swarm
+
+    monkeypatch.setattr(opencode_bridge, "_MAJOR_CACHE", 1)
+    monkeypatch.setattr(claude_bridge, "claude_version", lambda: "2.1.319 (Claude Code)")
+    monkeypatch.setattr(server, "_AGY_JSON_SUPPORT", False)
+    monkeypatch.setattr(server, "_AGY_SLASH_GATE", False)
+    monkeypatch.setattr(swarm, "_ISOLATION_OK", True)
+
+
+@pytest.mark.parametrize("name", _BACKEND_ENTRY_NAMES)
+def test_every_backend_spawn_carries_the_incremented_depth(
+    name, spawns, no_probe_caches, tmp_path, monkeypatch
+):
+    monkeypatch.setenv(proc_tree.DEPTH_ENV, "1")
+    _run_entry(dict(_backend_entries(tmp_path))[name])
+    assert spawns, f"{name}: no spawn was attempted: the entry point never reached proc_tree"
+    for args, env in spawns:
+        assert env is not None, f"{name}: spawned {args[:2]} without an explicit env"
+        assert env[proc_tree.DEPTH_ENV] == "2", f"{name}: child depth is not parent + 1"
+
+
+@pytest.mark.parametrize("name", _BACKEND_ENTRY_NAMES)
+def test_every_backend_starts_at_depth_one_when_nothing_is_set(
+    name, spawns, no_probe_caches, tmp_path
+):
+    _run_entry(dict(_backend_entries(tmp_path))[name])
+    assert spawns
+    assert all(env[proc_tree.DEPTH_ENV] == "1" for _, env in spawns)
+
+
+@pytest.mark.parametrize("name", _BACKEND_ENTRY_NAMES)
+def test_at_the_limit_nothing_that_reaches_a_process_is_an_agent_run(
+    name, spawns, popen_calls, no_probe_caches, tmp_path, monkeypatch
+):
+    # Probes may spawn at the limit (a version gate, agy's capability check); an agent
+    # run may not. Every argv that reached subprocess.Popen must belong to a call that
+    # declared itself a probe.
+    monkeypatch.setenv(proc_tree.DEPTH_ENV, "2")
+    _run_entry(dict(_backend_entries(tmp_path))[name])
+    probe_argvs = [c["argv"] for c in popen_calls if not c["starts_agent"]]
+    for argv, _ in spawns:
+        assert argv in probe_argvs, f"{name}: an agent run reached Popen: {argv[:3]}"
+    assert all(c["refused"] for c in popen_calls if c["starts_agent"]), name
+
+
+@pytest.mark.parametrize("name", _BACKEND_ENTRY_NAMES)
+def test_at_the_limit_an_agent_run_is_refused_not_merely_never_reached(
+    name, spawns, popen_calls, gates_pinned, tmp_path, monkeypatch
+):
+    # With the gates pinned the agent's own spawn is attempted, and the guard says no.
+    monkeypatch.setenv(proc_tree.DEPTH_ENV, "2")
+    _run_entry(dict(_backend_entries(tmp_path))[name])
+    agent_calls = [c for c in popen_calls if c["starts_agent"]]
+    assert agent_calls, f"{name}: no agent run was even attempted"
+    assert all(c["refused"] for c in agent_calls), f"{name}: an agent run was not refused"
+    probe_argvs = [c["argv"] for c in popen_calls if not c["starts_agent"]]
+    assert all(argv in probe_argvs for argv, _ in spawns)
+
+
+def test_the_entry_list_covers_every_backend_that_spawns_a_cli():
+    # A new backend must be added to _backend_entries, or its spawns go untested.
+    import server
+
+    covered = {n.split("-")[0] for n in _BACKEND_ENTRY_NAMES}
+    wanted = {"agy" if b == "antigravity" else b for b in server.BACKENDS}
+    assert wanted <= covered | {"swarm"}, wanted - covered
+
+
+@pytest.mark.parametrize(
+    "name", ["codex", "copilot", "cursor", "grok", "kimi", "muse", "opencode", "claude"]
+)
+def test_a_bridge_run_at_the_limit_says_why(name, spawns, gates_pinned, tmp_path, monkeypatch):
+    monkeypatch.setenv(proc_tree.DEPTH_ENV, "2")
+    with pytest.raises(RuntimeError, match="nested 2 agents deep"):
+        dict(_backend_entries(tmp_path))[name]()
+
+
+def test_a_swarm_worker_at_the_limit_fails_in_place_with_the_reason(
+    spawns, gates_pinned, tmp_path, monkeypatch
+):
+    import swarm
+
+    monkeypatch.setenv(proc_tree.DEPTH_ENV, "2")
+    res = swarm._run_text_worker(0, "p", str(tmp_path / "ws"), None, 5)
+    assert res.ok is False and "nested 2 agents deep" in (res.error or "")
+
+
+# ---- status and doctor keep working at the limit
+
+
+class _ProbeProc:
+    """A process that exits at once with a short, harmless answer, for the probes."""
+
+    def __init__(self, args, **kwargs):
+        self.args = args
+        self.pid = -1
+        self.returncode = 0
+        self.stdout = io.StringIO("1.2.3\n")
+        self.stderr = io.StringIO("")
+
+    def communicate(self, timeout=None):
+        return "1.2.3\n", ""
+
+    def poll(self):
+        return 0
+
+    def wait(self, timeout=None):
+        return 0
+
+    def kill(self):
+        pass
+
+
+@pytest.fixture
+def probes_at_the_limit(monkeypatch):
+    """Depth 2, every probe answered by _ProbeProc, and a record of what was spawned."""
+    import claude_bridge
+    import opencode_bridge
+
+    spawned = []
+
+    def fake(args, *a, **k):
+        spawned.append(list(args))
+        return _ProbeProc(args, **k)
+
+    monkeypatch.setattr(subprocess, "Popen", fake)
+    monkeypatch.setenv(proc_tree.DEPTH_ENV, "2")
+    monkeypatch.setenv("AGY_BRIDGE_NO_UPDATE_CHECK", "1")
+    for module in (claude_bridge, opencode_bridge):
+        monkeypatch.setattr(module, "_VERSION_CACHE", None)
+    monkeypatch.setattr(opencode_bridge, "_MAJOR_CACHE", None)
+    return spawned
+
+
+def _status_entries():
+    import claude_bridge
+    import codex_bridge
+    import copilot_bridge
+    import cursor_bridge
+    import grok_bridge
+    import kimi_bridge
+    import muse_bridge
+    import opencode_bridge
+    import server
+
+    return {
+        "codex": codex_bridge.status_rows,
+        "copilot": copilot_bridge.status_rows,
+        "cursor": cursor_bridge.status_rows,
+        "grok": grok_bridge.status_rows,
+        "kimi": kimi_bridge.status_rows,
+        "muse": muse_bridge.status_rows,
+        "opencode": opencode_bridge.status_rows,
+        "claude": claude_bridge.status_rows,
+        "antigravity": server._agy_status_rows,
+    }
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["codex", "copilot", "cursor", "grok", "kimi", "muse", "opencode", "claude", "antigravity"],
+)
+def test_every_backends_status_rows_work_at_the_limit(name, probes_at_the_limit):
+    rows = _status_entries()[name]()
+    assert rows and all(len(r) == 3 and isinstance(r[1], bool) for r in rows)
+    assert probes_at_the_limit, f"{name}: no probe ran at the limit"
+
+
+def test_the_bridge_rows_show_the_nesting_row_without_hiding_the_others(probes_at_the_limit):
+    import server
+
+    rows = server._bridge_status_rows()
+    labels = [r[0] for r in rows]
+    assert labels[0] == "bridge version" and labels[-1] == "nesting"
+    nesting = rows[-1]
+    assert nesting[1] is False  # shown as a warning
+    assert nesting[2].startswith("delegation from here is refused")
+    assert "2 agents deep" in nesting[2] and "AGENT_INTERN_DEPTH=2" in nesting[2]
+    assert nesting[2].endswith("the checks below still run")
+
+
+def test_doctor_works_at_the_limit_and_shows_the_nesting_row(probes_at_the_limit):
+    import doctor
+    import server
+
+    bridge_rows, per_backend = doctor.collect(server.ENABLED_BACKENDS)
+    data = doctor.report(bridge_rows, per_backend)
+    assert any(r["label"] == "nesting" and r["ok"] is False for r in data["bridge"])
+    for backend in data["backends"]:
+        crashed = [r for r in backend["rows"] if r["label"] == f"{backend['name']} status"]
+        assert not crashed, f"{backend['name']}: its status check crashed at the limit"
+    text = doctor.render(data)
+    assert "delegation from here is refused" in text and "status check crashed" not in text
+
+
+def test_the_status_tools_work_at_the_limit(probes_at_the_limit):
+    import claude_tools
+
+    out = claude_tools.claude_status()
+    assert "nesting" in out and "claude CLI" in out
+    assert "Overall: PROBLEMS FOUND" in out  # the nesting row is a warning, not an error

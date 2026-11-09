@@ -49,17 +49,13 @@ async def muse_ask(
     watch: bool = False,
     ctx: Optional[Context] = None,
 ) -> str:
-    """Ask Meta's Muse Code (`muse exec`) a question or task in a NEW session. EXPERIMENTAL.
-
-    ⚠️ The real model has never answered through this bridge — the author has no
-    Muse plan. Muse's built-in offline `echo` provider verified everything else
-    end to end (argv, event stream, answer, session resume), so a failure here is
-    most likely auth or the model itself. If it misbehaves, say so plainly and
-    please report it.
-
-    Needs a Muse Code plan (`muse login`) or a META_API_KEY; run `muse_status`
-    first. Returns the agent's final message (the `run_terminal` event of
-    `muse exec --json`). Point `workspace` at a project dir for repo context.
+    """Best for Meta's Muse Spark models (Muse Code, `muse exec`), in a NEW session.
+    EXPERIMENTAL: the real model has never answered through this bridge (its offline
+    echo provider verified the rest), so if it misbehaves say so plainly. Needs a Muse
+    plan (`muse login`) or META_API_KEY; run muse_status first. Pass workspace=<project
+    dir>; without it the sub-agent sees no repo. Follow up with muse_continue. read-only
+    switches its write/shell/web tools off on every OS. Autonomous agent: trusted
+    prompts only.
 
     Args:
         prompt: Question or instruction for Muse. Passed in a file, never argv.
@@ -108,14 +104,11 @@ async def muse_continue(
     watch: bool = False,
     ctx: Optional[Context] = None,
 ) -> str:
-    """Continue the Muse session rooted at this workspace. EXPERIMENTAL.
-
-    Resumes the exact session the last muse_ask in this workspace created (the
-    bridge names each session itself with `--session-id`). After a server restart
-    it falls back to muse's own record of the workspace's most recent session
-    (`muse export --last`); with no session there at all it errors rather than
-    silently starting a fresh one. Muse applies safety flags per run, so `sandbox`
-    takes effect here too. Same experimental caveat and auth needs as muse_ask.
+    """Continue the Muse session (EXPERIMENTAL): resumes the thread rooted at this
+    workspace (after a restart, muse's own record of the newest one there), so pass the
+    same workspace=<project dir> as the ask (without it the sub-agent sees no repo).
+    Errors rather than starting fresh when there is none. `sandbox` applies per turn.
+    Autonomous agent: trusted prompts only.
 
     Args:
         prompt: Follow-up message for the existing session.
@@ -148,15 +141,11 @@ async def muse_continue(
     }
 )
 def muse_status() -> str:
-    """Report diagnostics for the Muse Code bridge setup (spends no quota).
-
-    Reports the bridge's own version and any newer release, then whether `muse` is
-    found (and which binary the bridge runs), whether credentials are present
-    (META_API_KEY or a `muse login`), any cached model catalog, the Windows OS
-    sandbox state, and where muse keeps its data. Muse has no free auth probe, so a
-    green auth row means credentials exist, not that they are still valid. This
-    backend is EXPERIMENTAL: green here means the setup looks right, not that a real
-    answer has ever been confirmed.
+    """Check the Muse Code setup (EXPERIMENTAL). Spends no quota; run it first when a call
+    says "not found". Its `bridge version` row says when a newer agent-intern release is
+    out: if so, tell the user. Also checks which muse binary runs, whether credentials
+    exist (not whether they are valid: Muse has no free auth probe), the model catalog,
+    the Windows sandbox state, and where muse keeps its data.
     """
     rows = server._bridge_status_rows() + muse_bridge.status_rows()
     width = max(len(label) for label, _, _ in rows)
