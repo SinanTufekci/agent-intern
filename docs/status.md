@@ -18,6 +18,27 @@ Version-by-version compatibility notes: what changed upstream, what the bridge d
   and teaches the file tools UTF-16 and legacy code-page files (PowerShell scripts with non-ASCII text
   are now written with a byte order mark). Not re-checked: watch mode, `antigravity_image_swarm`, plan
   mode, `schema`. `VERIFIED_AGY_VERSION` becomes `(1, 5, 3)`.
+- ✅ **The 0.36 guidance, checked in all five hosts (2026-11-09).** With the 0.36 server (instructions
+  3,407 characters, no tool description over 528) each host was asked, with no tool call, how many tools
+  it had, what the last 25 characters of the instructions were, and which planted `MARK-…` strings it
+  could see; then to call `opencode_status` and `claude_status`.
+  - **Claude Code 2.1.319:** 29 tools (the `claude_*` three are hidden inside it). The instructions
+    arrive whole, with no `[truncated]`. The status call worked.
+  - **Copilot CLI 1.0.105** (with `--allow-all-mcp-server-instructions`) and **Cursor CLI 2026.11.05**
+    (with `--approve-mcps`; `--force` for the calls): 32 tools, instructions whole, both status calls
+    worked. **agy 1.5.3:** 32 tools listed by name only, no instructions. Its headless run denies an MCP
+    call unless `settings.json` has an allow-rule; `{"permissions": {"allow": ["mcp(*)"]}}` was enough
+    (narrower targets were not tried alone). **opencode 2.2.5:** the model counts no separate tools,
+    because they sit behind Code Mode (`await tools["agent-intern"].claude_status()` answered), and said
+    it had no instructions for the third time on the free model.
+  - **Which rules file each host loads** (one marker planted in each convention in a scratch
+    workspace): Claude Code reads `CLAUDE.md` only. agy reads `AGENTS.md` and `GEMINI.md`. Copilot reads
+    `.github/copilot-instructions.md`, `AGENTS.md`, `CLAUDE.md` and `GEMINI.md`. Cursor reads
+    `.cursor/rules`, `CLAUDE.md` and `AGENTS.md`. opencode reads `AGENTS.md` only. So `AGENTS.md` is the
+    one file every host but Claude Code loads. A `CLAUDE.md` that imports `AGENTS.md`, and rules files
+    in the home directory, were not tried.
+  - Per-run flags, a scratch workspace and (for agy) a throwaway home directory were used throughout:
+    the real agy MCP config's hash did not change, and no Copilot or Cursor user-level MCP file exists.
 - ⚠️ **How each host hands this server's guidance to its model.** Measured on 2026-11-09 with a scratch
   stdio server whose instructions and descriptions are built from 100-character slices that start
   with a marker (`<00100>`, `<00200>`, …); the model reports the highest marker it can see.
