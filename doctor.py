@@ -62,6 +62,12 @@ _CHECKS: dict[str, tuple[str, Optional[str], str, str]] = {
         "install cursor-agent (https://cursor.com/cli), or set CURSOR_BIN",
         "run `cursor-agent login` once, or set CURSOR_API_KEY",
     ),
+    "claude": (
+        "claude CLI",
+        "claude auth",
+        "install Claude Code (https://claude.com/claude-code), or set CLAUDE_BIN",
+        "run `claude auth login`, or set ANTHROPIC_API_KEY",
+    ),
     "grok": (
         "grok CLI",
         "grok auth",
@@ -314,8 +320,31 @@ def _parser() -> argparse.ArgumentParser:
     )
     doc.add_argument("-v", "--verbose", action="store_true", help="show every check")
     doc.add_argument("--json", action="store_true", help="print the result as JSON")
+    sub.add_parser(
+        "rules",
+        help="print the routing guide to paste into a host's rules file",
+        description=(
+            "Print the routing guide: the same text this server sends as MCP "
+            "instructions, for the backends AGENT_INTERN_BACKENDS enables. Paste it "
+            "into a host's rules file for hosts that don't show MCP instructions to "
+            "their model (the agy CLI, Copilot without its flag)."
+        ),
+    )
     sub.add_parser("help", help="show this help and exit")
     return parser
+
+
+def print_rules() -> None:
+    """Write SERVER_INSTRUCTIONS to stdout as UTF-8 bytes, so a redirect on Windows
+    (`agent-intern rules > AGENTS.md`) is not written in the legacy codepage."""
+    data = (server.SERVER_INSTRUCTIONS + "\n").encode("utf-8")
+    raw = getattr(sys.stdout, "buffer", None)
+    if raw is None:  # a replaced stdout (tests) takes text
+        sys.stdout.write(data.decode("utf-8"))
+        return
+    sys.stdout.flush()
+    raw.write(data)
+    raw.flush()
 
 
 def _utf8_safe_stdout() -> None:
@@ -332,6 +361,9 @@ def cli(argv: list[str]) -> int:
     """`agent-intern <argv>` for the terminal commands; returns the exit code."""
     parser = _parser()
     args = parser.parse_args(argv)
+    if args.command == "rules":
+        print_rules()
+        return 0
     if args.command != "doctor":
         parser.print_help()
         return 0

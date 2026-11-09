@@ -14,6 +14,7 @@ import pytest
 
 import kimi_bridge
 import server
+from conftest import hide_env
 
 
 class _Proc:
@@ -31,7 +32,7 @@ def _fake_run(record=None, *, returncode=0, stdout="", stderr=""):
     def run(*a, **k):
         if record is not None:
             record["argv"] = a[0] if a else k.get("args")
-            record["kwargs"] = k
+            record["kwargs"] = hide_env(k)
         return _Proc(returncode=returncode, stdout=stdout, stderr=stderr)
 
     return run

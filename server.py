@@ -468,20 +468,36 @@ from fastmcp import Context, FastMCP
 
 import proc_tree
 
-# Server-level instructions. The MCP client sends these to its model on connect
-# (Claude Code surfaces them as an "MCP Server Instructions" block), so EVERY
-# user who installs the bridge gets their host model taught how and WHEN to reach
-# for these tools — without ever opening the README. Keep this a tight ROUTING
-# guide, not a manual: it costs context tokens in every session, and per-tool
-# detail already lives in each tool's own description/annotations. The highest-
-# value content here is what a model can't infer from tool schemas alone —
-# proactive triggers, which backend to pick, and the workspace footgun.
+# Server-level instructions: the routing guide. An MCP client may send these to its
+# model on connect, so a host model learns how and WHEN to reach for these tools
+# without anyone opening the README. Not every host does (measured 2026-11, 0.36):
+#   - Claude Code 2.1.319 cuts instructions AND each tool description at 4,096 chars
+#     (older versions at 2,048);
+#   - Copilot forwards them only with --allow-all-mcp-server-instructions;
+#   - the agy CLI forwards neither instructions nor descriptions up front.
+# So the text is ORDERED for truncation: the offer trigger, a one-line picker and
+# the workspace rule come first and stand on their own within ~1,900 chars; per-
+# backend detail, mechanics, the status/version relay and watch follow, and
+# Security is last. The largest variant (every backend on) stays <= 3,800 chars,
+# which a test pins. What a host never shows is covered twice more: every tool
+# description repeats the workspace rule and its own routing sentence, and
+# `agent-intern rules` prints this exact text for a host's own rules file.
 #
 # The text is assembled from the backends AGENT_INTERN_BACKENDS turns on (see
 # _parse_backends), so it never routes the model to a tool the server dropped.
 
 # Every backend, in the order the instructions list them.
-BACKENDS = ("antigravity", "codex", "copilot", "cursor", "grok", "opencode", "kimi", "muse")
+BACKENDS = (
+    "antigravity",
+    "codex",
+    "copilot",
+    "cursor",
+    "claude",
+    "grok",
+    "opencode",
+    "kimi",
+    "muse",
+)
 
 # The backends agent_swarm can dispatch to: all but Kimi.
 _SWARM_BACKENDS = frozenset(BACKENDS) - {"kimi"}
@@ -494,47 +510,53 @@ _BACKEND_TITLES = {
     "codex": "OpenAI Codex",
     "copilot": "GitHub Copilot",
     "cursor": "Cursor",
+    "claude": "Claude Code",
     "grok": "Grok Build (xAI, EXPERIMENTAL)",
     "opencode": "opencode (any model, incl. FREE ones)",
     "kimi": "Kimi Code (Moonshot, EXPERIMENTAL)",
     "muse": "Muse Code (Meta, EXPERIMENTAL)",
 }
 
-# Each backend's line under "Pick a backend".
+# Each backend's clause in the one-line picker near the top.
+_BACKEND_PICKS = {
+    "antigravity": "antigravity_* for fast, cheap calls and images",
+    "codex": "codex_* for the hardest reasoning and a real OS sandbox",
+    "copilot": "copilot_* on a Copilot plan",
+    "cursor": "cursor_* on a Cursor plan (GPT/Claude/Grok models)",
+    "claude": "claude_* for large refactors and careful reviews",
+    "grok": "grok_* on a SuperGrok plan",
+    "opencode": "opencode_* when the user has no subscription (free models)",
+    "kimi": "kimi_* on a Kimi plan",
+    "muse": "muse_* on a Muse plan",
+}
+
+# Each backend's detail line under "Backends".
 _BACKEND_GUIDES = {
     "antigravity": """\
-- antigravity_* (Gemini) — fast, cheap tool-calling; the ONLY image model. No \
-real sandbox, so trusted prompts only.""",
+- antigravity_* (Gemini) — the only image model; no real sandbox.""",
     "codex": """\
-- codex_* (OpenAI) — strongest reasoning and real repo edits behind a REAL \
-enforced sandbox (read-only by default; pass sandbox="workspace-write" to let \
-it edit files).""",
+- codex_* (OpenAI) — a REAL OS sandbox: read-only by default, \
+sandbox="workspace-write" to let it edit.""",
     "copilot": """\
-- copilot_* (GitHub) — agentic coding on a Copilot plan; sandbox is best-effort, \
-not an OS boundary.""",
+- copilot_* (GitHub) — best-effort sandbox, not an OS boundary.""",
     "cursor": """\
-- cursor_* (Cursor) — agentic coding on a Cursor plan, with a wide model menu \
-(GPT/Claude/Grok/Composer via `model`); sandbox is agent-enforced (read-only = \
-ask mode), not an OS boundary.""",
+- cursor_* (Cursor) — wide model menu via `model`; agent-enforced sandbox \
+(read-only = ask mode).""",
+    "claude": """\
+- claude_* (Claude Code) — agent-enforced sandbox; workspace-write edits files \
+but runs no shell.""",
     "grok": """\
-- grok_* (Grok Build, xAI — EXPERIMENTAL, never live-verified) — needs SuperGrok \
-/ X Premium+ or XAI_API_KEY. Real OS sandbox, but on LINUX/macOS ONLY: on Windows \
-it silently does not enforce, so read-only there rests on a tool allowlist.""",
+- grok_* (Grok Build, EXPERIMENTAL, never live-verified) — needs SuperGrok or \
+XAI_API_KEY; its OS sandbox works on Linux/macOS only.""",
     "opencode": """\
-- opencode_* (opencode, SST) — the ONLY backend that needs no subscription: its \
-free `opencode/*` models answer with zero credentials, so reach for it when the \
-user has no other plan, when you want a model family none of the others cover, \
-or to spare a paid quota. Add a key for Claude/GPT-class models. Sandbox is \
-agent-enforced (a permission policy), not an OS boundary, but it behaves the \
-same on every platform. Its free models answer a short prompt in seconds.""",
+- opencode_* (opencode) — free `opencode/*` models need no account and answer in \
+seconds; add a key for Claude/GPT-class models. Agent-enforced sandbox.""",
     "kimi": """\
-- kimi_* (Kimi Code, Moonshot — EXPERIMENTAL, never live-verified) — Kimi K2 \
-family; like antigravity it has NO sandbox and auto-executes tools, so trusted \
-prompts only. Needs `kimi login` or an API key.""",
+- kimi_* (Kimi Code, EXPERIMENTAL, never live-verified) — NO sandbox; needs \
+`kimi login` or an API key.""",
     "muse": """\
-- muse_* (Muse Code, Meta — EXPERIMENTAL; real model never live-verified) — Muse \
-Spark models; needs a Muse plan (`muse login`) or META_API_KEY. read-only switches \
-its write/shell/web tools off, so it holds on every OS.""",
+- muse_* (Muse Code, EXPERIMENTAL, real model unverified) — needs a Muse plan or \
+META_API_KEY; read-only switches its write/shell/web tools off.""",
 }
 
 
@@ -555,95 +577,117 @@ def _parse_backends(raw: Optional[str]) -> tuple[tuple[str, ...], list[str]]:
 
 
 def _server_instructions(enabled: tuple[str, ...]) -> str:
-    """The routing guide, covering only the `enabled` backends and their tools."""
+    """The routing guide, covering only the `enabled` backends and their tools.
+
+    Ordered for hosts that truncate it: see the note above BACKENDS."""
     titles = [_BACKEND_TITLES[b] for b in enabled]
     named = titles[0] if len(titles) == 1 else ", ".join(titles[:-1]) + " and " + titles[-1]
-    clis = "an external coding CLI" if len(enabled) == 1 else "external coding CLIs"
+    gains = "spends that quota instead of your tokens"
     if "antigravity" in enabled:
-        gains = (
-            "spends that quota instead of your tokens, gets a second model-family "
-            "opinion, or generates images"
-        )
+        gains += ", gets a second model-family opinion, and can generate images"
     else:
-        gains = "spends that quota instead of your tokens or gets a second model-family opinion"
-    intro = f"""\
-This server bridges {clis} — {named} — into your session as sub-agents that run \
-on the USER'S OWN quota. Delegating here {gains}."""
+        gains += " and gets a second model-family opinion"
+    intro = (
+        f"This server runs {named} as sub-agents on the USER'S OWN quota. Delegating here {gains}."
+    )
 
     triggers = []
     if "antigravity" in enabled:
-        triggers.append("""\
-- the user wants an IMAGE — antigravity_image is your only image generator \
-(antigravity_image_swarm for several at once).""")
+        triggers.append("- an IMAGE: antigravity_image (antigravity_image_swarm for several).")
     if _SWARM_BACKENDS.intersection(enabled):
-        triggers.append("""\
-- a job splits into many independent sub-tasks — agent_swarm runs them in \
-parallel, mixing any backends in one call.
-- the user wants something JUDGED, RESEARCHED or ATTACKED by several models — \
-preset_swarm runs a ready-made panel in one call: jury (rubric scores, \
-aggregated), research, red-team, council (code review). swarm_presets lists them.""")
-    triggers.append("""\
-- the work is bulk and mechanical (a rename across 30 files, boilerplate, a \
-first-pass port) — cheap for a sub-agent, expensive in your context.
-- you want a heavier or different-family model's take: a second opinion on a \
-risky diff, or a design call where one model's blind spot is the whole risk.""")
+        triggers.append(
+            "- many independent sub-tasks: agent_swarm runs them in parallel, mixing "
+            "backends.\n"
+            "- something to JUDGE, RESEARCH or ATTACK with several models: preset_swarm "
+            "(jury, research, red-team, council; swarm_presets lists them)."
+        )
+    triggers.append(
+        "- bulk, mechanical work (a rename across 30 files, boilerplate, a first-pass "
+        "port).\n"
+        "- a heavier or different-family second opinion on a risky diff or design call."
+    )
 
+    picks = "; ".join(_BACKEND_PICKS[b] for b in enabled)
     guides = [_BACKEND_GUIDES[b] for b in enabled]
     if _EXPERIMENTAL_BACKENDS.intersection(enabled):
-        guides.append("""\
-The experimental backends are unproven end-to-end: run their *_status first, and \
-tell the user plainly if one fails rather than retrying blindly.""")
-    pick = "Pick a backend:" if len(enabled) > 1 else "The backend:"
+        guides.append(
+            "Run an EXPERIMENTAL backend's *_status first, and tell the user plainly "
+            "if it fails rather than retrying."
+        )
 
     return f"""\
 {intro}
 
-Reach for these tools when:
-{chr(10).join(triggers)}
-
 {_INSTRUCTIONS_OFFER}
+{chr(10).join(triggers)}
+{_INSTRUCTIONS_DONT}
 
-{pick}
+Pick: {picks}.
+
+{_INSTRUCTIONS_WORKSPACE}
+
+Backends:
 {chr(10).join(guides)}
 
 {_INSTRUCTIONS_MECHANICS}"""
 
 
 _INSTRUCTIONS_OFFER = """\
-OFFER IT — don't wait to be asked. On a task that fits the triggers above, say \
-so in ONE line before you start: name the backend, the reason, and ask. \
-("This is 6 independent files — want me to farm them out in parallel instead \
-of grinding through them here?") The user is paying for these plans \
-already; a delegation they never hear about is one they can never take. Then \
-respect the answer: ask ONCE per task, never once per turn, and if they decline, \
-drop it for the rest of that task. Delegate without asking only for images, or \
-where the user has already said to delegate this kind of work.
+OFFER IT — don't wait to be asked. When a task fits one of these, say so in ONE \
+line before you start (backend and reason) and ask. Ask once per task; if the user \
+declines, drop it for that task. Delegate without asking only for images, or where \
+the user already said to:"""
 
-Don't offer, and don't delegate, when the job is a couple of tool calls, when it \
-leans on context only this conversation has, or when the ~10-30s round trip costs \
-more than just doing it. A suggestion on every task is nagging, not help."""
+_INSTRUCTIONS_DONT = """\
+Don't offer for a couple of tool calls, for work that leans on context only this \
+conversation has, or when the ~10-30 s round trip costs more than doing it."""
+
+_INSTRUCTIONS_WORKSPACE = """\
+ALWAYS pass workspace=<the project dir>. It defaults to the server's cwd, so \
+without it the sub-agent sees no repo: the most common mistake."""
 
 _INSTRUCTIONS_MECHANICS = """\
 Mechanics:
-- Pass `workspace` = the relevant project directory. It defaults to the server's \
-cwd, so WITHOUT it the sub-agent answers with no repo context — this is the most \
-common mistake.
-- *_continue resumes the thread rooted at a workspace; swarm workers are \
-one-shot (no continue).
-- watch=true opens a live browser view of the agent working (identical return \
-value).
-- *_status checks a backend is installed and logged in, and spends no quota — \
-use it if a call reports "not found". Its `bridge version` row also says when a \
-NEWER bridge release is out; if it does, tell the user in one line and give the \
-upgrade command the row names. The startup notice for this only reaches the \
-host's logs, so relaying it is the one way they hear about it.
+- *_continue resumes the thread rooted at that workspace; swarm workers are \
+one-shot.
+- *_status spends no quota: run it when a call says "not found". Its `bridge \
+version` row says when a newer agent-intern release is out; if so, tell the user \
+in one line, with the upgrade command it names. Nobody else will.
+- watch=true opens a live browser view of the agent (same return value).
 
-Security: every backend here runs as an autonomous agent, and only a real OS \
-sandbox (see each backend above) is a hard boundary. Use only with trusted \
-prompts on trusted content."""
+Security: every backend is an autonomous agent, and only a real OS sandbox is a \
+hard boundary. Use trusted prompts on trusted content only."""
+
+
+def _claude_hidden_in_claude_code(
+    enabled: tuple[str, ...], raw: Optional[str], env=None
+) -> tuple[tuple[str, ...], bool]:
+    """(`enabled` minus claude, True) when this server's host is Claude Code.
+
+    Claude Code sets CLAUDECODE=1 for the processes it starts, this server included,
+    and a claude backend there is the host delegating to itself: the same quota,
+    spent twice. So it is left out unless AGENT_INTERN_BACKENDS names claude
+    explicitly, which always wins. `raw` is AGENT_INTERN_BACKENDS as read."""
+    env = os.environ if env is None else env
+    if env.get("CLAUDECODE") != "1" or "claude" not in enabled:
+        return enabled, False
+    named = {n.lower() for n in re.split(r"[,\s]+", (raw or "").strip()) if n}
+    if "claude" in named:
+        return enabled, False
+    rest = tuple(b for b in enabled if b != "claude")
+    return (rest or enabled), bool(rest)
+
+
+CLAUDE_HIDDEN_NOTE = (
+    "claude is off because the host is Claude Code (CLAUDECODE=1); to turn it on "
+    "anyway, name claude in AGENT_INTERN_BACKENDS"
+)
 
 # Read once at import, like AGY_BIN below; the launching process's environment wins.
 ENABLED_BACKENDS, _UNKNOWN_BACKENDS = _parse_backends(os.environ.get("AGENT_INTERN_BACKENDS"))
+ENABLED_BACKENDS, CLAUDE_HIDDEN = _claude_hidden_in_claude_code(
+    ENABLED_BACKENDS, os.environ.get("AGENT_INTERN_BACKENDS")
+)
 
 SERVER_INSTRUCTIONS = _server_instructions(ENABLED_BACKENDS)
 
@@ -651,7 +695,7 @@ SERVER_INSTRUCTIONS = _server_instructions(ENABLED_BACKENDS)
 # installed package metadata, which goes stale on editable installs). Keep in
 # sync with pyproject.toml's version. Compared at startup against the latest
 # tag on GitHub so a long-lived clone learns when to `git pull`.
-__version__ = "0.35.0"
+__version__ = "0.36.0"
 
 # Passed explicitly: without it the MCP handshake's serverInfo.version reports
 # fastmcp's own version, not the bridge's.
@@ -687,6 +731,11 @@ _AGY_LOCK = threading.Lock()
 # Latest agy version the bridge's state-file assumptions were verified against.
 # Newer agy releases may change paths/schemas (the SQLite migration is the known
 # risk), so we warn at startup if the installed agy is newer than this.
+#
+# 1.5.3 re-verification (live, Windows, 2026-11-09, feat/0.36): ask, continue, an
+# image, a two-worker swarm and a cut-short turn (the 1.5.0 exit-3 timeout) held;
+# nothing in 1.5.2/1.5.3 touches the bridge's path. The model list, the default
+# model and base names were NOT re-checked on 1.5.3 (see the 1.5.1 note).
 #
 # 1.5.1 re-verification (live, Windows, 2026-11-05, this branch): two releases and
 # one REAL change. Ask, continue in the same conversation, an image, a two-worker
@@ -771,7 +820,7 @@ _AGY_LOCK = threading.Lock()
 # transcript and status went green -- so an empty newest-conversation is a stale
 # artifact, not a regression. (Issue #8: the row now skips such conversations, and
 # ones still running or whose turn failed; see _transcript_status_row.)
-VERIFIED_AGY_VERSION = (1, 5, 1)
+VERIFIED_AGY_VERSION = (1, 5, 3)
 
 # First agy version whose print mode understands `--output-format json` (1.1.8).
 # Below this the flag is unknown to agy's parser, so the bridge must not pass it
@@ -1018,6 +1067,7 @@ def _get_agy_version() -> Optional[str]:
     try:
         proc = proc_tree.run_captured(
             [AGY_BIN, "--version"],
+            starts_agent=False,  # a probe, not an agent run
             stdin=subprocess.DEVNULL,
             **_TEXT,
             timeout=15,
@@ -1511,7 +1561,10 @@ def _backends_status() -> tuple[str, bool, str]:
     detail = f"on: {', '.join(ENABLED_BACKENDS)}"
     if off:
         detail += f"; off: {', '.join(off)}"
-    detail += " (AGENT_INTERN_BACKENDS)"
+    if os.environ.get("AGENT_INTERN_BACKENDS", "").strip():
+        detail += " (AGENT_INTERN_BACKENDS)"
+    if CLAUDE_HIDDEN:
+        detail += f"; {CLAUDE_HIDDEN_NOTE}"
     if _UNKNOWN_BACKENDS:
         detail += (
             f"; ignored unknown name(s) {', '.join(map(repr, _UNKNOWN_BACKENDS))}"
@@ -1527,6 +1580,17 @@ def _bridge_status_rows() -> list[tuple[str, bool, str]]:
     rows = [_bridge_version_status()]
     if ENABLED_BACKENDS != BACKENDS or _UNKNOWN_BACKENDS:
         rows.append(_backends_status())
+    depth = proc_tree.current_depth()
+    if depth >= proc_tree.MAX_DEPTH:
+        rows.append(
+            (
+                "nesting",
+                False,
+                f"delegation from here is refused: this server is {depth} agents deep "
+                f"({proc_tree.DEPTH_ENV}={depth}, limit {proc_tree.MAX_DEPTH}); the checks "
+                "below still run",
+            )
+        )
     return rows
 
 
@@ -1940,6 +2004,7 @@ def _read_agy_usage() -> Optional[str]:
     try:
         proc = proc_tree.run_captured(
             [AGY_BIN, "--print-timeout", "20s", "-p", "/usage"],
+            starts_agent=False,  # a probe, not an agent run
             stdin=subprocess.DEVNULL,
             **_TEXT,
             timeout=25,
@@ -2336,6 +2401,7 @@ def list_agy_models() -> list[str]:
         try:
             proc = proc_tree.run_captured(
                 [AGY_BIN, "models"],
+                starts_agent=False,  # a probe, not an agent run
                 stdin=subprocess.DEVNULL,
                 **_TEXT,
                 timeout=20,
@@ -3169,6 +3235,7 @@ import swarm_tools  # noqa: E402
 import codex_tools  # noqa: E402
 import copilot_tools  # noqa: E402
 import cursor_tools  # noqa: E402
+import claude_tools  # noqa: E402
 import grok_tools  # noqa: E402
 import kimi_tools  # noqa: E402
 import opencode_tools  # noqa: E402
@@ -3181,6 +3248,7 @@ _TOOL_MODULES = (
     codex_tools,
     copilot_tools,
     cursor_tools,
+    claude_tools,
     grok_tools,
     kimi_tools,
     opencode_tools,
@@ -3220,7 +3288,7 @@ def __getattr__(name: str):
 # The first argument that makes `agent-intern` a terminal command instead of the
 # stdio server. Anything else, including no argument at all, runs the server exactly
 # as before: an MCP host config that passes an unrelated argument must keep working.
-_CLI_COMMANDS = frozenset({"doctor", "help", "--help", "-h"})
+_CLI_COMMANDS = frozenset({"doctor", "rules", "help", "--help", "-h"})
 _VERSION_FLAGS = frozenset({"--version", "-V"})
 
 

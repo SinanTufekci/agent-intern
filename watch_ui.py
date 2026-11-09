@@ -224,7 +224,7 @@ BASE_JS = r"""
 const $=id=>document.getElementById(id);
 const Q=new URLSearchParams(location.search);
 const K=encodeURIComponent(Q.get("k")||"");
-const BK={antigravity:"agy",agy:"agy",codex:"codex",copilot:"copilot",cursor:"cursor",grok:"grok",opencode:"opencode",muse:"muse"};
+const BK={antigravity:"agy",agy:"agy",codex:"codex",copilot:"copilot",cursor:"cursor",grok:"grok",opencode:"opencode",muse:"muse",claude:"claude"};
 const MONO={agy:"Ag",codex:"Cx",copilot:"Cp",cursor:"Cu",grok:"Gk",opencode:"Oc",muse:"Mu"};
 const LOGO=__LOGOS__;
 const NAMES={agy:"Antigravity",codex:"Codex",copilot:"GitHub Copilot",cursor:"Cursor",grok:"Grok",opencode:"opencode",muse:"Muse",claude:"Claude"};

@@ -22,10 +22,10 @@ contains the fix — for example
 
 ## ⚠️ Security
 
-All eight backends run the model as an **autonomous agent**. The difference is whether you get a real
-boundary: Codex enforces one everywhere and Grok on Linux/macOS only; Copilot, Cursor and opencode
-offer best-effort, agent-enforced ones (opencode's is the only one that behaves identically on every
-platform); Antigravity and Kimi offer none.
+All nine backends run the model as an **autonomous agent**. The difference is whether you get a real
+boundary: Codex enforces one everywhere and Grok on Linux/macOS only; Copilot, Cursor, opencode and
+Claude Code offer best-effort, agent-enforced ones (opencode's is the only one that behaves
+identically on every platform); Antigravity and Kimi offer none.
 
 ### Antigravity — no usable boundary
 
@@ -231,6 +231,25 @@ under `workspace-write` (dated 2026-11-09), and the `.env` read rules.
 still refuses reaching outside the workspace, as above; that has not been re-checked on 1.x
 recently.
 
+### Claude Code — agent-enforced, no shell in workspace-write
+
+The Claude Code backend (`claude_ask`, `claude_continue`) is for hosts other than Claude Code, and is
+hidden inside Claude Code itself. It runs `claude -p` and maps `sandbox` to Claude Code's own
+permission settings. **Every mode is enforced by Claude Code itself, and none is an OS boundary for
+file edits.** Claude Code's own OS sandbox covers shell commands only, and doesn't run on native
+Windows, so the bridge doesn't rely on it.
+
+- **`read-only`** (default) — reads and searches files: no Write, Edit or Bash, and no web. Checked
+  live on claude 2.1.319 / Windows: write and shell attempts did nothing.
+- **`workspace-write`** — file edits are confined to the workspace (checked live: an edit inside
+  was written, one outside was refused). It runs **no shell commands at all**, so it can't run tests
+  or builds; use `claude_continue` with a fix request instead of expecting a verify step.
+- **`danger-full-access`** — every permission check is skipped (`bypassPermissions`), and your own
+  Claude Code settings apply. **Not verified live.** Avoid.
+
+The bridge doesn't use `--bare`, because that mode ignores OAuth logins and would lock out anyone on
+a Claude plan. `claude_status` shows how you're signed in, but never your e-mail or organisation.
+
 ### Kimi — no boundary at all
 
 `kimi -p` has **no sandbox and no `sandbox` argument**. Print mode auto-executes every tool call with
@@ -255,6 +274,15 @@ approval prompts, so every mode disables approval; the containment comes from wh
 
 ⚠️ This backend is [experimental](backends.md#experimental-backends): the real model has never
 answered through the bridge, so none of this has been observed under a real tool call.
+
+### Nesting limit
+
+An agent that agent-intern starts can load agent-intern too, if its own host config registers it,
+and that copy would then start another agent, and so on. Every agent agent-intern starts
+now gets `AGENT_INTERN_DEPTH` one higher than the server that started it, and a server at depth 2
+starts nothing and says so: host → agent → agent is as deep as it goes. A backend that loads
+agent-intern can therefore delegate **one level further, and no deeper**. The limit covers every
+backend, and `*_status` shows a `nesting` row when it is reached.
 
 ### Windows: batch-file shims and the prompt
 
@@ -288,7 +316,8 @@ shim.
 - The `workspace` argument is only a *starting context*, **not a security boundary** — Antigravity and
   Kimi can and do act outside it; Codex is bounded by its enforced `sandbox`; Grok by its OS profile
   on Linux/macOS and by a tool allowlist elsewhere; Copilot by its best-effort tool/path permissions;
-  Cursor by its agent-enforced mode/force; opencode by a permission policy that denies leaving the
+  Cursor by its agent-enforced mode/force; Claude Code by its own permission modes (`workspace-write`
+  confines file edits and runs no shell; none is an OS boundary); opencode by a permission policy that denies leaving the
   run directory (on opencode 2.x it holds file edits inside the workspace, but doesn't stop shell
   commands).
 - An Antigravity or Kimi call effectively runs **arbitrary code with your user privileges**. A Copilot

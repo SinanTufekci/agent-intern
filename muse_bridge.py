@@ -598,6 +598,7 @@ def muse_version() -> Optional[str]:
     try:
         proc = proc_tree.run_captured(
             [MUSE_BIN, "--version"],
+            starts_agent=False,  # a probe, not an agent run
             stdin=subprocess.DEVNULL,
             timeout=20,
             env=_env(),
@@ -634,6 +635,7 @@ def windows_sandbox_status() -> tuple[bool, str]:
     try:
         proc = proc_tree.run_captured(
             [MUSE_BIN, "sandbox", "windows", "check"],
+            starts_agent=False,  # a probe, not an agent run
             stdin=subprocess.DEVNULL,
             timeout=30,
             env=_env(),

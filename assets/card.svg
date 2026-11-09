@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1280 400" width="1280" height="400" role="img" aria-labelledby="t d">
   <title id="t">agent-intern: sub-agents on the plans you already pay for</title>
-  <desc id="d">The agent-intern name, its tagline and four facts: 5 backends, 29 MCP tools, images, swarms and panels, and uvx agent-intern. Clawd, the Claude Code mascot, sends work along flowing lines to five coding CLIs: Antigravity, Codex, opencode, Copilot and Cursor. It runs in Claude Code, Antigravity, Copilot and Cursor.</desc>
+  <desc id="d">The agent-intern name, its tagline and four facts: 6 backends, 32 MCP tools, images, swarms and panels, and uvx agent-intern. Clawd, the Claude Code mascot, sends work along flowing lines to five coding CLIs: Antigravity, Codex, opencode, Copilot and Cursor. It runs in Claude Code, Antigravity, Copilot and Cursor.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#060a17"/><stop offset="0.55" stop-color="#0a1230"/><stop offset="1" stop-color="#0f1a44"/>
@@ -90,9 +90,9 @@
   <text x="68" y="220" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" font-size="92" font-weight="800" letter-spacing="-2.5" fill="#ffffff">agent<tspan fill="#ff8a65">-</tspan>intern</text>
   <text x="72" y="262" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" font-size="26" font-weight="500" fill="#a9b6d6">Sub-agents on the plans you already pay for</text>
   <rect x="72" y="292" width="124" height="38" rx="19.0" fill="#0f1730" stroke="#2c3a63" stroke-width="1.2"/>
-  <text x="134.0" y="311.0" text-anchor="middle" dominant-baseline="central" font-family="ui-monospace, 'Cascadia Mono', 'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="700" fill="#cdd6ee">5 backends</text>
+  <text x="134.0" y="311.0" text-anchor="middle" dominant-baseline="central" font-family="ui-monospace, 'Cascadia Mono', 'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="700" fill="#cdd6ee">6 backends</text>
   <rect x="208" y="292" width="142" height="38" rx="19.0" fill="#0f1730" stroke="#2c3a63" stroke-width="1.2"/>
-  <text x="279.0" y="311.0" text-anchor="middle" dominant-baseline="central" font-family="ui-monospace, 'Cascadia Mono', 'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="700" fill="#cdd6ee">29 MCP tools</text>
+  <text x="279.0" y="311.0" text-anchor="middle" dominant-baseline="central" font-family="ui-monospace, 'Cascadia Mono', 'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="700" fill="#cdd6ee">32 MCP tools</text>
   <rect x="362" y="292" width="250" height="38" rx="19.0" fill="#0f1730" stroke="#2c3a63" stroke-width="1.2"/>
   <text x="487.0" y="311.0" text-anchor="middle" dominant-baseline="central" font-family="ui-monospace, 'Cascadia Mono', 'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="700" fill="#cdd6ee">images · swarms · panels</text>
   <rect x="624" y="292" width="178" height="38" rx="19.0" fill="#0f1730" stroke="#2c3a63" stroke-width="1.2"/>

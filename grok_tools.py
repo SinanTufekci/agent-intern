@@ -50,17 +50,12 @@ async def grok_ask(
     watch: bool = False,
     ctx: Optional[Context] = None,
 ) -> str:
-    """Ask Grok Build (`grok -p`) a question or task in a NEW session. EXPERIMENTAL.
-
-    ⚠️ Community-verified only: this bridge has never completed an authenticated
-    round-trip, because the author has no Grok subscription. Its flags are verified
-    against grok 1.0.3, but the answer path is not. If it misbehaves, say so rather
-    than working around it — and please report it.
-
-    Needs a SuperGrok / X Premium+ login (`grok login`) or an XAI_API_KEY env var;
-    run `grok_status` first to check. Returns the agent's final message, read from
-    grok's `--output-format json` result. Point `workspace` at a project dir for
-    context-aware answers.
+    """Best for agentic coding on a SuperGrok / X Premium+ plan (`grok -p`), in a NEW
+    session. EXPERIMENTAL: never completed an authenticated round-trip here (flags
+    verified on grok 1.0.3), so if it misbehaves say so rather than working around it.
+    Run grok_status first. Pass workspace=<project dir>; without it the sub-agent sees
+    no repo. Follow up with grok_continue. Its OS sandbox works on Linux/macOS only; on
+    Windows read-only rests on a tool allowlist. Autonomous agent: trusted prompts only.
 
     Args:
         prompt: Question or instruction for Grok.
@@ -113,14 +108,10 @@ async def grok_continue(
     watch: bool = False,
     ctx: Optional[Context] = None,
 ) -> str:
-    """Continue the Grok session rooted at this workspace. EXPERIMENTAL.
-
-    Resumes the exact session id grok returned on the last grok_ask in this
-    workspace (`-r <id>`), falling back to grok's own "most recent session for this
-    cwd" (`-c`) when that in-memory pin is gone — so it still works after a server
-    restart. grok applies permission flags per invocation, so `sandbox` takes effect
-    here too: analyze read-only with grok_ask, then continue with "workspace-write"
-    to apply the fix. Same experimental caveat and auth requirement as grok_ask.
+    """Continue the Grok session (EXPERIMENTAL): resumes the thread rooted at this
+    workspace (`-r <id>`, else grok's own `-c`), so pass the same workspace=<project
+    dir> as the ask (without it the sub-agent sees no repo). `sandbox` applies per turn.
+    Same caveats and auth as grok_ask. Autonomous agent: trusted prompts only.
 
     Args:
         prompt: Follow-up message for the existing session.
@@ -155,17 +146,11 @@ async def grok_continue(
     }
 )
 def grok_status() -> str:
-    """Report diagnostics for the Grok Build bridge setup (spends no quota).
-
-    Reports the bridge's own version and any newer release (the same update notice
-    antigravity_status shows), then whether `grok` is found (and its version),
-    whether you're authenticated, which models it offers, and where grok keeps its
-    data. Auth and the model list both come from `grok models`, which answers even
-    when logged out — so this is cheap and safe to call first.
-
-    Use this to debug "grok not found" or auth errors before spending quota. This
-    backend is EXPERIMENTAL and unverified end-to-end, so a green status here means
-    the setup looks right, not that a live answer has ever been confirmed.
+    """Check the Grok Build setup (EXPERIMENTAL). Spends no quota; run it first when a call
+    says "not found". Its `bridge version` row says when a newer agent-intern release is
+    out: if so, tell the user. Also checks grok's version, auth and model list (both
+    from `grok models`, which answers even when logged out), and where grok keeps its
+    data. Green means the setup looks right, not that a live answer was ever confirmed.
     """
     rows = server._bridge_status_rows() + grok_bridge.status_rows()
     width = max(len(label) for label, _, _ in rows)

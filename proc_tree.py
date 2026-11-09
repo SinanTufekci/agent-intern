@@ -229,9 +229,55 @@ def npm_shim_script(shim: str) -> Optional[str]:
     return None
 
 
-def popen(args: list[str], **popen_kwargs) -> subprocess.Popen:
-    """`subprocess.Popen` behind the batch-shim check. Use this, never Popen directly."""
+# --- nesting depth --------------------------------------------------------------
+# A backend can load MCP servers of its own, this one included, so an agent this
+# server starts could call agent-intern again, which starts another agent, and so on.
+# Every child gets AGENT_INTERN_DEPTH = this server's depth + 1, and a server at
+# MAX_DEPTH or deeper starts nothing: host -> agent -> agent is as deep as it goes.
+# It lives here because every spawn in the project goes through popen().
+DEPTH_ENV = "AGENT_INTERN_DEPTH"
+MAX_DEPTH = 2
+
+
+class NestingTooDeep(RuntimeError):
+    """Raised instead of spawning when this server is already MAX_DEPTH deep."""
+
+
+def current_depth(env=None) -> int:
+    """This process's nesting depth: AGENT_INTERN_DEPTH, 0 when unset or garbled."""
+    raw = (os.environ if env is None else env).get(DEPTH_ENV, "")
+    try:
+        return max(0, int(str(raw).strip() or 0))
+    except ValueError:
+        return 0
+
+
+def nesting_refusal(depth: int) -> str:
+    """The message a too-deep server gives instead of starting a process."""
+    return (
+        f"agent-intern is nested {depth} agents deep ({DEPTH_ENV}={depth}): an agent "
+        "it started has loaded it again. It refuses to start another one, so a chain "
+        f"of agents cannot recurse without end (limit {MAX_DEPTH}). Do this step "
+        "yourself instead of delegating it."
+    )
+
+
+def popen(args: list[str], *, starts_agent: bool = True, **popen_kwargs) -> subprocess.Popen:
+    """`subprocess.Popen` behind the batch-shim check and the nesting guard. Use this,
+    never Popen directly.
+
+    The child's env (the `env` given, else this process's) carries
+    AGENT_INTERN_DEPTH one deeper. At MAX_DEPTH an agent run is refused
+    (NestingTooDeep). `starts_agent=False` marks a spawn that only probes (`--version`,
+    an auth or model-list check) or opens a viewer: it runs at any depth, so status
+    and doctor keep working where delegation is refused. The default is guarded,
+    so a new call site that forgets the flag errs on the safe side."""
     check_args(args)
+    depth = current_depth()
+    if starts_agent and depth >= MAX_DEPTH:
+        raise NestingTooDeep(nesting_refusal(depth))
+    env = popen_kwargs.get("env")
+    popen_kwargs["env"] = {**(os.environ if env is None else env), DEPTH_ENV: str(depth + 1)}
     return subprocess.Popen(args, **popen_kwargs)
 
 
@@ -239,6 +285,7 @@ def run_captured(
     args: list[str],
     *,
     timeout: float,
+    starts_agent: bool = True,
     **popen_kwargs,
 ) -> subprocess.CompletedProcess:
     """`subprocess.run(capture_output=True, timeout=...)` that honours its deadline.
@@ -256,6 +303,7 @@ def run_captured(
     """
     proc = popen(
         args,
+        starts_agent=starts_agent,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         **popen_kwargs,

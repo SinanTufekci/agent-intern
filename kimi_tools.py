@@ -44,18 +44,12 @@ async def kimi_ask(
     timeout_s: int = 180,
     ctx: Optional[Context] = None,
 ) -> str:
-    """Ask Kimi Code (`kimi -p`) a question or task in a NEW session. EXPERIMENTAL.
-
-    ⚠️ Community-verified only — built without a Kimi account, so no authenticated
-    round-trip has ever run and the author cannot verify it. It won't answer until
-    you authenticate: run `kimi login` (device-code) or put an API key in
-    ~/.kimi-code/config.toml, then check `kimi_status`. Returns the agent's final
-    message, read straight from stdout. Kimi Code is Moonshot's terminal coding
-    agent (Kimi K2 family); point `workspace` at a project dir for context-aware
-    answers.
-
-    Kimi print mode has NO sandbox and auto-executes every tool call (like
-    antigravity), so run it only with trusted prompts on trusted content.
+    """Best for the Kimi K2 family (Moonshot's Kimi Code, `kimi -p`), in a NEW session.
+    EXPERIMENTAL: built without a Kimi account, so no authenticated round-trip has run;
+    it needs `kimi login` or an API key in ~/.kimi-code/config.toml (check kimi_status).
+    Pass workspace=<project dir>; without it the sub-agent sees no repo. Follow up with
+    kimi_continue. NO sandbox: it auto-executes every tool call, so trusted prompts
+    only.
 
     Args:
         prompt: Question or instruction for Kimi.
@@ -90,12 +84,10 @@ async def kimi_continue(
     timeout_s: int = 180,
     ctx: Optional[Context] = None,
 ) -> str:
-    """Continue the Kimi session rooted at this workspace (`kimi -c`). EXPERIMENTAL.
-
-    Resumes the previous Kimi session for this workspace via `-c/--continue` — Kimi
-    scopes sessions per working directory, so there's no id to track. Errors if no
-    prior kimi_ask ran in this workspace. Same experimental caveat and auth
-    requirement as kimi_ask.
+    """Continue the Kimi session (EXPERIMENTAL): resumes the thread rooted at this
+    workspace (`kimi -c`; Kimi scopes sessions per directory), so pass the same
+    workspace=<project dir> as the ask (without it the sub-agent sees no repo). Errors
+    if no kimi_ask ran there. NO sandbox: trusted prompts only.
 
     Args:
         prompt: Follow-up message for the existing session.
@@ -121,14 +113,11 @@ async def kimi_continue(
     }
 )
 def kimi_status() -> str:
-    """Report diagnostics for the Kimi bridge setup (spends no quota). EXPERIMENTAL.
-
-    Reports the bridge's own version and any newer release (same update notice
-    antigravity_status shows), then checks whether `kimi` is found (and its
-    version), whether a provider is configured (`kimi provider list` — the auth
-    proxy, since Kimi needs `kimi login` or an API key in config.toml), and where
-    Kimi stores its data. This backend is unverified, so expect the auth row to say
-    "no providers configured" until you log in.
+    """Check the Kimi Code setup (EXPERIMENTAL). Spends no quota; run it first when a call
+    says "not found". Its `bridge version` row says when a newer agent-intern release is
+    out: if so, tell the user. Also checks kimi's version, whether a provider is
+    configured (`kimi provider list`; expect "no providers configured" until you log
+    in), and where Kimi keeps its data.
     """
     rows = server._bridge_status_rows() + kimi_bridge.status_rows()
     width = max(len(label) for label, _, _ in rows)

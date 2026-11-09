@@ -571,6 +571,7 @@ def copilot_version() -> Optional[str]:
     try:
         proc = proc_tree.run_captured(
             [COPILOT_BIN, "--version"],
+            starts_agent=False,  # a probe, not an agent run
             stdin=subprocess.DEVNULL,
             **_TEXT,
             timeout=15,

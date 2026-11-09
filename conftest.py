@@ -16,6 +16,7 @@ A test that runs a real CLI on purpose is marked @pytest.mark.real_cli.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import webbrowser
 
@@ -26,6 +27,78 @@ import pytest
 # tools that are simply not registered. Pytest loads this file before any test
 # module imports server.
 os.environ.pop("AGENT_INTERN_BACKENDS", None)
+# Two more variables a developer's own session sets and a test must not inherit.
+# CLAUDECODE=1 (set by Claude Code in every process it starts) makes server hide the
+# claude backend at import, so the same suite would register different tools inside
+# and outside Claude Code. AGENT_INTERN_DEPTH is the nesting counter: a test run from
+# inside a delegated agent would otherwise start at depth >= 1 and hit the guard.
+os.environ.pop("CLAUDECODE", None)
+os.environ.pop("AGENT_INTERN_DEPTH", None)
+# The rest of what Claude Code exports to its children (the session id, the
+# cross-session messaging socket and token, AI_AGENT, ...) and the settings that
+# move the claude backend's binary or config home: none may reach a test.
+for _var in [
+    v
+    for v in os.environ
+    if v.startswith("CLAUDE_CODE_")
+    or v in ("CLAUDE_PID", "AI_AGENT", "CLAUDE_CONFIG_DIR", "CLAUDE_BIN")
+]:
+    os.environ.pop(_var, None)
+
+# The bridge's own switches, and the variables that point each backend at a binary or a
+# home. A developer who exported one (AGY_BRIDGE_NO_UPDATE_CHECK while trying a live
+# run, say) would see tests that expect the default fail, and only some of the time.
+# A test that wants one sets it with monkeypatch.
+for _var in [
+    v
+    for v in os.environ
+    if v.startswith("AGY_BRIDGE_")
+    or v
+    in (
+        "AGY_BIN",
+        "CODEX_BIN",
+        "CODEX_HOME",
+        "COPILOT_BIN",
+        "CURSOR_BIN",
+        "GROK_BIN",
+        "KIMI_BIN",
+        "MUSE_BIN",
+        "OPENCODE_BIN",
+    )
+]:
+    os.environ.pop(_var, None)
+
+# Secrets. Several tests record the environment a fake process was started with, and
+# a failing assertion prints what it compared: a developer's or a CI runner's real
+# tokens and API keys must never be there to print. Nothing here talks to a service,
+# so no test needs the real ones (the tests that want a key set a fake one).
+_SECRET_NAME = re.compile(
+    r"KEY|TOKEN|SECRET|PASSW|CREDENTIAL|AUTH|COOKIE|BEARER|PRIVATE|^(ANTHROPIC|OPENAI|XAI)_",
+    re.IGNORECASE,
+)
+for _var in [v for v in os.environ if _SECRET_NAME.search(v)]:
+    os.environ.pop(_var, None)
+
+
+class HiddenEnv(dict):
+    """A process environment whose repr shows no values.
+
+    Tests that record the env a fake process got wrap it in this, so a failing
+    assertion (which prints the objects it compared) can never print the values."""
+
+    def __repr__(self) -> str:
+        return f"<environment: {len(self)} variables, values hidden>"
+
+    __str__ = __repr__
+
+
+def hide_env(kwargs: dict) -> dict:
+    """`kwargs` (Popen keyword arguments) with its env, if any, wrapped in HiddenEnv."""
+    env = kwargs.get("env")
+    if env is None:
+        return kwargs
+    return {**kwargs, "env": HiddenEnv(env)}
+
 
 # What a unit test must never start: the agent CLIs, and the browsers the watch
 # window opens in. Matched on the executable's name without its extension.
@@ -40,6 +113,11 @@ _FORBIDDEN = {
     "kimi",
     "opencode",
     "muse",
+    # Claude Code itself: the user has a real one installed, and a test that forgot
+    # to fake it would run it on their quota. "claude-code" is the npm package's
+    # directory, which is all a node launcher's argv names (@anthropic-ai/claude-code/cli.js).
+    "claude",
+    "claude-code",
     "chrome",
     "google-chrome",
     "google-chrome-stable",

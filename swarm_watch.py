@@ -213,6 +213,7 @@ def _launch(url: str, w: int, h: int, x: Optional[int] = None, y: Optional[int] 
         try:
             proc_tree.popen(
                 [exe, *flags],
+                starts_agent=False,  # a probe, not an agent run
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,

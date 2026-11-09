@@ -6,6 +6,44 @@ Version-by-version compatibility notes: what changed upstream, what the bridge d
 
 ## Status & caveats
 
+- ✅ **Re-verified on agy 1.5.3 (two releases from 1.5.1). No break.** Run through the `feat/0.36`
+  branch's code on Windows, 2026-11-09, on `gemini-3.8-flash-high`: ask, continue in the same
+  conversation, one image (a 545 KB PNG), a two-worker antigravity swarm, and the cut-short-turn error
+  (a 6 s `timeout_s` raises *"agy hit its 6s timeout before finishing…"*). Changelog entries that touch
+  the bridge's path, read and not re-tested one by one: **1.5.2** makes `--dangerously-skip-permissions`
+  block commands on a system denylist (every other command still runs) and makes a headless `-p` run
+  with it deny commands or file access outside the workspace that a Gemini Enterprise administrator
+  requires to be reviewed; `agy -p` also stopped making a background request for a conversation title.
+  **1.5.3** retries agent turns that failed with `http2: timeout awaiting response headers` after 60 s,
+  and teaches the file tools UTF-16 and legacy code-page files (PowerShell scripts with non-ASCII text
+  are now written with a byte order mark). Not re-checked: watch mode, `antigravity_image_swarm`, plan
+  mode, `schema`. `VERIFIED_AGY_VERSION` becomes `(1, 5, 3)`.
+- ⚠️ **How each host hands this server's guidance to its model.** Measured on 2026-11-09 with a scratch
+  stdio server whose instructions and descriptions are built from 100-character slices that start
+  with a marker (`<00100>`, `<00200>`, …); the model reports the highest marker it can see.
+  - **Claude Code 2.1.319** forwards the server `instructions` and the tool descriptions but cuts
+    **each at 4,096 characters**, ending them with *"… [truncated]"* (a 6,000-character description
+    was cut at about 4,095). Parameter descriptions are not cut (9,000 characters arrived whole).
+    `CLAUDE_CODE_MAX_MCP_DESCRIPTION_LENGTH=20000` lifted both caps. Reports of an older 2,048 limit
+    exist ([claudeissues.com #41593](https://claudeissues.com/issue/41593-mcp-tool-descriptions-truncated-at-2kb-breaks-code-execution-tools));
+    that was not tested. The server's own 4,857-character instructions lost everything after character
+    4,096: the end of the `workspace` bullet, the `*_continue` and `watch` lines, the `*_status`
+    bridge-version relay and the Security paragraph. In `-p` the tool definitions are also deferred
+    (the model sees only the name) unless `ENABLE_TOOL_SEARCH=false`.
+  - **Copilot CLI 1.0.105** forwards instructions only with `--allow-all-mcp-server-instructions`
+    (12,000 characters arrived whole); tool and parameter descriptions arrive whole.
+  - **Cursor CLI 2026.11.05** forwards instructions (12,000 whole, with `--approve-mcps`). It does not
+    preload tool or parameter descriptions: asked cold, the model saw none; it fetched them whole
+    through its `GetDynamicTools` call.
+  - **opencode 2.2.5:** the source forwards them as an `<mcp_instructions>` block per server, untouched
+    (`packages/core/src/mcp/instructions.ts`, `client.ts`), but two live runs on a free model said it
+    had none, and the probe runs on that model timed out, so no cap was measured.
+  - **agy 1.5.3 forwards no instructions, and lists an MCP tool by name only.** The model's tool list
+    showed `probe_tool (MCP server: agent-probe — lazy-loaded)` with no description or schema. What a
+    lazy fetch returns could not be seen: a headless run denies it without an allow-rule.
+  - The server's own numbers at that date: instructions 4,857 characters, no tool description over
+    858, and three parameter descriptions over 1,000 (`agent_swarm` tasks 2,053, `antigravity_ask`
+    schema 1,574, `codex_ask` 1,219).
 - 🐛 **opencode 2.x: the 1.x bridge fails on every call, and its read-only fence would have been open.**
   The owner's global install moved to opencode 2.2.5 (`@opencode/cli`; 1.19.x stays the 1.x line).
   Found live on Windows with free models; [full table and policies →](backends.md#opencode-2).

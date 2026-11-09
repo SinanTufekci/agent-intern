@@ -1,6 +1,6 @@
 [project]
 name = "agent-intern"
-version = "0.35.0"
+version = "0.36.0"
 description = "MCP server bridging the Antigravity (agy), OpenAI Codex, GitHub Copilot, Cursor, opencode, Grok Build, Kimi Code, and Muse Code CLIs so Claude Code can drive them as sub-agents"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -80,6 +80,8 @@ py-modules = [
     "copilot_tools",
     "cursor_bridge",
     "cursor_tools",
+    "claude_bridge",
+    "claude_tools",
     "grok_bridge",
     "grok_tools",
     "kimi_bridge",

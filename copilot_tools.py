@@ -47,13 +47,11 @@ async def copilot_ask(
     watch: bool = False,
     ctx: Optional[Context] = None,
 ) -> str:
-    """Ask the GitHub Copilot CLI (`copilot -p`) a question or task in a NEW session.
-
-    Uses your existing Copilot login (OS credential store, or a
-    COPILOT_GITHUB_TOKEN/GH_TOKEN/GITHUB_TOKEN env var — see `copilot_status`).
-    Returns the agent's final message, read straight from stdout (the CLI's `-s`
-    silent mode; no scraping). Copilot is a capable agentic coder — good for real
-    code/repo work; point `workspace` at a project dir for context-aware answers.
+    """Best for agentic coding on a GitHub Copilot plan (`copilot -p`), in a NEW session.
+    Pass workspace=<project dir>; without it the sub-agent sees no repo. Follow up with
+    copilot_continue. Uses your Copilot login or a COPILOT_GITHUB_TOKEN/GH_TOKEN env
+    var. Its sandbox is best-effort, not an OS boundary. Autonomous agent: trusted
+    prompts only.
 
     Args:
         prompt: Question or instruction for Copilot.
@@ -106,14 +104,11 @@ async def copilot_continue(
     watch: bool = False,
     ctx: Optional[Context] = None,
 ) -> str:
-    """Continue the Copilot session rooted at this workspace (resumes its `--session-id`).
-
-    Resumes the exact session id the bridge set on the last copilot_ask in this
-    workspace, falling back to the newest on-disk session whose recorded cwd
-    matches (so it still works after a server restart). Unlike codex_continue,
-    copilot re-applies permission flags on every call, so `sandbox` takes effect
-    here too — e.g. analyze read-only with copilot_ask, then continue with
-    "workspace-write" to apply the fix.
+    """Continue the Copilot session: resumes the thread rooted at this workspace (its
+    `--session-id`), so pass the same workspace=<project dir> as the ask (without it the
+    sub-agent sees no repo). After a restart it resumes the newest on-disk session for
+    that directory. `sandbox` applies per turn: analyze read-only, then continue with
+    "workspace-write" to apply the fix. Autonomous agent: trusted prompts only.
 
     Args:
         prompt: Follow-up message for the existing session.
@@ -148,17 +143,11 @@ async def copilot_continue(
     }
 )
 def copilot_status() -> str:
-    """Report diagnostics for the Copilot bridge setup (spends no quota).
-
-    Reports the bridge's own version and whether a newer release is available
-    (best-effort GitHub check; honors AGY_BRIDGE_NO_UPDATE_CHECK) — the same
-    update notice antigravity_status shows, so a Copilot-only install still
-    surfaces it — then checks whether copilot is on PATH (and its version), an auth
-    hint (copilot has no `login status` command, so this is best-effort — an env
-    token is reported when set, otherwise login via the credential store is
-    assumed and unverified), where copilot stores session state, and how many
-    workspace sessions are pinned this run. Use this to debug "copilot not found"
-    or auth errors before a call.
+    """Check the Copilot setup. Spends no quota; run it first when a call says "not found".
+    Its `bridge version` row says when a newer agent-intern release is out: if so, tell
+    the user. Also checks copilot's version, an auth hint (copilot has no login-status
+    command, so a credential-store login is assumed unless an env token is set), and
+    where copilot keeps session state.
     """
     rows = server._bridge_status_rows() + copilot_bridge.status_rows()
     width = max(len(label) for label, _, _ in rows)
