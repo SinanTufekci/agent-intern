@@ -914,9 +914,12 @@ def test_an_api_key_is_never_shown(monkeypatch):
     assert "supersecret" not in claude_bridge.auth_status()[1]
 
 
-def _rows(monkeypatch, version="2.1.319 (Claude Code)", auth=(True, "claude.ai")):
+def _rows(monkeypatch, version="2.1.319 (Claude Code)", auth=(True, "claude.ai"), projects=None):
     monkeypatch.setattr(claude_bridge, "claude_version", lambda: version)
     monkeypatch.setattr(claude_bridge, "auth_status", lambda: auth)
+    # The "projects dir" row fails where Claude Code has never run (a CI runner); a
+    # directory that always exists keeps these tests about what they say they test.
+    monkeypatch.setattr(claude_bridge, "PROJECTS_DIR", REPO if projects is None else projects)
     return claude_bridge.status_rows()
 
 
@@ -945,10 +948,8 @@ def test_status_rows_pinned_sessions_count(monkeypatch):
 
 
 def test_status_rows_projects_dir_follows_the_directory(monkeypatch, tmp_path):
-    monkeypatch.setattr(claude_bridge, "PROJECTS_DIR", tmp_path)
-    assert _rows(monkeypatch)[2] == ("projects dir", True, str(tmp_path))
-    monkeypatch.setattr(claude_bridge, "PROJECTS_DIR", tmp_path / "missing")
-    assert _rows(monkeypatch)[2][1] is False
+    assert _rows(monkeypatch, projects=tmp_path)[2] == ("projects dir", True, str(tmp_path))
+    assert _rows(monkeypatch, projects=tmp_path / "missing")[2][1] is False
 
 
 def test_the_projects_dir_follows_claude_config_dir():

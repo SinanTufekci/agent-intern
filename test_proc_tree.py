@@ -25,7 +25,7 @@ from pathlib import Path
 import pytest
 
 import proc_tree
-from conftest import HiddenEnv, hide_env
+from conftest import HiddenEnv, fake_os_name, hide_env
 
 REPO = Path(__file__).parent
 
@@ -708,6 +708,9 @@ def test_the_default_is_guarded_so_a_forgotten_site_stays_safe(spawns, monkeypat
 
 
 def test_popen_checks_the_shim_rule_before_the_depth(spawns, monkeypatch):
+    # the batch-file rule exists on Windows only; make proc_tree (and only proc_tree)
+    # see Windows, so the test means the same thing on every OS
+    fake_os_name(monkeypatch, proc_tree, "nt")
     monkeypatch.setenv(proc_tree.DEPTH_ENV, "2")
     with pytest.raises(Exception) as exc:
         proc_tree.popen(["C:\\tools\\evil.cmd", "a & calc"])
@@ -1025,6 +1028,12 @@ class _ProbeProc:
     def communicate(self, timeout=None):
         return "1.2.3\n", ""
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
     def poll(self):
         return 0
 
@@ -1103,10 +1112,13 @@ def test_the_bridge_rows_show_the_nesting_row_without_hiding_the_others(probes_a
     assert nesting[2].endswith("the checks below still run")
 
 
-def test_doctor_works_at_the_limit_and_shows_the_nesting_row(probes_at_the_limit):
+def test_doctor_works_at_the_limit_and_shows_the_nesting_row(probes_at_the_limit, monkeypatch):
     import doctor
     import server
 
+    # doctor.report asks the platform module for the OS name, which runs `uname` on
+    # Linux: not a probe of ours, so keep the fake Popen out of it
+    monkeypatch.setattr(doctor.platform, "platform", lambda *a, **k: "test-platform")
     bridge_rows, per_backend = doctor.collect(server.ENABLED_BACKENDS)
     data = doctor.report(bridge_rows, per_backend)
     assert any(r["label"] == "nesting" and r["ok"] is False for r in data["bridge"])
