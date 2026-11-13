@@ -41,7 +41,7 @@ _WATCH_SERVER: Optional[tuple] = None  # (httpd, port, thread) singleton
 _VIEWER_ALIVE_S = 4.0  # a /events poll within this window means a viewer is still open
 
 
-def _watch_state(rid, title, start, timeout, backend, prompt, history, last_poll) -> dict:
+def _watch_state(rid, title, start, timeout, backend, prompt, history, last_poll, model="") -> dict:
     return {
         "id": rid,
         "title": title,  # short single-line caption (first prompt line, ≤200 chars)
@@ -55,6 +55,7 @@ def _watch_state(rid, title, start, timeout, backend, prompt, history, last_poll
         "image": "",  # absolute path to a generated image to show, or ""
         "events": [],  # list of {kind, text, t}
         "backend": backend,  # "agy" | "codex" | "copilot" (shown in the header)
+        "model": model or "",  # shown next to the backend; "" when not known
         "last_poll": last_poll,  # last /events poll time (0 = never); drives window reuse
     }
 
@@ -71,6 +72,7 @@ _WATCH_IDLE = {
     "image": "",
     "events": [],
     "backend": "agy",
+    "model": "",
 }
 
 
@@ -92,6 +94,7 @@ def _watch_begin(
     backend: str = "agy",
     prompt: str = "",
     history: Optional[list] = None,
+    model: str = "",
 ) -> str:
     """Start a watched run and return its id. Reuses the "main" slot for the common
     sequential case; a run that begins while "main" is still working gets a fresh id
@@ -105,7 +108,7 @@ def _watch_begin(
             # keep the open window's poll time so _open_watch_window can reuse it
             rid, last_poll = _MAIN, (main["last_poll"] if main else 0.0)
         _WATCH_RUNS[rid] = _watch_state(
-            rid, title, start, timeout, backend, prompt, history, last_poll
+            rid, title, start, timeout, backend, prompt, history, last_poll, model
         )
         return rid
 
@@ -382,7 +385,7 @@ async function tick(){
   fails=0;
   const back=bkName(s.backend);
   TITLE="Agent Intern · "+back;
-  setAgent(s.backend);
+  setAgent(s.backend,null,s.model);
   if(s.started!==started){started=s.started;rebuild(s,back);}
   if(s.status==="idle")setState("idle");
   else{

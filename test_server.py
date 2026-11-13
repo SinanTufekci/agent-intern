@@ -1206,6 +1206,8 @@ def test_validate_model_skips_when_list_unavailable(monkeypatch):
 # A fourth, on 1.4.12: the gemini-4-argon family, which agy's own default moved onto.
 DOCUMENTED_AGY_MODELS = [
     "gemini-4-argon-high",  # agy's own default family as of 1.4.12 (Medium, in a clean HOME)
+    "gemini-4-hydrogen-high",  # added by 1.5.8 (low|medium|high|xhigh); answers on an AI Pro login
+    "gemini-pro-orchestrator-g1-pro",  # added by 1.5.8, "Orchestrator (Argon)"; not called
     "gemini-3.8-flash-high",  # the default from 1.1.25 to 1.3.5 (added the 3.8 family)
     "claude-sonnet-5-5-high",
     "claude-opus-5-5-high",
@@ -1220,7 +1222,7 @@ def _model_family(slug: str) -> str:
     to three entries. The docs deliberately name only the -high variant of each,
     which is why the coverage test below compares families rather than slugs.
     """
-    for effort in ("-low", "-medium", "-high"):
+    for effort in ("-low", "-medium", "-high", "-xhigh"):
         if slug.endswith(effort):
             return slug[: -len(effort)]
     return slug
@@ -4472,3 +4474,19 @@ def test_rules_in_a_real_process_honours_agent_intern_backends():
     assert proc.returncode == 0, proc.stderr.decode("utf-8", "replace")[-300:]
     assert proc.stdout == (server._server_instructions(("codex",)) + "\n").encode("utf-8")
     assert b"antigravity" not in proc.stdout
+
+
+def test_watch_state_carries_the_model_shown_next_to_the_backend():
+    rid = server._watch_begin("t", 1.0, backend="codex", model="gpt-5.5")
+    assert server._watch_snapshot(rid)["model"] == "gpt-5.5"
+    server._watch_finish(rid, "done", "a", 1.0)
+    rid2 = server._watch_begin("t2", 2.0)  # no model given: empty, not a guess
+    assert server._watch_snapshot(rid2)["model"] == ""
+    assert server._WATCH_IDLE["model"] == ""
+
+
+def test_the_watch_header_prints_the_model_after_the_backend_name():
+    import watch_ui
+
+    assert "setAgent(s.backend,null,s.model)" in server._WATCH_HTML
+    assert '(NAMES[AGENT]||AGENT)+(model?" · "+model:"")' in watch_ui.JS

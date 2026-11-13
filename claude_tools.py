@@ -201,7 +201,13 @@ def _run_claude_watched(
         title = title[:200].rsplit(" ", 1)[0] + "…"
     history = claude_bridge.read_history(workspace, continue_conv)
     rid = server._watch_begin(
-        title, start, timeout_s, backend="claude", prompt=prompt, history=history
+        title,
+        start,
+        timeout_s,
+        backend="claude",
+        prompt=prompt,
+        history=history,
+        model=model or "",
     )
     try:
         port = server._ensure_watch_server()

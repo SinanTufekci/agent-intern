@@ -732,6 +732,21 @@ _AGY_LOCK = threading.Lock()
 # Newer agy releases may change paths/schemas (the SQLite migration is the known
 # risk), so we warn at startup if the installed agy is newer than this.
 #
+# 1.5.8 re-verification (live, Windows, 2026-11-13): five releases from 1.5.3, no
+# break. Ask and continue in the same conversation on gemini-3.8-flash-high, a
+# watched ask (the viewer state carried the model), `--model gemini-4-hydrogen`
+# (base name) and `--model gemini-4-hydrogen-high`, and a two-worker read-only swarm
+# on gemini-4-hydrogen-high all answered. The DRIFT is the catalog: a
+# gemini-4-hydrogen family (low, medium, high, xhigh) and
+# gemini-pro-orchestrator-g1-pro ("Orchestrator (Argon)") are new in `agy models`;
+# the 1.5.8 changelog lists Hydrogen only for API-key / ADC / gateway sign-ins, yet
+# an AI Pro login lists and answers it. The orchestrator slug was NOT called.
+# 1.5.7 made headless `-p` start in Auto agent mode (it held with
+# --dangerously-skip-permissions). Not re-checked on 1.5.8: an image, plan mode
+# with a tool call, `schema`, the default model in a clean HOME (this machine's
+# settings.json pins Gemini 4 Argon (High)). Host loads held: a fresh Claude Code
+# session (29 tools) and a fresh agy session (32), each answering an ask.
+#
 # 1.5.3 re-verification (live, Windows, 2026-11-09, feat/0.36): ask, continue, an
 # image, a two-worker swarm and a cut-short turn (the 1.5.0 exit-3 timeout) held;
 # nothing in 1.5.2/1.5.3 touches the bridge's path. The model list, the default
@@ -820,7 +835,7 @@ _AGY_LOCK = threading.Lock()
 # transcript and status went green -- so an empty newest-conversation is a stale
 # artifact, not a regression. (Issue #8: the row now skips such conversations, and
 # ones still running or whose turn failed; see _transcript_status_row.)
-VERIFIED_AGY_VERSION = (1, 5, 3)
+VERIFIED_AGY_VERSION = (1, 5, 8)
 
 # First agy version whose print mode understands `--output-format json` (1.1.8).
 # Below this the flag is unknown to agy's parser, so the bridge must not pass it
@@ -2942,7 +2957,15 @@ def _run_agy_watched(
         # transcript: stream-json describes only the CURRENT run, and prior turns are
         # history. It is cosmetic and already degrades to [] when unreadable.
         history = _read_agy_history(pinned_conv) if (continue_conv and pinned_conv) else []
-        rid = _watch_begin(title, start, timeout_s, prompt=prompt, history=history)
+        # A call without `model` runs on settings.json's model (see _agy_settings_model).
+        rid = _watch_begin(
+            title,
+            start,
+            timeout_s,
+            prompt=prompt,
+            history=history,
+            model=model or _agy_settings_model() or "",
+        )
         stream = _StreamWatch(rid, start) if use_stream else None
         feed = None if use_stream else _WatchFeed(pinned_conv, start, rid)
         try:
@@ -3106,7 +3129,9 @@ def _run_agy_image_watched(
         title = display_prompt.strip().splitlines()[0] if display_prompt.strip() else "image"
         if len(title) > 200:
             title = title[:200].rsplit(" ", 1)[0] + "…"
-        rid = _watch_begin(title, start, timeout_s, prompt=display_prompt)
+        rid = _watch_begin(
+            title, start, timeout_s, prompt=display_prompt, model=_agy_settings_model() or ""
+        )
         stream = _StreamWatch(rid, start) if use_stream else None
         feed = None if use_stream else _WatchFeed(None, start, rid)
         try:

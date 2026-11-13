@@ -227,7 +227,13 @@ def _run_grok_watched(
         title = title[:200].rsplit(" ", 1)[0] + "…"
     history = grok_bridge.read_history(workspace, continue_conv)
     rid = server._watch_begin(
-        title, start, timeout_s, backend="grok", prompt=prompt, history=history
+        title,
+        start,
+        timeout_s,
+        backend="grok",
+        prompt=prompt,
+        history=history,
+        model=model or "",
     )
     try:
         port = server._ensure_watch_server()

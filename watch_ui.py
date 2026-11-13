@@ -466,10 +466,10 @@ function setState(state,o){
  }
  document.title=({working:"● ",done:"✓ ",error:"✗ ",lost:"⚠ "}[state]||"")+TITLE;
 }
-function setAgent(b,repo){
+function setAgent(b,repo,model){
  AGENT=bkName(b);
  const av=$("av");if(av.dataset.n!==AGENT){av.dataset.n=AGENT;av.className="av big "+AGENT;paintAvatar(av,AGENT);}
- $("bkname").textContent=NAMES[AGENT]||AGENT;
+ $("bkname").textContent=(NAMES[AGENT]||AGENT)+(model?" · "+model:"");
  const r=$("repo");r.hidden=!repo;if(repo){r.textContent=repo;r.title=repo;}
 }
 """
