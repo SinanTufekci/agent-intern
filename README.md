@@ -335,7 +335,7 @@ rest stay out of Claude's context. [How →](https://github.com/SinanTufekci/age
 [Tool reference →](https://github.com/SinanTufekci/agent-intern/blob/main/docs/tools.md) ·
 [How each backend is driven →](https://github.com/SinanTufekci/agent-intern/blob/main/docs/backends.md)
 
-Verified live against **agy 1.5.3 · codex-cli 0.162.1 · copilot 1.0.105 · cursor-agent 2026.11.05 ·
+Verified live against **agy 1.5.8 · codex-cli 0.162.1 · copilot 1.0.105 · cursor-agent 2026.11.05 ·
 opencode 2.2.5** (1.x also supported) **· claude 2.1.319**. These CLIs update themselves, so
 [status & caveats](https://github.com/SinanTufekci/agent-intern/blob/main/docs/status.md) tracks what
 changed upstream and what the bridge does about it.

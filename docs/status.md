@@ -6,6 +6,28 @@ Version-by-version compatibility notes: what changed upstream, what the bridge d
 
 ## Status & caveats
 
+- ✅ **Re-verified on agy 1.5.8 (five releases from 1.5.3). No break; the catalog grew.** Run through
+  the working tree on Windows, 2026-11-13: ask and continue in the same conversation on
+  `gemini-3.8-flash-high`, a watched ask (the viewer state carried the model), `--model
+  gemini-4-hydrogen` (base name) and `--model gemini-4-hydrogen-high`, and a two-worker read-only
+  swarm on `gemini-4-hydrogen-high`. **New in `agy models`:** a `gemini-4-hydrogen` family
+  (`low|medium|high|xhigh`) and `gemini-pro-orchestrator-g1-pro` ("Orchestrator (Argon)"). The 1.5.8
+  changelog lists Hydrogen only for API-key, ADC and gateway sign-ins, yet it is listed and answers on an
+  AI Pro login here. The orchestrator slug was not called. Changelog entries that touch the bridge's
+  path, read and not re-tested one by one: **1.5.7** starts headless `-p` runs in Auto agent mode (the
+  bridge's `--dangerously-skip-permissions` runs still held) and **1.5.5** lets a stuck background task
+  no longer keep `-p` from exiting. Not re-checked: an image, plan mode with a tool call, `schema`, the
+  default model in a clean home directory (this machine's `settings.json` pins Gemini 4 Argon (High),
+  whose weekly quota was 0% at the time). **Host loads, same day, with the working-tree server:** a
+  fresh Claude Code session (`--mcp-config` + `--strict-mcp-config`) listed 29 tools, `antigravity_status`
+  read "agy CLI v1.5.8 - compat OK" and an `antigravity_ask` on `gemini-4-hydrogen-high` answered; a
+  fresh agy session (throwaway home directory, `{"permissions": {"allow": ["mcp(*)"]}}`, no
+  `--dangerously-skip-permissions`) listed 32 tools, quoted the same status line and its ask answered.
+  Started from inside Claude Code, agy inherits `CLAUDECODE=1` and the server hides `claude_*` (29
+  tools); unset the `CLAUDE*` variables to see 32. The real agy config files' hashes did not change.
+  A real watched run was opened in Chrome and its header read `Antigravity · gemini-4-hydrogen-high`.
+  Not loaded by a host: the watch window (opened from a script, not from a host call).
+  `VERIFIED_AGY_VERSION` becomes `(1, 5, 8)`.
 - ✅ **Re-verified on agy 1.5.3 (two releases from 1.5.1). No break.** Run through the `feat/0.36`
   branch's code on Windows, 2026-11-09, on `gemini-3.8-flash-high`: ask, continue in the same
   conversation, one image (a 545 KB PNG), a two-worker antigravity swarm, and the cut-short-turn error

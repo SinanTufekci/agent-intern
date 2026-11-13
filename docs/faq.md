@@ -118,8 +118,12 @@ family, which no changelog entry mentions** — a 3.5 slug from older docs is no
 **By 1.3.5 the catalog shrank again, and again no changelog entry says so:** the 3.7 and 3.6 Flash
 families, Gemini 3.1 Pro, `claude-sonnet-4-6` and `claude-opus-4-6-thinking` are gone, and Claude
 Opus 5.5 and Sonnet 5.5 arrived. **By 1.4.12 the `gemini-4-argon` family had arrived and agy's own
-default moved onto it.** The full list, re-checked live on 1.5.1:
-`gemini-4-argon-low|medium|high`, `gemini-3.8-flash-low|medium|high`,
+default moved onto it.** **By 1.5.8 a `gemini-4-hydrogen` family (`low|medium|high|xhigh`) and
+`gemini-pro-orchestrator-g1-pro` ("Orchestrator (Argon)") had arrived.** Hydrogen answered through the
+bridge on an AI Pro login (`--model gemini-4-hydrogen` and `gemini-4-hydrogen-high`, and a two-worker
+swarm); the orchestrator slug is listed but was not called. The full list, read from `agy models` on 1.5.8:
+`gemini-4-argon-low|medium|high`, `gemini-4-hydrogen-low|medium|high|xhigh`,
+`gemini-pro-orchestrator-g1-pro`, `gemini-3.8-flash-low|medium|high`,
 `claude-opus-5-5-low|medium|high`, `claude-sonnet-5-5-low|medium|high`, `gpt-oss-120b-medium`.
 Note the slug bakes in the reasoning effort, which is why each family appears once per level.
 
