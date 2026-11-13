@@ -10,6 +10,25 @@ summary.
 
 ## [Unreleased]
 
+## [0.37.0] - 2026-11-13
+
+### Changed
+
+- **Re-verified on agy 1.5.8 (from 1.5.3). No break; the model catalog grew.** `VERIFIED_AGY_VERSION` →
+  `(1, 5, 8)`. agy now lists a `gemini-4-hydrogen` family (`low|medium|high|xhigh`) and
+  `gemini-pro-orchestrator-g1-pro`. Hydrogen answered through the bridge (`--model gemini-4-hydrogen`,
+  `gemini-4-hydrogen-high`, and a two-worker swarm); the orchestrator slug was not called. Not
+  re-checked: an image, plan mode with a tool call, `schema`. Loaded fresh in Claude Code (29 tools)
+  and in agy (32 tools), each answered an ask. See
+  [status](docs/status.md).
+
+### Added
+
+- **The watch window names the model next to the backend** (`Antigravity · Gemini 3.8 Flash (High)`).
+  A call without `model` shows agy's `settings.json` model; a backend whose default isn't known
+  to the bridge (codex, copilot, ...) shows the backend alone rather than a guess. The swarm
+  window is unchanged.
+
 ## [0.36.0] - 2026-11-09
 
 ### Added
@@ -2023,7 +2042,8 @@ caller might copy becomes a guaranteed rejected call.
 
 - **BREAKING:** `antigravity_ask_stream` (superseded by watch mode).
 
-[Unreleased]: https://github.com/SinanTufekci/agent-intern/compare/v0.36.0...HEAD
+[Unreleased]: https://github.com/SinanTufekci/agent-intern/compare/v0.37.0...HEAD
+[0.37.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.36.0...v0.37.0
 [0.36.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.35.0...v0.36.0
 [0.35.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.34.0...v0.35.0
 [0.34.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.33.0...v0.34.0
