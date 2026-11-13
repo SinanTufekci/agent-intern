@@ -10,6 +10,8 @@ summary.
 
 ## [Unreleased]
 
+## [0.37.1] - 2026-11-13
+
 ### Added
 
 - **The swarm window shows each member's model.** Every row carries a chip with the model the worker
@@ -2054,7 +2056,8 @@ caller might copy becomes a guaranteed rejected call.
 
 - **BREAKING:** `antigravity_ask_stream` (superseded by watch mode).
 
-[Unreleased]: https://github.com/SinanTufekci/agent-intern/compare/v0.37.0...HEAD
+[Unreleased]: https://github.com/SinanTufekci/agent-intern/compare/v0.37.1...HEAD
+[0.37.1]: https://github.com/SinanTufekci/agent-intern/compare/v0.37.0...v0.37.1
 [0.37.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.36.0...v0.37.0
 [0.36.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.35.0...v0.36.0
 [0.35.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.34.0...v0.35.0
