@@ -4485,8 +4485,11 @@ def test_watch_state_carries_the_model_shown_next_to_the_backend():
     assert server._WATCH_IDLE["model"] == ""
 
 
-def test_the_watch_header_prints_the_model_after_the_backend_name():
+def test_the_watch_header_shows_the_model_as_a_chip_beside_the_backend_name():
     import watch_ui
 
     assert "setAgent(s.backend,null,s.model)" in server._WATCH_HTML
-    assert '(NAMES[AGENT]||AGENT)+(model?" · "+model:"")' in watch_ui.JS
+    # the backend name and the model are separate elements: the model is a chip
+    assert '$("bkname").textContent=NAMES[AGENT]||AGENT;' in watch_ui.JS
+    assert 'const m=$("mdl");m.hidden=!model;' in watch_ui.JS
+    assert 'id="mdl"' in watch_ui.BODY and ".mdl{" in watch_ui.BASE_CSS

@@ -510,6 +510,50 @@ def test_watch_init_stores_backends():
     assert snap["workers"][1]["backend"] == "codex"
 
 
+def test_watch_init_stores_models():
+    swarm_watch.init(
+        ["p0", "p1", "p2"], ["r"] * 3, 1.0, models=["gemini-4-hydrogen-high", "", None]
+    )
+    ws = swarm_watch._snapshot()["workers"]
+    assert [w["model"] for w in ws] == ["gemini-4-hydrogen-high", "", ""]
+    swarm_watch.init(["p0"], ["r"], 1.0)  # no models given: empty, not a guess
+    assert swarm_watch._snapshot()["workers"][0]["model"] == ""
+
+
+def test_watch_models_use_the_task_model_then_the_agy_default_for_antigravity_only(monkeypatch):
+    monkeypatch.setattr(server, "_agy_settings_model", lambda: "Gemini 4 Argon (High)")
+    tasks = [
+        {"backend": "antigravity", "model": "gemini-4-hydrogen-high"},
+        {"backend": "antigravity", "model": None},
+        {"backend": "codex", "model": None},
+        {"backend": "codex", "model": "gpt-5.5"},
+    ]
+    assert swarm._watch_models(tasks) == [
+        "gemini-4-hydrogen-high",
+        "Gemini 4 Argon (High)",
+        "",
+        "gpt-5.5",
+    ]
+
+
+def test_swarm_agents_puts_each_workers_model_on_the_dashboard(monkeypatch):
+    monkeypatch.setattr(server, "ENABLED_BACKENDS", ("codex",))
+    monkeypatch.setattr(swarm_watch, "open_window", lambda n: None)
+    monkeypatch.setattr(
+        swarm, "_run_codex_worker_watched", lambda *a, **k: swarm.WorkerResult(0, True)
+    )
+    swarm.swarm_agents(
+        [{"backend": "codex", "prompt": "p0", "model": "gpt-5.5"}], timeout_s=5, watch=True
+    )
+    (worker,) = swarm_watch._snapshot()["workers"]
+    assert worker["backend"] == "codex" and worker["model"] == "gpt-5.5"
+
+
+def test_the_swarm_window_draws_the_model_chip_on_a_row_and_in_the_detail_header():
+    assert 'el("span","mdl",w.model)' in swarm_watch._HTML
+    assert "setAgent(w.backend,w.repo,w.model)" in swarm_watch._WORKER_HTML
+
+
 def test_run_codex_worker_never_pins(monkeypatch):
     # Swarm codex workers are one-shot — they must call run_codex with pin=False.
     import codex_bridge

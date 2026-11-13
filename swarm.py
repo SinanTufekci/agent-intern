@@ -372,6 +372,16 @@ def _repos(workspaces: list[str]) -> list[str]:
     return [_basename_any(w) for w in workspaces]
 
 
+def _watch_models(tasks: list[dict]) -> list[str]:
+    """The model each dashboard row shows: the task's own `model`, else for an
+    antigravity worker the settings.json model it will run on, else "" (no guess:
+    the other backends' defaults are not known to the bridge)."""
+    import server
+
+    default = server._agy_settings_model() or ""
+    return [t.get("model") or (default if t.get("backend") == "antigravity" else "") for t in tasks]
+
+
 # ----------------------------------------------------------------------------- text swarm
 def _run_text_worker_serialized(
     index, prompt, workspace, model, timeout_s, t0, plan=False
@@ -910,7 +920,14 @@ def swarm_image(
     if watch:
         import swarm_watch
 
-        swarm_watch.init(_labels(prompts), _repos(ws), time.time(), prompts, timeout_s)
+        swarm_watch.init(
+            _labels(prompts),
+            _repos(ws),
+            time.time(),
+            prompts,
+            timeout_s,
+            models=_watch_models([{"backend": "antigravity"}] * len(prompts)),
+        )
         swarm_watch.open_window(len(prompts))
     results: list[Optional[WorkerResult]] = [None] * len(prompts)
     with ThreadPoolExecutor(max_workers=max(1, max_concurrency)) as ex:
@@ -1618,6 +1635,7 @@ def swarm_agents(
             prompts,
             timeout_s,
             backends=backends,
+            models=_watch_models(norm),
         )
         swarm_watch.open_window(n)
 

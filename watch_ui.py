@@ -97,6 +97,7 @@ svg{display:block}
 @keyframes rise{from{opacity:0;transform:translateY(8px)}}
 @keyframes pop{0%{transform:scale(.5);opacity:.2}60%{transform:scale(1.18)}100%{transform:scale(1)}}
 .repo{flex:none;font:500 10.5px/1.7 var(--mono);color:#9ee9ba;background:rgba(63,223,127,.08);border:1px solid rgba(63,223,127,.22);border-radius:6px;padding:0 6px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mdl{flex:none;font:500 10.5px/1.7 var(--mono);color:var(--cyan);background:rgba(92,214,230,.08);border:1px solid rgba(92,214,230,.22);border-radius:6px;padding:0 6px;max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 kbd{font:600 10px/1 var(--mono);background:var(--s2);border:1px solid var(--bd);border-bottom-width:2px;border-radius:5px;padding:2px 5px;color:var(--tx2)}
 """
 
@@ -106,6 +107,7 @@ header{display:flex;align-items:center;gap:11px;padding:11px 16px 10px}
 .ttl{flex:1;min-width:0}
 .name{font-weight:650;font-size:14px;letter-spacing:.1px}
 .subt{display:flex;align-items:center;gap:7px;min-width:0;color:var(--tx3);font-size:11.5px}
+.subt #bkname{flex:none;color:var(--tx2);font-weight:600}
 .chip{flex:none;display:flex;align-items:center;gap:7px;padding:5px 12px 5px 10px;border-radius:999px;font-size:12px;font-weight:600;background:var(--s2);border:1px solid var(--bd);color:var(--tx2);font-variant-numeric:tabular-nums;white-space:nowrap;transition:background .3s,border-color .3s,color .3s}
 .chip .budget{font-weight:400;color:var(--tx3)}
 .chip .ic svg{width:13px;height:13px}.chip .ic svg,.chip .ic .ring{animation:pop .4s ease}
@@ -211,7 +213,7 @@ BODY = r"""
  <header>
   <div class="av big" id="av"></div>
   <div class="ttl"><div class="name">Agent Intern</div>
-   <div class="subt"><span id="bkname">connecting…</span><span class="repo" id="repo" hidden></span></div></div>
+   <div class="subt"><span id="bkname">connecting…</span><span class="mdl" id="mdl" hidden></span><span class="repo" id="repo" hidden></span></div></div>
   <div class="chip" id="chip"><span class="ic" id="chipic"></span><span id="st">Connecting</span><span class="budget" id="budget"></span></div>
  </header>
  <div class="track" id="track"><div class="gfill" id="gfill"></div></div>
@@ -469,7 +471,8 @@ function setState(state,o){
 function setAgent(b,repo,model){
  AGENT=bkName(b);
  const av=$("av");if(av.dataset.n!==AGENT){av.dataset.n=AGENT;av.className="av big "+AGENT;paintAvatar(av,AGENT);}
- $("bkname").textContent=(NAMES[AGENT]||AGENT)+(model?" · "+model:"");
+ $("bkname").textContent=NAMES[AGENT]||AGENT;
+ const m=$("mdl");m.hidden=!model;if(model){m.textContent=model;m.title="Model: "+model;}
  const r=$("repo");r.hidden=!repo;if(repo){r.textContent=repo;r.title=repo;}
 }
 """

@@ -10,6 +10,18 @@ summary.
 
 ## [Unreleased]
 
+### Added
+
+- **The swarm window shows each member's model.** Every row carries a chip with the model the worker
+  runs on (its task's `model`; for an antigravity worker without one, agy's `settings.json` model;
+  empty for the other backends rather than a guess), and a member's detail window repeats it. The
+  image swarm shows agy's default model.
+
+### Changed
+
+- **The watch window's header reads better:** the backend name stays as the title line and the model
+  is a monospace chip beside it (and beside the repo chip), instead of one `Backend · model` text.
+
 ## [0.37.0] - 2026-11-13
 
 ### Changed
