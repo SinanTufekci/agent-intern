@@ -10,6 +10,48 @@ summary.
 
 ## [Unreleased]
 
+## [0.38.0] - 2026-11-16
+
+### Added
+
+- **`effort` on `codex_ask`, `codex_continue`, `claude_ask`, `claude_continue` and on `agent_swarm`
+  tasks for those two backends.** Sets the reasoning effort for one call or worker: codex's `-c model_reasoning_effort=<level>` (the level goes in unquoted, so a
+  Windows `.cmd` shim still accepts it) and claude's `--effort` (`low`, `medium`, `high`, `xhigh`,
+  `max`; an unknown level fails before anything starts). Omitted, both CLIs use their own config as
+  before. Verified live: codex's session header reads `reasoning effort: low` / `medium` against the
+  config's `xhigh`; claude accepted the flag on a fresh and a continued turn. A swarm task for any other
+  backend that sets `effort` is refused by name. agy is deliberately left out: its `--effort` is
+  rejected together with a model that already names a level (`--model gemini-4-argon-high --effort
+  low` fails: "conflicts with --effort"), so the level stays in the model name (`gemini-4-argon-low`);
+  the refusal says so.
+
+### Changed
+
+- **The update check asks PyPI, not GitHub's tag list.** PyPI is what `uvx agent-intern@latest`
+  installs, so the notice can no longer announce a tag whose upload is still running or failed. The
+  answer is remembered for 6 hours (a failed lookup for 10 minutes) instead of one request per
+  `*_status` call. The notice links the release notes and says to restart the MCP host. A fork that
+  sets `AGY_BRIDGE_REPO` keeps reading that repo's tags.
+- **`AGENT_INTERN_NO_UPDATE_CHECK=1` turns the update check off.** `AGY_BRIDGE_NO_UPDATE_CHECK` still
+  works.
+
+### Fixed
+
+- **The docs said `uvx agent-intern` pins the version it first cached. It does not.** uv looks for a
+  newer release on every launch, through its cached copy of PyPI's index (PyPI allows 10 minutes), so
+  a plain `uvx agent-intern` picks up a new release the next time the host starts the server.
+  Reproduced with uv 0.10.6 against an index served with `max-age`: a release published inside the
+  window was ignored until it expired, and `uvx tool@latest` skipped the wait. README, `SECURITY.md`
+  and `docs/setup.md` now say so and show `uvx agent-intern==X.Y.Z` for anyone who wants to choose when
+  an update lands; `uvx agent-intern@latest --version` is the refresh command (it prints and exits
+  instead of starting a server).
+
+### Docs
+
+- **`docs/security.md` lists what the bridge does on its own:** the one PyPI request of the update
+  check and how to switch it off, the local watch listener that exists only when a call passes
+  `watch=true`, and that nothing updates itself.
+
 ## [0.37.1] - 2026-11-13
 
 ### Added
@@ -2056,7 +2098,8 @@ caller might copy becomes a guaranteed rejected call.
 
 - **BREAKING:** `antigravity_ask_stream` (superseded by watch mode).
 
-[Unreleased]: https://github.com/SinanTufekci/agent-intern/compare/v0.37.1...HEAD
+[Unreleased]: https://github.com/SinanTufekci/agent-intern/compare/v0.38.0...HEAD
+[0.38.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.37.1...v0.38.0
 [0.37.1]: https://github.com/SinanTufekci/agent-intern/compare/v0.37.0...v0.37.1
 [0.37.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.36.0...v0.37.0
 [0.36.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.35.0...v0.36.0

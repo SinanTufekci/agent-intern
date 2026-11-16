@@ -391,6 +391,24 @@ def validate_sandbox(mode: str) -> str:
     return mode
 
 
+_EFFORT_RE = re.compile(r"[A-Za-z0-9_.-]{1,24}")
+
+
+def validate_effort(effort: Optional[str]) -> Optional[str]:
+    """`effort` stripped, None when empty. Only its shape is checked (a short word):
+    codex takes the level names (minimal, low, medium, high, xhigh as of 0.166) and
+    rejects one it does not know, so a new level needs no change here, while a value
+    that is not a plain word never reaches the config override it is spliced into."""
+    effort = (effort or "").strip()
+    if not effort:
+        return None
+    if not _EFFORT_RE.fullmatch(effort):
+        raise ValueError(
+            f"invalid effort {effort!r}; expected a short level name such as 'low' or 'high'"
+        )
+    return effort
+
+
 # ----------------------------------------------------------------- session pinning
 def get_pinned(workspace: str) -> Optional[str]:
     """The session id pinned to `workspace` this run, or None."""
@@ -587,6 +605,7 @@ def build_args(
     resume_session: Optional[str],
     output_file: str,
     json_stream: bool = False,
+    effort: Optional[str] = None,
 ) -> list[str]:
     """argv for `codex exec` (fresh) or `codex exec resume <id>` (continue).
 
@@ -605,6 +624,10 @@ def build_args(
     supported fix rather than a workaround.
     `json_stream` adds `--json` so codex emits its events as JSONL on stdout (for
     watch mode); the final answer is still read from `output_file` either way.
+    `effort` becomes `-c model_reasoning_effort=<level>`, a config override that
+    replaces ~/.codex/config.toml's value for this run (both `exec` and `exec resume`
+    take `-c`). The level goes in unquoted: codex parses the value as TOML and falls
+    back to the raw string, and a quote here would make a Windows `.cmd` shim refuse it.
     """
     args = [CODEX_BIN, "exec"]
     if resume_session:
@@ -614,6 +637,8 @@ def build_args(
     if not resume_session:
         args += ["-s", sandbox, "-C", workspace]
     args += ["--skip-git-repo-check"]
+    if effort:
+        args += ["-c", f"model_reasoning_effort={effort}"]
     if json_stream:
         args += ["--json"]
     args += ["-o", output_file, prompt]
@@ -636,6 +661,7 @@ def run_codex(
     continue_conv: bool = False,
     timeout_s: int = 180,
     pin: bool = True,
+    effort: Optional[str] = None,
 ) -> str:
     """Run `codex exec` (fresh or resume) and return the final agent message.
 
@@ -649,6 +675,7 @@ def run_codex(
     _run_with_progress(run_fn, args, ...) unchanged.
     """
     validate_sandbox(sandbox)
+    effort = validate_effort(effort)
     os.makedirs(workspace, exist_ok=True)  # codex's cwd (-C) must exist
     resume_session = _resolve_resume_session(workspace, continue_conv)
 
@@ -660,7 +687,9 @@ def run_codex(
 
     before = _rollout_names() if (not continue_conv and pin) else set()
     try:
-        args = build_args(prompt, workspace, sandbox, model, resume_session, out_path)
+        args = build_args(
+            prompt, workspace, sandbox, model, resume_session, out_path, effort=effort
+        )
         proc = proc_tree.run_captured(
             args,
             cwd=workspace,
@@ -719,6 +748,7 @@ def run_codex_streaming(
     timeout_s: int = 180,
     on_event=None,
     pin: bool = True,
+    effort: Optional[str] = None,
 ) -> str:
     """Run `codex exec --json` and stream events live, returning the final answer.
 
@@ -730,6 +760,7 @@ def run_codex_streaming(
     leave a child holding the stdout pipe open after the turn finishes.
     """
     validate_sandbox(sandbox)
+    effort = validate_effort(effort)
     os.makedirs(workspace, exist_ok=True)  # codex's cwd (-C) must exist
     resume_session = _resolve_resume_session(workspace, continue_conv)
 
@@ -738,7 +769,9 @@ def run_codex_streaming(
     fd.close()
 
     before = set() if continue_conv else _rollout_names()
-    args = build_args(prompt, workspace, sandbox, model, resume_session, out_path, json_stream=True)
+    args = build_args(
+        prompt, workspace, sandbox, model, resume_session, out_path, json_stream=True, effort=effort
+    )
     try:
         proc = proc_tree.popen(
             args,

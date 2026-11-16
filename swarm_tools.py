@@ -49,10 +49,11 @@ def agent_swarm(
                "muse". prompt (required). workspace: the project dir (default: the
                server cwd, so no repo). sandbox: "read-only" (default),
                "workspace-write" or "danger-full-access", each with that backend's
-               own meaning (see its *_ask). ANTIGRAVITY differs: "read-only" is plan
+               own meaning. ANTIGRAVITY differs: "read-only" is plan
                mode, "workspace-write" is refused, and an omitted sandbox leaves the
                worker UNRESTRICTED, so set one. model: optional, in the backend's
-               own format (opencode: "provider/model").
+               own format (opencode: "provider/model"). effort (codex,
+               claude only): "low".."xhigh".
         max_concurrency: Max workers running at once (default 4). Higher = faster
                          but more quota/rate-limit pressure and more agents at once.
         timeout_s: Per-worker timeout in seconds. Default 180. An opencode

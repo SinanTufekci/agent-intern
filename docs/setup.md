@@ -117,20 +117,34 @@ That writes the same entry you would otherwise add by hand under `mcpServers` in
 }
 ```
 
-uvx pins to the version it first caches and does **not** auto-upgrade, so you never run an update you
-didn't choose — important, since the bridge runs [unsandboxed code](security.md#security): a surprise (or
-compromised) release can't execute until you opt in. You still get told when there's something to
-opt into: any `*_status` call reports whether a newer release is out, and Claude is instructed to
-pass that on when it sees it. (There's a startup check too, but it writes to stderr — that only
-reaches your MCP logs, not you.) Upgrade deliberately and restart Claude Code:
+**How updates reach you.** A plain `uvx agent-intern` is *not* pinned: uv looks for a newer release
+every time the host starts the server, using its cached copy of PyPI's index, which PyPI lets it keep
+for 10 minutes. So restart your host after a release and you are on it, unasked (ten minutes after the
+release at the latest). A server that is already running never changes under you; only a restart loads
+the new code. This was checked with uv 0.10.6: a release published inside the 10-minute window was
+not picked up until the window ran out, and `uvx agent-intern@latest` skipped the wait.
+
+You are told when there's a newer release: any `*_status` call reports it with a link to its release
+notes, and the host model is instructed to pass that on. (There's a startup check too, but it writes
+to stderr — that only reaches your MCP logs, not you.) The check is one GET to PyPI, remembered for 6
+hours; `AGENT_INTERN_NO_UPDATE_CHECK=1` turns it off
+([details](security.md#what-the-bridge-does-on-its-own)). To load a release right now, refresh uv's view
+of the index and restart the host; `--version` makes it print and exit instead of starting a server:
 
 ```bash
-uvx agent-intern@latest      # fetch + run the newest release (refreshes uv's cache)
+uvx agent-intern@latest --version
 ```
 
-> [!TIP]
-> Prefer hands-off auto-updates? Put `"args": ["agent-intern@latest"]` in the config instead —
-> every launch runs the newest release. Convenient, but it pulls new code without asking each time.
+> [!IMPORTANT]
+> The bridge runs [unsandboxed code](security.md#security), and a plain `uvx agent-intern` runs
+> whatever PyPI calls newest on each launch. If you want to decide when an update lands, **pin the
+> version** and change the number yourself when you choose to upgrade:
+>
+> ```bash
+> claude mcp add -s user agent-intern -- uvx agent-intern==0.38.0
+> ```
+>
+> A pinned install never changes on its own, and the update notice still tells you when to look.
 
 ### Antigravity (the `agy` CLI)
 

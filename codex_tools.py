@@ -44,6 +44,7 @@ async def codex_ask(
     model: Optional[str] = None,
     timeout_s: int = 180,
     watch: bool = False,
+    effort: Optional[str] = None,
     ctx: Optional[Context] = None,
 ) -> str:
     """Best for the hardest reasoning and real code work, behind a REAL OS sandbox (OpenAI
@@ -72,16 +73,20 @@ async def codex_ask(
                its `--json` event stream. codex still runs headless; the same final
                text is returned. Best-effort — if the browser can't open, the run
                completes normally. Default false.
+        effort: Optional reasoning effort for this call (`-c model_reasoning_effort`):
+                "low", "medium", "high" or "xhigh" (codex's own list; "minimal" on some
+                models). Omit to use the level in your codex config.
     """
     ws = codex_bridge.normalize_workspace(workspace)
     codex_bridge.validate_sandbox(sandbox)  # fail fast with a clear message
+    effort = codex_bridge.validate_effort(effort)
     if watch:
         return await asyncio.to_thread(
-            _run_codex_watched, prompt, ws, sandbox, model, False, timeout_s
+            _run_codex_watched, prompt, ws, sandbox, model, False, timeout_s, effort
         )
     return await server._run_with_progress(
         codex_bridge.run_codex,
-        (prompt, ws, sandbox, model, False, timeout_s),
+        (prompt, ws, sandbox, model, False, timeout_s, True, effort),
         ctx,
         timeout_s,
         label="codex",
@@ -101,6 +106,7 @@ async def codex_continue(
     workspace: Optional[str] = None,
     timeout_s: int = 180,
     watch: bool = False,
+    effort: Optional[str] = None,
     ctx: Optional[Context] = None,
 ) -> str:
     """Continue the Codex session: resumes the thread rooted at this workspace (`codex exec
@@ -115,8 +121,11 @@ async def codex_continue(
         timeout_s: Max seconds to wait for codex to complete. Default 180.
         watch: If true, open the live "watch" view streaming codex's steps as it
                works (same viewer as codex_ask). Default false.
+        effort: Optional reasoning effort for this turn, as in codex_ask. Omit to use
+                the level in your codex config.
     """
     ws = codex_bridge.normalize_workspace(workspace)
+    effort = codex_bridge.validate_effort(effort)
     if watch:
         return await asyncio.to_thread(
             _run_codex_watched,
@@ -126,10 +135,11 @@ async def codex_continue(
             None,
             True,
             timeout_s,
+            effort,
         )
     return await server._run_with_progress(
         codex_bridge.run_codex,
-        (prompt, ws, codex_bridge.DEFAULT_SANDBOX, None, True, timeout_s),
+        (prompt, ws, codex_bridge.DEFAULT_SANDBOX, None, True, timeout_s, True, effort),
         ctx,
         timeout_s,
         label="codex",
@@ -199,6 +209,7 @@ def _run_codex_watched(
     model: Optional[str],
     continue_conv: bool,
     timeout_s: int,
+    effort: Optional[str] = None,
 ) -> str:
     """Like codex_bridge.run_codex, but stream codex's steps to the live watch
     window. EXPERIMENTAL. Reuses the same localhost viewer as the agy watch tools;
@@ -232,7 +243,7 @@ def _run_codex_watched(
 
     try:
         answer = codex_bridge.run_codex_streaming(
-            prompt, workspace, sandbox, model, continue_conv, timeout_s, on_event
+            prompt, workspace, sandbox, model, continue_conv, timeout_s, on_event, effort=effort
         )
     except Exception as e:  # noqa: BLE001 — show the failure in the window, then re-raise
         server._watch_finish(rid, "error", f"({e})"[:200], time.time() - start)

@@ -20,9 +20,11 @@ release contains the fix.
 
 ## Supported versions
 
-Only the latest release on [PyPI](https://pypi.org/project/agent-intern/) gets fixes. `uvx` pins the
-version it first cached, so upgrade deliberately with `uvx agent-intern@latest` and restart your MCP
-host.
+Only the latest release on [PyPI](https://pypi.org/project/agent-intern/) gets fixes. A plain
+`uvx agent-intern` picks up the newest release when your MCP host next starts the server (within ten
+minutes of a release; `uvx agent-intern@latest --version` skips the wait). A pinned install
+(`uvx agent-intern==X.Y.Z`) never changes until you edit the number, so upgrade it yourself and restart
+your MCP host.
 
 ## What counts
 

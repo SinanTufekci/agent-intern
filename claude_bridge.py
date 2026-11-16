@@ -163,6 +163,22 @@ def validate_model(model: Optional[str]) -> Optional[str]:
     return model or None
 
 
+EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")  # `claude --help`, 2.1.325
+
+
+def validate_effort(effort: Optional[str]) -> Optional[str]:
+    """`effort` lower-cased, None when empty, else raise ValueError listing the levels.
+
+    Checked here, unlike model: the list is short and printed by `claude --help`, and
+    an unknown level is better refused now than after a session has started."""
+    effort = (effort or "").strip().lower()
+    if not effort:
+        return None
+    if effort not in EFFORT_LEVELS:
+        raise ValueError(f"invalid effort {effort!r}; expected one of: {', '.join(EFFORT_LEVELS)}")
+    return effort
+
+
 def _sandbox_flags(sandbox: str) -> list[str]:
     """claude permission flags for a `sandbox` value (see the module SANDBOX note).
 
@@ -213,6 +229,7 @@ def build_args(
     session_id: Optional[str] = None,
     resume_id: Optional[str] = None,
     continue_conv: bool = False,
+    effort: Optional[str] = None,
 ) -> list[str]:
     """argv for a headless `claude -p`. The prompt is NOT here: it goes on stdin.
 
@@ -231,6 +248,8 @@ def build_args(
     ]
     if model:
         args += ["--model", model]
+    if effort:
+        args += ["--effort", effort]
     if resume_id:
         args += ["--resume", resume_id]
     elif continue_conv:
@@ -324,12 +343,13 @@ def run_claude(
     continue_conv: bool = False,
     timeout_s: int = 180,
     pin: bool = True,
+    effort: Optional[str] = None,
 ) -> str:
     """Run `claude -p` (fresh or continue) and return the final answer.
 
     `pin=False` for swarm workers (one-shot, no continue). Signature mirrors
     run_cursor so server._run_with_progress can call it unchanged."""
-    return _run_impl(prompt, workspace, sandbox, model, continue_conv, timeout_s, None, pin)
+    return _run_impl(prompt, workspace, sandbox, model, continue_conv, timeout_s, None, pin, effort)
 
 
 def run_claude_streaming(
@@ -341,9 +361,12 @@ def run_claude_streaming(
     timeout_s: int = 180,
     on_event=None,
     pin: bool = True,
+    effort: Optional[str] = None,
 ) -> str:
     """Like run_claude, handing each stream-json event to `on_event` as it arrives."""
-    return _run_impl(prompt, workspace, sandbox, model, continue_conv, timeout_s, on_event, pin)
+    return _run_impl(
+        prompt, workspace, sandbox, model, continue_conv, timeout_s, on_event, pin, effort
+    )
 
 
 def _run_impl(
@@ -355,9 +378,11 @@ def _run_impl(
     timeout_s: int,
     on_event,
     pin: bool,
+    effort: Optional[str] = None,
 ) -> str:
     """The one runner behind run_claude and run_claude_streaming."""
     validate_sandbox(sandbox)
+    effort = validate_effort(effort)
     check_supported_version()
     os.makedirs(workspace, exist_ok=True)
     resume_id = get_pinned(workspace) if continue_conv else None
@@ -368,6 +393,7 @@ def _run_impl(
         session_id=session_id,
         resume_id=resume_id,
         continue_conv=continue_conv and resume_id is None,
+        effort=effort,
     )
 
     state: dict = {}

@@ -330,3 +330,22 @@ shim.
 The bridge itself does only cross-platform filesystem reads under `~/.gemini/antigravity-cli/`,
 `~/.codex/`, `~/.copilot/`, and `~/.cursor/` — no private APIs, no token theft. The risk above is
 entirely in what the sub-agents are allowed to do.
+
+### What the bridge does on its own
+
+Everything the sub-agents do is covered above. Apart from that, the bridge itself:
+
+- **Makes one network call: the update check.** At startup (to stderr) and in `*_status` / `doctor`
+  (as the `bridge version` row) it does a plain GET of `https://pypi.org/pypi/agent-intern/json` to
+  learn the newest release. It sends no prompt, path or identifier, only `User-Agent:
+  agent-intern-bridge`; it waits at most 4 s, remembers the answer for 6 hours (a failure for 10
+  minutes), and any error just means no notice. Set **`AGENT_INTERN_NO_UPDATE_CHECK=1`** to turn it off
+  (the earlier name, `AGY_BRIDGE_NO_UPDATE_CHECK`, still works); the server then makes no network call
+  of its own. A fork that is not on PyPI sets `AGY_BRIDGE_REPO=owner/repo` and the check reads that
+  repository's tags from `api.github.com` instead.
+- **Opens a local port only when asked.** The watch window starts an HTTP listener on `127.0.0.1` the
+  first time a call passes `watch=true`; it checks the `Host` header and a per-process token on every
+  request. Without `watch` no listener exists.
+- **Does not update itself.** Which version runs is decided by how the host launches it (`uvx
+  agent-intern` follows new releases on each launch, `uvx agent-intern==X.Y.Z` stays put; see
+  [setup](setup.md#no-plugin--register-the-server-yourself-you-control-updates)).

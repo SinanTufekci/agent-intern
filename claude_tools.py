@@ -41,6 +41,7 @@ async def claude_ask(
     model: Optional[str] = None,
     timeout_s: int = 180,
     watch: bool = False,
+    effort: Optional[str] = None,
     ctx: Optional[Context] = None,
 ) -> str:
     """Best for large refactors and careful reviews: Claude Code (`claude -p`) as a
@@ -64,17 +65,20 @@ async def claude_ask(
         timeout_s: Max seconds to wait for claude to complete. Default 180.
         watch: If true, open a live "watch" view streaming Claude Code's steps.
                Same final text is returned. Best-effort. Default false.
+        effort: Optional reasoning effort (`--effort`): "low", "medium", "high",
+                "xhigh" or "max". Omit for Claude Code's default for the model.
     """
     ws = claude_bridge.normalize_workspace(workspace)
     claude_bridge.validate_sandbox(sandbox)
     model = claude_bridge.validate_model(model)
+    effort = claude_bridge.validate_effort(effort)
     if watch:
         return await asyncio.to_thread(
-            _run_claude_watched, prompt, ws, sandbox, model, False, timeout_s
+            _run_claude_watched, prompt, ws, sandbox, model, False, timeout_s, effort
         )
     return await server._run_with_progress(
         claude_bridge.run_claude,
-        (prompt, ws, sandbox, model, False, timeout_s),
+        (prompt, ws, sandbox, model, False, timeout_s, True, effort),
         ctx,
         timeout_s,
         label="claude",
@@ -95,6 +99,7 @@ async def claude_continue(
     sandbox: str = claude_bridge.DEFAULT_SANDBOX,
     timeout_s: int = 180,
     watch: bool = False,
+    effort: Optional[str] = None,
     ctx: Optional[Context] = None,
 ) -> str:
     """Continue the Claude Code session, for hosts other than Claude Code: resumes the
@@ -110,16 +115,18 @@ async def claude_continue(
                  and caveats as claude_ask.
         timeout_s: Max seconds to wait for claude to complete. Default 180.
         watch: If true, open the live "watch" view. Default false.
+        effort: Optional reasoning effort for this turn, as in claude_ask.
     """
     ws = claude_bridge.normalize_workspace(workspace)
     claude_bridge.validate_sandbox(sandbox)
+    effort = claude_bridge.validate_effort(effort)
     if watch:
         return await asyncio.to_thread(
-            _run_claude_watched, prompt, ws, sandbox, None, True, timeout_s
+            _run_claude_watched, prompt, ws, sandbox, None, True, timeout_s, effort
         )
     return await server._run_with_progress(
         claude_bridge.run_claude,
-        (prompt, ws, sandbox, None, True, timeout_s),
+        (prompt, ws, sandbox, None, True, timeout_s, True, effort),
         ctx,
         timeout_s,
         label="claude",
@@ -192,6 +199,7 @@ def _run_claude_watched(
     model: Optional[str],
     continue_conv: bool,
     timeout_s: int,
+    effort: Optional[str] = None,
 ) -> str:
     """Like claude_bridge.run_claude, but stream claude's steps to the live watch
     window. The return value is identical to claude_ask."""
@@ -223,7 +231,7 @@ def _run_claude_watched(
 
     try:
         answer = claude_bridge.run_claude_streaming(
-            prompt, workspace, sandbox, model, continue_conv, timeout_s, on_event
+            prompt, workspace, sandbox, model, continue_conv, timeout_s, on_event, effort=effort
         )
     except Exception as e:  # noqa: BLE001 — show the failure in the window, then re-raise
         server._watch_finish(rid, "error", f"({e})"[:200], time.time() - start)

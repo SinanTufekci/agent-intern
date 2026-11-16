@@ -30,3 +30,6 @@ docs/superpowers/
 
 # Claude Code session notes — local only, kept out of the public repo.
 CLAUDE.md
+
+# macOS Finder metadata
+.DS_Store

@@ -18,6 +18,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import sys
 import webbrowser
 
 import pytest
@@ -34,6 +35,7 @@ os.environ.pop("AGENT_INTERN_BACKENDS", None)
 # inside a delegated agent would otherwise start at depth >= 1 and hit the guard.
 os.environ.pop("CLAUDECODE", None)
 os.environ.pop("AGENT_INTERN_DEPTH", None)
+os.environ.pop("AGENT_INTERN_NO_UPDATE_CHECK", None)
 # The rest of what Claude Code exports to its children (the session id, the
 # cross-session messaging socket and token, AI_AGENT, ...) and the settings that
 # move the claude backend's binary or config home: none may reach a test.
@@ -227,6 +229,16 @@ def fake_os_name(monkeypatch, module, name):
     imported keeps the fake platform inside the code under test. Use it as
     `from conftest import fake_os_name`."""
     monkeypatch.setattr(module, "os", _OsProxy(os, name))
+
+
+@pytest.fixture(autouse=True)
+def _fresh_update_check_cache():
+    """The release lookup is remembered for hours; one test's answer must not be the
+    next test's."""
+    server = sys.modules.get("server")
+    if server is not None:
+        server._latest_cache = None
+    yield
 
 
 @pytest.fixture(autouse=True)

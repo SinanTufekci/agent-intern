@@ -998,9 +998,10 @@ _BACKEND_NAMES = (
 def _normalize_tasks(tasks) -> list[dict]:
     """Validate + canonicalize agent_swarm tasks into a uniform list.
 
-    Each task is {backend, prompt, workspace?, sandbox?, model?}. backend accepts a
-    few aliases; `model` applies to every backend (agy's --model works in print mode
-    as of 1.0.16). `sandbox` applies to every backend too, now that Antigravity has
+    Each task is {backend, prompt, workspace?, sandbox?, model?, effort?}. backend
+    accepts a few aliases; `effort` is for codex and claude workers only (any other
+    backend refuses it); `model` applies to every backend (agy's --model works in print
+    mode as of 1.0.16). `sandbox` applies to every backend too, now that Antigravity has
     plan mode to honour "read-only" with — it used to be silently ignored there, so
     an agy task could ask to be fenced and run unrestricted anyway. What each policy
     means still differs per backend: Codex's is an enforced OS sandbox, Grok's is on
@@ -1029,6 +1030,7 @@ def _normalize_tasks(tasks) -> list[dict]:
         workspace = os.path.abspath(ws) if ws else os.getcwd()
         sandbox = None
         model = None
+        effort = None  # codex and claude only; any other backend refuses it below
         plan = False  # antigravity only; see the else-branch below
         if backend == "codex":
             import codex_bridge
@@ -1036,6 +1038,7 @@ def _normalize_tasks(tasks) -> list[dict]:
             sandbox = t.get("sandbox") or codex_bridge.DEFAULT_SANDBOX
             codex_bridge.validate_sandbox(sandbox)  # fail fast on a bad policy
             model = t.get("model") or None
+            effort = codex_bridge.validate_effort(t.get("effort"))
         elif backend == "copilot":
             import copilot_bridge
 
@@ -1054,6 +1057,7 @@ def _normalize_tasks(tasks) -> list[dict]:
             sandbox = t.get("sandbox") or claude_bridge.DEFAULT_SANDBOX
             claude_bridge.validate_sandbox(sandbox)  # fail fast on a bad policy
             model = claude_bridge.validate_model(t.get("model") or None)
+            effort = claude_bridge.validate_effort(t.get("effort"))
         elif backend == "grok":
             import grok_bridge
 
@@ -1086,6 +1090,19 @@ def _normalize_tasks(tasks) -> list[dict]:
                     server._check_plan_mode(str(prompt))
             except ValueError as e:
                 raise ValueError(f"task {i}: {e}") from e
+        if backend not in ("codex", "claude") and str(t.get("effort") or "").strip():
+            # Refuse rather than ignore: a worker that quietly ran at another level
+            # would answer a question the caller did not ask.
+            hint = (
+                " (agy takes the level in the model name instead, e.g. gemini-4-argon-low;"
+                " its --effort conflicts with a model that already names one)"
+                if backend == "antigravity"
+                else ""
+            )
+            raise ValueError(
+                f"task {i}: 'effort' is only supported for the codex and claude backends, "
+                f"not {backend!r}{hint}"
+            )
         out.append(
             {
                 "backend": backend,
@@ -1093,19 +1110,24 @@ def _normalize_tasks(tasks) -> list[dict]:
                 "workspace": workspace,
                 "sandbox": sandbox,
                 "model": model,
+                "effort": effort,
                 "plan": plan,
             }
         )
     return out
 
 
-def _run_codex_worker(index, prompt, workspace, sandbox, model, timeout_s) -> WorkerResult:
+def _run_codex_worker(
+    index, prompt, workspace, sandbox, model, timeout_s, effort=None
+) -> WorkerResult:
     import codex_bridge
 
     start = time.time()
     try:
         os.makedirs(workspace, exist_ok=True)
-        ans = codex_bridge.run_codex(prompt, workspace, sandbox, model, False, timeout_s, pin=False)
+        ans = codex_bridge.run_codex(
+            prompt, workspace, sandbox, model, False, timeout_s, pin=False, effort=effort
+        )
         return WorkerResult(
             index,
             True,
@@ -1125,7 +1147,9 @@ def _run_codex_worker(index, prompt, workspace, sandbox, model, timeout_s) -> Wo
         )
 
 
-def _run_codex_worker_watched(index, prompt, workspace, sandbox, model, timeout_s) -> WorkerResult:
+def _run_codex_worker_watched(
+    index, prompt, workspace, sandbox, model, timeout_s, effort=None
+) -> WorkerResult:
     import codex_bridge
     import server
     import swarm_watch
@@ -1142,7 +1166,7 @@ def _run_codex_worker_watched(index, prompt, workspace, sandbox, model, timeout_
     try:
         os.makedirs(workspace, exist_ok=True)
         ans = codex_bridge.run_codex_streaming(
-            prompt, workspace, sandbox, model, False, timeout_s, on_event, pin=False
+            prompt, workspace, sandbox, model, False, timeout_s, on_event, pin=False, effort=effort
         )
         swarm_watch.worker_finish(index, "done", ans, time.time() - start)
         return WorkerResult(
@@ -1303,14 +1327,16 @@ def _run_cursor_worker_watched(index, prompt, workspace, sandbox, model, timeout
         )
 
 
-def _run_claude_worker(index, prompt, workspace, sandbox, model, timeout_s) -> WorkerResult:
+def _run_claude_worker(
+    index, prompt, workspace, sandbox, model, timeout_s, effort=None
+) -> WorkerResult:
     import claude_bridge
 
     start = time.time()
     try:
         os.makedirs(workspace, exist_ok=True)
         ans = claude_bridge.run_claude(
-            prompt, workspace, sandbox, model, False, timeout_s, pin=False
+            prompt, workspace, sandbox, model, False, timeout_s, pin=False, effort=effort
         )
         return WorkerResult(
             index,
@@ -1331,7 +1357,9 @@ def _run_claude_worker(index, prompt, workspace, sandbox, model, timeout_s) -> W
         )
 
 
-def _run_claude_worker_watched(index, prompt, workspace, sandbox, model, timeout_s) -> WorkerResult:
+def _run_claude_worker_watched(
+    index, prompt, workspace, sandbox, model, timeout_s, effort=None
+) -> WorkerResult:
     import claude_bridge
     import server
     import swarm_watch
@@ -1348,7 +1376,7 @@ def _run_claude_worker_watched(index, prompt, workspace, sandbox, model, timeout
     try:
         os.makedirs(workspace, exist_ok=True)
         ans = claude_bridge.run_claude_streaming(
-            prompt, workspace, sandbox, model, False, timeout_s, on_event, pin=False
+            prompt, workspace, sandbox, model, False, timeout_s, on_event, pin=False, effort=effort
         )
         swarm_watch.worker_finish(index, "done", ans, time.time() - start)
         return WorkerResult(
@@ -1660,7 +1688,9 @@ def swarm_agents(
             return WorkerResult(i, False, error=error, workspace=t["workspace"])
         if t["backend"] == "codex":
             fn = _run_codex_worker_watched if watch else _run_codex_worker
-            return fn(i, t["prompt"], t["workspace"], t["sandbox"], t["model"], timeout_s)
+            return fn(
+                i, t["prompt"], t["workspace"], t["sandbox"], t["model"], timeout_s, t.get("effort")
+            )
         if t["backend"] == "copilot":
             fn = _run_copilot_worker_watched if watch else _run_copilot_worker
             return fn(i, t["prompt"], t["workspace"], t["sandbox"], t["model"], timeout_s)
@@ -1669,7 +1699,9 @@ def swarm_agents(
             return fn(i, t["prompt"], t["workspace"], t["sandbox"], t["model"], timeout_s)
         if t["backend"] == "claude":
             fn = _run_claude_worker_watched if watch else _run_claude_worker
-            return fn(i, t["prompt"], t["workspace"], t["sandbox"], t["model"], timeout_s)
+            return fn(
+                i, t["prompt"], t["workspace"], t["sandbox"], t["model"], timeout_s, t.get("effort")
+            )
         if t["backend"] == "grok":
             fn = _run_grok_worker_watched if watch else _run_grok_worker
             return fn(i, t["prompt"], t["workspace"], t["sandbox"], t["model"], timeout_s)

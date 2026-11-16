@@ -242,6 +242,36 @@ def test_build_args_with_model():
     assert args[args.index("--model") + 1] == "haiku"
 
 
+def test_build_args_with_effort():
+    args = claude_bridge.build_args("read-only", effort="xhigh", session_id=SAMPLE_SID)
+    assert args[args.index("--effort") + 1] == "xhigh"
+    assert "--effort" not in claude_bridge.build_args("read-only", session_id=SAMPLE_SID)
+
+
+@pytest.mark.parametrize("level", claude_bridge.EFFORT_LEVELS)
+def test_validate_effort_accepts_every_level_claude_lists(level):
+    assert claude_bridge.validate_effort(level.upper()) == level
+
+
+def test_validate_effort_empty_is_none_and_unknown_is_refused():
+    assert claude_bridge.validate_effort(None) is None
+    assert claude_bridge.validate_effort("  ") is None
+    with pytest.raises(ValueError, match="expected one of"):
+        claude_bridge.validate_effort("turbo")
+
+
+def test_claude_tools_pass_effort_to_the_runner(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(claude_bridge, "run_claude", lambda *a, **k: calls.append(a) or "ok")
+    _call_tool(claude_tools.claude_ask, "q", str(tmp_path), effort="Low")
+    _call_tool(claude_tools.claude_continue, "q", str(tmp_path), effort="max")
+    _call_tool(claude_tools.claude_ask, "q", str(tmp_path))
+    assert [c[7] for c in calls] == ["low", "max", None]  # run_claude's `effort`
+    with pytest.raises(ValueError):
+        _call_tool(claude_tools.claude_ask, "q", str(tmp_path), effort="turbo")
+    assert len(calls) == 3
+
+
 def test_build_args_resume_beats_continue_beats_session_id():
     both = claude_bridge.build_args(
         "read-only", session_id=SAMPLE_SID, resume_id="abc", continue_conv=True
@@ -1016,7 +1046,9 @@ def test_claude_ask_runs_a_fresh_session(tmp_path, monkeypatch):
         claude_tools.claude_ask, "q", str(tmp_path), "workspace-write", "haiku", timeout_s=42
     )
     assert out == "the answer"
-    assert calls == [("q", os.path.abspath(str(tmp_path)), "workspace-write", "haiku", False, 42)]
+    assert calls == [
+        ("q", os.path.abspath(str(tmp_path)), "workspace-write", "haiku", False, 42, True, None)
+    ]
 
 
 def test_claude_ask_defaults_to_read_only_and_the_server_cwd(monkeypatch):
@@ -1037,7 +1069,9 @@ def test_claude_continue_resumes_with_the_continue_flag(tmp_path, monkeypatch):
     monkeypatch.setattr(claude_bridge, "run_claude", lambda *a, **k: calls.append(a) or "more")
     out = _call_tool(claude_tools.claude_continue, "next", str(tmp_path), "workspace-write", 30)
     assert out == "more"
-    assert calls == [("next", os.path.abspath(str(tmp_path)), "workspace-write", None, True, 30)]
+    assert calls == [
+        ("next", os.path.abspath(str(tmp_path)), "workspace-write", None, True, 30, True, None)
+    ]
 
 
 def test_claude_continue_rejects_a_bad_sandbox(tmp_path, monkeypatch):
@@ -1189,7 +1223,7 @@ def test_claude_ask_with_watch_uses_the_watched_runner(tmp_path, monkeypatch):
     )
     out = _call_tool(claude_tools.claude_ask, "q", str(tmp_path), watch=True, timeout_s=9)
     assert out == "watched answer"
-    assert calls == [("q", os.path.abspath(str(tmp_path)), "read-only", None, False, 9)]
+    assert calls == [("q", os.path.abspath(str(tmp_path)), "read-only", None, False, 9, None)]
     calls.clear()
     _call_tool(claude_tools.claude_continue, "q", str(tmp_path), watch=True)
     assert calls[0][4] is True  # continue_conv
@@ -1433,7 +1467,7 @@ def test_swarm_names_claude_in_its_backend_list():
 def test_a_claude_swarm_worker_runs_unpinned(tmp_path, monkeypatch):
     seen = {}
 
-    def fake(prompt, workspace, sandbox, model, cont, timeout_s, pin=True):
+    def fake(prompt, workspace, sandbox, model, cont, timeout_s, pin=True, effort=None):
         seen.update(pin=pin, cont=cont, sandbox=sandbox, model=model)
         return "worker answer"
 
@@ -1485,7 +1519,7 @@ def test_a_watched_claude_swarm_worker_reports_a_failure(tmp_path, monkeypatch):
 def test_swarm_dispatches_a_claude_task_to_the_claude_worker(tmp_path, monkeypatch):
     called = []
 
-    def worker(i, prompt, workspace, sandbox, model, timeout_s):
+    def worker(i, prompt, workspace, sandbox, model, timeout_s, effort=None):
         called.append((prompt, sandbox, model))
         return swarm.WorkerResult(i, True, answer="ok", workspace=workspace, backend="claude")
 

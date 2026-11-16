@@ -423,7 +423,7 @@ def test_swarm_agents_dispatches_by_backend(monkeypatch):
         calls.append(("antigravity", index, prompt, model))
         return swarm.WorkerResult(index, True, answer="agy:" + prompt, workspace=workspace)
 
-    def fake_codex(index, prompt, workspace, sandbox, model, timeout_s):
+    def fake_codex(index, prompt, workspace, sandbox, model, timeout_s, effort=None):
         calls.append(("codex", index, prompt, sandbox, model))
         return swarm.WorkerResult(index, True, answer="cdx:" + prompt, workspace=workspace)
 
@@ -458,7 +458,7 @@ def test_swarm_agents_fails_a_turned_off_backend_in_place(monkeypatch):
     # member not installed still runs the rest.
     monkeypatch.setattr(server, "ENABLED_BACKENDS", ("codex",))
 
-    def fake_codex(index, prompt, workspace, sandbox, model, timeout_s):
+    def fake_codex(index, prompt, workspace, sandbox, model, timeout_s, effort=None):
         return swarm.WorkerResult(index, True, answer="cdx:" + prompt, workspace=workspace)
 
     def no_copilot(*a, **k):
@@ -560,7 +560,7 @@ def test_run_codex_worker_never_pins(monkeypatch):
 
     seen = {}
 
-    def fake_run(prompt, ws, sandbox, model, cont, t, pin=True):
+    def fake_run(prompt, ws, sandbox, model, cont, t, pin=True, effort=None):
         seen["pin"] = pin
         return "ans:" + prompt
 
@@ -568,6 +568,85 @@ def test_run_codex_worker_never_pins(monkeypatch):
     r = swarm._run_codex_worker(0, "hello", os.getcwd(), "read-only", None, 5)
     assert r.ok and r.answer == "ans:hello" and r.backend == "codex"
     assert seen["pin"] is False
+
+
+def test_normalize_tasks_carries_effort_for_codex_and_claude(tmp_path):
+    out = swarm._normalize_tasks(
+        [
+            {"backend": "codex", "prompt": "a", "workspace": str(tmp_path), "effort": " Low "},
+            {"backend": "claude", "prompt": "b", "workspace": str(tmp_path), "effort": "MAX"},
+            {"backend": "codex", "prompt": "c", "workspace": str(tmp_path)},
+        ]
+    )
+    # codex's level is passed through as typed (stripped); claude's list is closed, so
+    # it is lower-cased and checked.
+    assert [t["effort"] for t in out] == ["Low", "max", None]
+
+
+def test_normalize_tasks_rejects_a_bad_effort_naming_the_task(tmp_path):
+    with pytest.raises(ValueError):
+        swarm._normalize_tasks([{"backend": "claude", "prompt": "b", "effort": "turbo"}])
+    with pytest.raises(ValueError):
+        swarm._normalize_tasks([{"backend": "codex", "prompt": "b", "effort": 'x"y'}])
+
+
+@pytest.mark.parametrize("backend", ["copilot", "cursor", "grok", "opencode", "muse"])
+def test_normalize_tasks_refuses_effort_on_other_backends(backend):
+    with pytest.raises(ValueError, match=rf"task 1: 'effort' is only supported.*{backend}"):
+        swarm._normalize_tasks(
+            [
+                {"backend": "codex", "prompt": "ok"},
+                {"backend": backend, "prompt": "p", "effort": "low"},
+            ]
+        )
+
+
+def test_normalize_tasks_points_agy_at_the_model_name(monkeypatch):
+    import server
+
+    monkeypatch.setattr(server, "list_agy_models", lambda: ["gemini-4-argon-low"])
+    with pytest.raises(ValueError, match="gemini-4-argon-low"):
+        swarm._normalize_tasks([{"backend": "agy", "prompt": "p", "effort": "low"}])
+    # An empty effort is no effort, on any backend.
+    swarm._normalize_tasks([{"backend": "copilot", "prompt": "p", "effort": ""}])
+
+
+def test_run_codex_worker_passes_effort_to_the_runner(monkeypatch):
+    import codex_bridge
+
+    seen = {}
+
+    def fake_run(prompt, ws, sandbox, model, cont, t, pin=True, effort=None):
+        seen["effort"] = effort
+        return "ok"
+
+    monkeypatch.setattr(codex_bridge, "run_codex", fake_run)
+    assert swarm._run_codex_worker(0, "p", os.getcwd(), "read-only", None, 5, "high").ok
+    assert seen["effort"] == "high"
+
+
+def test_swarm_dispatch_hands_each_worker_its_own_effort(monkeypatch):
+    seen = {}
+
+    def fake_codex(index, prompt, workspace, sandbox, model, timeout_s, effort=None):
+        seen[("codex", index)] = effort
+        return swarm.WorkerResult(index, True, answer="c", workspace=workspace)
+
+    def fake_claude(index, prompt, workspace, sandbox, model, timeout_s, effort=None):
+        seen[("claude", index)] = effort
+        return swarm.WorkerResult(index, True, answer="k", workspace=workspace)
+
+    monkeypatch.setattr(swarm, "_run_codex_worker", fake_codex)
+    monkeypatch.setattr(swarm, "_run_claude_worker", fake_claude)
+    monkeypatch.setattr(server, "ENABLED_BACKENDS", ("codex", "claude"))
+    swarm.swarm_agents(
+        [
+            {"backend": "codex", "prompt": "a", "effort": "low"},
+            {"backend": "claude", "prompt": "b", "effort": "xhigh"},
+        ],
+        timeout_s=5,
+    )
+    assert seen == {("codex", 0): "low", ("claude", 1): "xhigh"}
 
 
 def test_run_text_worker_exit0_without_transcript_surfaces_stderr(monkeypatch, tmp_path):

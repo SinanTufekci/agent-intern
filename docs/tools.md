@@ -20,8 +20,8 @@ All 32 tools (29 inside Claude Code, which hides the three Claude Code tools), t
 
 | Tool | Purpose |
 |---|---|
-| `codex_ask(prompt, workspace?, sandbox?="read-only", model?, timeout_s?=180, watch?=false)` | Start a **new** Codex session. `sandbox` is a **real** boundary (see [Codex bridge](backends.md#codex-bridge)); `model` selects the model (`-m`). `watch=true` opens the live view, streaming codex's steps from its `--json` event stream. |
-| `codex_continue(prompt, workspace?, timeout_s?=180, watch?=false)` | Continue the Codex session **rooted at `workspace`** — resumes the exact session id, falling back to the newest on-disk session for that cwd after a server restart. The resumed session keeps its original sandbox and model. `watch=true` opens the live view. |
+| `codex_ask(prompt, workspace?, sandbox?="read-only", model?, timeout_s?=180, watch?=false, effort?)` | Start a **new** Codex session. `sandbox` is a **real** boundary (see [Codex bridge](backends.md#codex-bridge)); `model` selects the model (`-m`); `effort` (`low`, `medium`, `high`, `xhigh`) overrides the reasoning level in your codex config for this call. `watch=true` opens the live view, streaming codex's steps from its `--json` event stream. |
+| `codex_continue(prompt, workspace?, timeout_s?=180, watch?=false, effort?)` | Continue the Codex session **rooted at `workspace`** — resumes the exact session id, falling back to the newest on-disk session for that cwd after a server restart. The resumed session keeps its original sandbox and model; `effort` applies to this turn. `watch=true` opens the live view. |
 | `codex_status()` | Setup diagnostics: codex version, login status (`codex login status`), sessions dir. Spends no quota. |
 
 ### 🐙 Copilot
@@ -61,8 +61,8 @@ Cursor CLI and opencode.
 
 | Tool | Purpose |
 |---|---|
-| `claude_ask(prompt, workspace?, sandbox?="read-only", model?, timeout_s?=180, watch?=false)` | Start a **new** Claude Code session (`claude -p`). `sandbox` is a permission policy **enforced by Claude Code itself, not an OS boundary for file edits** (see [Claude Code](security.md#claude-code--agent-enforced-no-shell-in-workspace-write)): `read-only` reads and searches files, with no Write, Edit or Bash; `workspace-write` confines file edits to the workspace and runs **no shell**, so it can't run tests or builds; `danger-full-access` skips every permission check (**not verified live**). `model` is an alias (`haiku`, `sonnet`, `opus`, `fable`) or a full model id; an unknown one fails fast with Claude Code's own message. `watch=true` opens the live view. |
-| `claude_continue(prompt, workspace?, sandbox?="read-only", timeout_s?=180, watch?=false)` | Continue the Claude Code session **rooted at `workspace`** (the one the last `claude_ask` there started; after a server restart, the newest Claude Code session in that workspace). `sandbox` applies to this turn, so you can analyse read-only and then continue with `workspace-write` to apply the fix. |
+| `claude_ask(prompt, workspace?, sandbox?="read-only", model?, timeout_s?=180, watch?=false, effort?)` | Start a **new** Claude Code session (`claude -p`). `sandbox` is a permission policy **enforced by Claude Code itself, not an OS boundary for file edits** (see [Claude Code](security.md#claude-code--agent-enforced-no-shell-in-workspace-write)): `read-only` reads and searches files, with no Write, Edit or Bash; `workspace-write` confines file edits to the workspace and runs **no shell**, so it can't run tests or builds; `danger-full-access` skips every permission check (**not verified live**). `model` is an alias (`haiku`, `sonnet`, `opus`, `fable`) or a full model id; an unknown one fails fast with Claude Code's own message. `effort` (`low`, `medium`, `high`, `xhigh`, `max`) sets the reasoning effort (`--effort`). `watch=true` opens the live view. |
+| `claude_continue(prompt, workspace?, sandbox?="read-only", timeout_s?=180, watch?=false, effort?)` | Continue the Claude Code session **rooted at `workspace`** (the one the last `claude_ask` there started; after a server restart, the newest Claude Code session in that workspace). `sandbox` applies to this turn, so you can analyse read-only and then continue with `workspace-write` to apply the fix. |
 | `claude_status()` | Setup diagnostics: **the bridge's own version + whether a newer release is available**, the claude version (2.1.259 or newer is needed) and how you're signed in (method, plan, login expiry; never your e-mail or organisation), and the `backends` row. Spends no quota. There is no usage or limits row, since no free way to read it exists: a run that hits the plan's limit says so in its error. |
 
 ### 🧪 Grok Build *(experimental — [unverified](backends.md#experimental-backends))*
@@ -164,7 +164,7 @@ that warning is present. The two problems may share a cause; see
 
 ### `agent_swarm`: `tasks`
 
-Each task is `{backend, prompt, workspace?, model?, sandbox?}`. The `backend` name is forgiving:
+Each task is `{backend, prompt, workspace?, model?, sandbox?, effort?}`. The `backend` name is forgiving:
 
 | Backend | Also accepted as |
 |---|---|
@@ -176,6 +176,11 @@ Each task is `{backend, prompt, workspace?, model?, sandbox?}`. The `backend` na
 | `grok` | `grok-build`, `xai` |
 | `opencode` | `oc`, `sst` |
 | `muse` | `muse-code`, `meta` |
+
+`effort` (`low`, `medium`, `high`, `xhigh`; claude also `max`) sets the reasoning level of one worker
+and works for `codex` and `claude` tasks only. Any other backend refuses it by name instead of running
+at a level nobody asked for. Antigravity's `--effort` conflicts with a model that already names a level
+(`gemini-4-argon-high`), so there the level lives in the model name: `gemini-4-argon-low`.
 
 What `sandbox` means depends on the backend, and it defaults to `read-only` everywhere except
 Antigravity:

@@ -80,6 +80,59 @@ def test_build_args_fresh_with_model():
     assert args[args.index("-s") + 1] == "workspace-write"
 
 
+def test_build_args_effort_is_an_unquoted_config_override_on_both_paths():
+    # Unquoted on purpose: codex reads the value as TOML and falls back to the raw
+    # string, and a `"` would make a Windows .cmd shim refuse the argument.
+    fresh = codex_bridge.build_args("p", "ws", "read-only", None, None, "o.txt", effort="low")
+    assert fresh[fresh.index("-c") + 1] == "model_reasoning_effort=low"
+    resumed = codex_bridge.build_args("p", "ws", "read-only", None, "sid", "o.txt", effort="high")
+    assert resumed[resumed.index("-c") + 1] == "model_reasoning_effort=high"
+    assert resumed[-1] == "p" and resumed[-3] == "-o"  # the prompt stays last
+    assert "-c" not in codex_bridge.build_args("p", "ws", "read-only", None, None, "o.txt")
+
+
+@pytest.mark.parametrize("raw,want", [(None, None), ("", None), ("  ", None), (" xhigh ", "xhigh")])
+def test_validate_effort_normalises(raw, want):
+    assert codex_bridge.validate_effort(raw) == want
+
+
+@pytest.mark.parametrize("bad", ['low"', "low high", 'a"]; x=[', "x" * 25, "low\nhigh"])
+def test_validate_effort_rejects_anything_that_is_not_a_plain_word(bad):
+    with pytest.raises(ValueError):
+        codex_bridge.validate_effort(bad)
+
+
+def test_codex_tools_pass_effort_to_the_runner(tmp_path, monkeypatch):
+    import asyncio
+
+    import codex_tools
+
+    calls = []
+    monkeypatch.setattr(codex_bridge, "run_codex", lambda *a, **k: calls.append(a) or "answer")
+    asyncio.run(codex_tools.codex_ask("q", str(tmp_path), effort="low"))
+    asyncio.run(codex_tools.codex_continue("q", str(tmp_path), effort="high"))
+    asyncio.run(codex_tools.codex_ask("q", str(tmp_path)))
+    assert [c[7] for c in calls] == ["low", "high", None]  # run_codex's `effort`
+    with pytest.raises(ValueError):
+        asyncio.run(codex_tools.codex_ask("q", str(tmp_path), effort='x"'))
+    assert len(calls) == 3  # a bad value fails before anything runs
+
+
+def test_run_codex_puts_effort_in_argv(tmp_path, monkeypatch):
+    seen = []
+
+    def fake_run(args, **kwargs):
+        seen.append(args)
+        out = args[args.index("-o") + 1]
+        Path(out).write_text("done", encoding="utf-8")
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(codex_bridge.proc_tree, "run_captured", fake_run)
+    monkeypatch.setattr(codex_bridge, "_resolve_resume_session", lambda *a, **k: None)
+    codex_bridge.run_codex("p", str(tmp_path), effort="medium", pin=False)
+    assert "model_reasoning_effort=medium" in seen[0]
+
+
 def test_build_args_resume_omits_sandbox_and_cd():
     # resume inherits the session's recorded cwd/sandbox; codex's resume subcommand
     # has no -s/-C, so we must NOT pass them.

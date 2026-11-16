@@ -81,8 +81,9 @@ turned on and says what to fix. It spends no quota, and needs no host. Any `*_st
 *"run antigravity_status"*) checks one backend from inside the session.
 
 > [!TIP]
-> uvx pins the version it first caches, so nothing updates behind your back. Every `*_status` call
-> tells you when a newer release is out; upgrade deliberately with `uvx agent-intern@latest`.
+> A plain `uvx agent-intern` picks up a new release the next time your host starts the server. To decide
+> when updates land, pin it: `uvx agent-intern==X.Y.Z`. Every `*_status` call tells you when a newer
+> release is out, and **Watch → Custom → Releases** on GitHub emails you when one ships.
 > [Other install paths, from source included →](https://github.com/SinanTufekci/agent-intern/blob/main/docs/setup.md)
 
 <div align="center">
