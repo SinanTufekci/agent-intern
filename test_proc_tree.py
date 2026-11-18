@@ -25,6 +25,11 @@ from pathlib import Path
 import pytest
 
 import proc_tree
+
+# Imported up front, before any test patches subprocess.Popen: importing server pulls in
+# mcp, whose win32 helpers evaluate `subprocess.Popen[bytes]` at import time and fail on a
+# patched-in function. Run alone, this file used to break on its first lazy `import server`.
+import server
 from conftest import HiddenEnv, fake_os_name, hide_env
 
 REPO = Path(__file__).parent
@@ -859,7 +864,6 @@ def _backend_entries(tmp_path):
     import kimi_bridge
     import muse_bridge
     import opencode_bridge
-    import server
     import swarm
 
     ws = str(tmp_path / "ws")
@@ -924,7 +928,6 @@ def gates_pinned(monkeypatch):
     the first one it makes and nothing stops it before the guard does."""
     import claude_bridge
     import opencode_bridge
-    import server
     import swarm
 
     monkeypatch.setattr(opencode_bridge, "_MAJOR_CACHE", 1)
@@ -986,7 +989,6 @@ def test_at_the_limit_an_agent_run_is_refused_not_merely_never_reached(
 
 def test_the_entry_list_covers_every_backend_that_spawns_a_cli():
     # A new backend must be added to _backend_entries, or its spawns go untested.
-    import server
 
     covered = {n.split("-")[0] for n in _BACKEND_ENTRY_NAMES}
     wanted = {"agy" if b == "antigravity" else b for b in server.BACKENDS}
@@ -1074,7 +1076,6 @@ def _status_entries():
     import kimi_bridge
     import muse_bridge
     import opencode_bridge
-    import server
 
     return {
         "codex": codex_bridge.status_rows,
@@ -1100,7 +1101,6 @@ def test_every_backends_status_rows_work_at_the_limit(name, probes_at_the_limit)
 
 
 def test_the_bridge_rows_show_the_nesting_row_without_hiding_the_others(probes_at_the_limit):
-    import server
 
     rows = server._bridge_status_rows()
     labels = [r[0] for r in rows]
@@ -1114,7 +1114,6 @@ def test_the_bridge_rows_show_the_nesting_row_without_hiding_the_others(probes_a
 
 def test_doctor_works_at_the_limit_and_shows_the_nesting_row(probes_at_the_limit, monkeypatch):
     import doctor
-    import server
 
     # doctor.report asks the platform module for the OS name, which runs `uname` on
     # Linux: not a probe of ours, so keep the fake Popen out of it
@@ -1144,10 +1143,15 @@ def _no_such_file(filename=None):
     """A Popen stand-in failing the way a missing executable does: Windows leaves
     filename None, POSIX names the file."""
 
-    def popen(args, *a, **k):
-        raise FileNotFoundError(2, "No such file or directory", filename)
+    class _Missing:
+        # a class, not a function: server (imported lazily for the hint) and mcp
+        # write `subprocess.Popen[bytes]` at import time
+        __class_getitem__ = classmethod(lambda cls, item: cls)
 
-    return popen
+        def __new__(cls, args, *a, **k):
+            raise FileNotFoundError(2, "No such file or directory", filename)
+
+    return _Missing
 
 
 @pytest.mark.parametrize("cli", sorted(proc_tree.CLIS))
@@ -1223,3 +1227,151 @@ def test_cli_missing(tmp_path):
     here.write_text("x", encoding="utf-8")
     assert proc_tree.cli_missing(str(tmp_path / "nope.exe"))
     assert not proc_tree.cli_missing(str(here))
+
+
+# ------------------------------------------- live agent processes: cancel and shutdown
+
+
+class _Running:
+    """A Popen stand-in that is still running until something kills it."""
+
+    def __init__(self):
+        self.returncode = None
+        self.pid = 4242
+
+    def poll(self):
+        return self.returncode
+
+
+class _FakePopen:
+    """Stands in for subprocess.Popen and hands out _Running objects. A class, not a
+    lambda: a module imported while it is patched in may write `subprocess.Popen[bytes]`."""
+
+    __class_getitem__ = classmethod(lambda cls, item: cls)
+    on_start = None
+
+    def __new__(cls, args, **kwargs):
+        if cls.on_start is not None:
+            cls.on_start()
+        return _Running()
+
+
+@pytest.fixture
+def registry(monkeypatch):
+    """An empty process registry, a recorded kill_tree, and a Popen that returns
+    _Running objects (no real process starts)."""
+    monkeypatch.setattr(proc_tree, "_LIVE", {})
+    killed = []
+
+    def kill_tree(proc):
+        killed.append(proc)
+        proc.returncode = -9
+
+    monkeypatch.setattr(proc_tree, "kill_tree", kill_tree)
+    monkeypatch.setattr(subprocess, "Popen", _FakePopen)
+    return killed
+
+
+def _in_call(call, fn, *args, **kwargs):
+    token = proc_tree.CURRENT_CALL.set(call)
+    try:
+        return fn(*args, **kwargs)
+    finally:
+        proc_tree.CURRENT_CALL.reset(token)
+
+
+def test_cancel_call_kills_only_that_calls_processes(registry):
+    mine, other = proc_tree.Call(), proc_tree.Call()
+    a = _in_call(mine, proc_tree.popen, ["codex", "exec", "hi"])
+    b = _in_call(other, proc_tree.popen, ["codex", "exec", "hi"])
+    assert proc_tree.cancel_call(mine) == 1
+    assert registry == [a]
+    assert proc_tree.live_processes() == [b]
+
+
+def test_a_cancelled_call_starts_nothing_more(registry):
+    call = proc_tree.Call()
+    proc_tree.cancel_call(call)
+    with pytest.raises(proc_tree.CallCancelled):
+        _in_call(call, proc_tree.popen, ["codex", "exec", "hi"])
+    assert proc_tree.live_processes() == []
+
+
+def test_a_process_started_while_its_call_is_cancelled_is_killed(registry, monkeypatch):
+    # the race: cancel_call runs between the spawn and the registration
+    call = proc_tree.Call()
+
+    def cancel():
+        call.cancelled = True
+
+    monkeypatch.setattr(_FakePopen, "on_start", cancel)
+    proc = _in_call(call, proc_tree.popen, ["codex", "exec", "hi"])
+    assert registry == [proc]
+
+
+def test_probes_and_viewers_are_not_recorded(registry):
+    proc_tree.popen(["codex", "--version"], starts_agent=False)
+    assert proc_tree.live_processes() == []
+    assert proc_tree.kill_all() == 0
+
+
+def test_kill_all_skips_what_already_exited(registry):
+    done = proc_tree.popen(["codex", "exec", "a"])
+    running = proc_tree.popen(["codex", "exec", "b"])
+    done.returncode = 0
+    assert proc_tree.kill_all() == 1
+    assert registry == [running]
+    assert proc_tree.live_processes() == []
+
+
+def test_run_captured_forgets_its_process(registry, monkeypatch):
+    # returncode stays None, so only run_captured's own unregister can remove it
+    monkeypatch.setattr(_Running, "communicate", lambda self, timeout=None: ("", ""), raising=False)
+    proc_tree.run_captured(["codex", "exec", "hi"], timeout=5)
+    assert proc_tree._LIVE == {}
+
+
+def test_cancelling_a_tool_call_kills_its_real_process():
+    """End to end with a real (python) child: the asyncio task is cancelled while the
+    worker thread waits on the process, and the process dies instead of running on."""
+    import asyncio
+    import threading
+
+    started = threading.Event()
+    procs = []
+
+    def run():
+        proc = proc_tree.popen(
+            [sys.executable, "-c", "import time; time.sleep(60)"],
+            start_new_session=os.name != "nt",  # kill_tree's POSIX branch needs its group
+        )
+        procs.append(proc)
+        started.set()
+        proc.wait()
+        return "finished"
+
+    async def scenario():
+        task = asyncio.ensure_future(server._run_with_progress(run, (), None, 60))
+        assert await asyncio.to_thread(started.wait, 20)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    t0 = time.monotonic()
+    asyncio.run(scenario())  # returns only once the worker thread is free
+    assert procs[0].wait(timeout=30) is not None
+    assert time.monotonic() - t0 < 45  # well short of the child's 60 s
+    assert proc_tree.live_processes() == []
+
+
+def test_the_server_kills_what_is_left_when_it_stops(monkeypatch):
+
+    order = []
+    monkeypatch.setattr(server, "_configure_logging", lambda: None)
+    monkeypatch.setattr(server, "_startup_checks", lambda: None)
+    monkeypatch.setattr(server.mcp, "run", lambda *a, **k: order.append("run"))
+    monkeypatch.setattr(server.atexit, "register", lambda fn: order.append(("atexit", fn)))
+    monkeypatch.setattr(proc_tree, "kill_all", lambda: order.append("kill_all") or 0)
+    server.main([])
+    assert order[-2:] == ["run", "kill_all"]
+    assert ("atexit", proc_tree.kill_all) in order

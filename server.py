@@ -449,6 +449,7 @@ whole bridge inside a container or VM.
 """
 
 import asyncio
+import atexit
 import json
 import logging
 import os
@@ -2924,24 +2925,40 @@ async def _run_with_progress(
     percentage, so a smooth elapsed fraction is the honest approximation. `label`
     names the backend in the progress message ("agy" or "codex"). Progress
     reporting is best-effort and never fails the run.
-    """
-    if ctx is None:
-        return await asyncio.to_thread(run_fn, *args)
 
-    task = asyncio.ensure_future(asyncio.to_thread(run_fn, *args))
-    start = time.monotonic()
-    while not task.done():
-        await asyncio.sleep(_PROGRESS_NOTIFY_INTERVAL_S)
-        elapsed = time.monotonic() - start
-        try:
-            await ctx.report_progress(
-                progress=min(elapsed, float(timeout_s)),
-                total=float(timeout_s),
-                message=f"{label} running ({int(elapsed)}s)",
-            )
-        except Exception:  # noqa: BLE001 — progress is cosmetic; never break the run
-            pass
-    return await task  # re-raises any error from the worker thread
+    A cancelled call (the client's notifications/cancelled, or the host shutting the
+    request down) kills the process trees this call started: cancelling the asyncio
+    task alone would leave the worker thread and its CLI running to their timeout.
+    The call is made proc_tree.CURRENT_CALL before the thread starts, and
+    asyncio.to_thread copies the context, so proc_tree.popen files each process
+    under it.
+    """
+    call = proc_tree.Call()
+    token = proc_tree.CURRENT_CALL.set(call)
+    try:
+        task = asyncio.ensure_future(asyncio.to_thread(run_fn, *args))
+    finally:
+        proc_tree.CURRENT_CALL.reset(token)
+    try:
+        if ctx is not None:
+            start = time.monotonic()
+            while not task.done():
+                await asyncio.sleep(_PROGRESS_NOTIFY_INTERVAL_S)
+                elapsed = time.monotonic() - start
+                try:
+                    await ctx.report_progress(
+                        progress=min(elapsed, float(timeout_s)),
+                        total=float(timeout_s),
+                        message=f"{label} running ({int(elapsed)}s)",
+                    )
+                except Exception:  # noqa: BLE001 — progress is cosmetic; never break the run
+                    pass
+        return await task  # re-raises any error from the worker thread
+    except asyncio.CancelledError:
+        # Off the event loop (wait=False): taskkill can take seconds.
+        n = proc_tree.cancel_call(call, wait=False)
+        log.info("%s call cancelled; stopping %d agent process tree(s)", label, n)
+        raise
 
 
 def _existing_conv_names() -> set[str]:
@@ -3398,7 +3415,15 @@ def main(argv: Optional[list[str]] = None) -> None:
         sys.exit(doctor.cli(args))
     _configure_logging()
     _startup_checks()
-    mcp.run()
+    # An agent still running when the host goes away would otherwise run on to its
+    # timeout, and a worker thread blocked on it would hold up the interpreter's exit.
+    atexit.register(proc_tree.kill_all)
+    try:
+        mcp.run()
+    finally:
+        n = proc_tree.kill_all()
+        if n:
+            log.info("server stopping; killed %d agent process tree(s)", n)
 
 
 if __name__ == "__main__":

@@ -31,6 +31,7 @@ platform and its worse failure mode, completely unaddressed.
 
 from __future__ import annotations
 
+import contextvars
 import errno
 import os
 import platform
@@ -38,6 +39,7 @@ import re
 import shutil
 import signal
 import subprocess
+import threading
 from typing import Optional
 
 # SIGKILL is POSIX-only. The getattr keeps this module importable on Windows
@@ -388,15 +390,122 @@ def popen(args: list[str], *, starts_agent: bool = True, **popen_kwargs) -> subp
     depth = current_depth()
     if starts_agent and depth >= MAX_DEPTH:
         raise NestingTooDeep(nesting_refusal(depth))
+    call = CURRENT_CALL.get()
+    if starts_agent and call is not None and call.cancelled:
+        raise CallCancelled("the tool call was cancelled before the agent started")
     env = popen_kwargs.get("env")
     popen_kwargs["env"] = {**(os.environ if env is None else env), DEPTH_ENV: str(depth + 1)}
     try:
-        return subprocess.Popen(args, **popen_kwargs)
+        proc = subprocess.Popen(args, **popen_kwargs)
     except FileNotFoundError as e:
         named = _not_found(e, args, popen_kwargs.get("cwd"))
         if named is e:
             raise
         raise named from e
+    if starts_agent:
+        _register(proc, call)
+    return proc
+
+
+# ----------------------------------------------------------------- live agent processes
+#
+# Every agent run popen starts is recorded here until it exits, so that a run nobody
+# is waiting for any more can be stopped:
+#   * a CANCELLED tool call (the host's notifications/cancelled, or the user pressing
+#     Esc) only cancels the asyncio task; the worker thread and its CLI would run on
+#     to their own timeout, spending quota and possibly writing files. The call's
+#     runner (server._run_with_progress) sets CURRENT_CALL before handing the work to
+#     a thread (asyncio.to_thread copies the context, so popen sees it there) and
+#     calls cancel_call when it is cancelled;
+#   * the SERVER STOPPING (stdin closed, interpreter exit): kill_all.
+# Probes and viewer windows (starts_agent=False) are not recorded: they are short,
+# and a browser window the user opened must outlive the server.
+
+
+class Call:
+    """One tool call. The processes started while it is CURRENT_CALL belong to it."""
+
+    def __init__(self) -> None:
+        self.cancelled = False
+
+
+class CallCancelled(RuntimeError):
+    """Raised instead of starting an agent for a call that was already cancelled."""
+
+
+CURRENT_CALL: contextvars.ContextVar[Optional[Call]] = contextvars.ContextVar(
+    "agent_intern_call", default=None
+)
+
+# id(proc) -> (proc, the Call it belongs to or None). Keyed by id because a test's
+# fake Popen need not be hashable.
+_LIVE: dict[int, tuple[subprocess.Popen, Optional[Call]]] = {}
+_LIVE_LOCK = threading.Lock()
+
+
+def _prune_locked() -> None:
+    """Forget processes whose owner has already seen them exit."""
+    for key in [k for k, (p, _) in _LIVE.items() if getattr(p, "returncode", None) is not None]:
+        del _LIVE[key]
+
+
+def _register(proc: subprocess.Popen, call: Optional[Call]) -> None:
+    with _LIVE_LOCK:
+        _prune_locked()
+        _LIVE[id(proc)] = (proc, call)
+        late = call is not None and call.cancelled
+    if late:  # the call was cancelled while this process was starting
+        _kill_procs([proc])
+
+
+def _unregister(proc: subprocess.Popen) -> None:
+    with _LIVE_LOCK:
+        _LIVE.pop(id(proc), None)
+
+
+def live_processes(call: Optional[Call] = None) -> list:
+    """The recorded agent processes still running (of `call`, if given)."""
+    with _LIVE_LOCK:
+        _prune_locked()
+        return [p for p, c in _LIVE.values() if call is None or c is call]
+
+
+def _kill_procs(procs: list) -> int:
+    """kill_tree each process that is still running; the number killed."""
+    killed = 0
+    for proc in procs:
+        try:
+            running = proc.poll() is None
+        except Exception:  # noqa: BLE001 - an odd handle must not stop the others
+            running = False
+        if running:
+            kill_tree(proc)
+            killed += 1
+        _unregister(proc)
+    return killed
+
+
+def cancel_call(call: Call, wait: bool = True) -> int:
+    """Stop every agent process `call` started, and any it would still start.
+
+    Returns how many were found running. `wait=False` does the killing on a daemon
+    thread, for an event loop that must not block on taskkill."""
+    with _LIVE_LOCK:
+        call.cancelled = True  # under the lock, so _register sees it or we see the proc
+        _prune_locked()
+        procs = [p for p, c in _LIVE.values() if c is call]
+    if wait:
+        return _kill_procs(procs)
+    if procs:
+        threading.Thread(target=_kill_procs, args=(procs,), daemon=True).start()
+    return len(procs)
+
+
+def kill_all() -> int:
+    """Stop every recorded agent process: the server is going away. Never raises."""
+    with _LIVE_LOCK:
+        procs = [p for p, _ in _LIVE.values()]
+    return _kill_procs(procs)
 
 
 def _not_found(e: FileNotFoundError, args: list, cwd) -> FileNotFoundError:
@@ -451,6 +560,8 @@ def run_captured(
         kill_tree(proc)
         out, err = _drain(proc)
         raise subprocess.TimeoutExpired(args, timeout, output=out, stderr=err) from None
+    finally:
+        _unregister(proc)
     return subprocess.CompletedProcess(args, proc.returncode, out, err)
 
 
