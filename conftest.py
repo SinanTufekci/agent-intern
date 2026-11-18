@@ -243,6 +243,52 @@ def _fresh_update_check_cache():
     yield
 
 
+def _real_stats_file():
+    """The user's real stats file, computed before any fixture redirects anything."""
+    import stats
+
+    return stats.stats_path()
+
+
+_REAL_STATS = _real_stats_file()
+
+
+def _stat_signature(path):
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    return st.st_size, st.st_mtime_ns
+
+
+@pytest.fixture(autouse=True)
+def _stats_go_to_tmp(monkeypatch, tmp_path_factory):
+    """Calls through the shared mcp record into ~/.agent-intern/stats.jsonl, which would put a
+    test run's fake calls into the user's real statistics. Point every test at a throwaway
+    file; a test that wants its own path patches `stats.stats_path` after this and wins."""
+    import stats
+
+    path = tmp_path_factory.mktemp("stats-home") / ".agent-intern" / "stats.jsonl"
+    monkeypatch.setattr(stats, "stats_path", lambda: path)
+    monkeypatch.setattr(stats, "_PRUNED", False)
+    yield
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _real_stats_file_is_untouched():
+    """Fails the run if it changed the real stats file: some test is recording for real."""
+    before = _stat_signature(_REAL_STATS)
+    yield
+    after = _stat_signature(_REAL_STATS)
+    if before != after:
+        pytest.fail(
+            f"the test run changed {_REAL_STATS}: a test records through stats without the "
+            "redirect (conftest._stats_go_to_tmp). If you used agent-intern in another "
+            "session while the tests ran, rerun.",
+            pytrace=False,
+        )
+
+
 @pytest.fixture(autouse=True)
 def _no_real_programs(request, monkeypatch):
     if request.node.get_closest_marker("real_cli"):
