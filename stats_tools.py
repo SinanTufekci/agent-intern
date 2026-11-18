@@ -99,26 +99,58 @@ def install(mcp) -> str:
     return note
 
 
-def _agy_quota_text() -> Optional[str]:
-    """agy's remaining quota as plain lines, read through the free `/usage` path
-    (antigravity_status uses it too). None where it cannot be read or agy is not enabled."""
+def _limit_name(family: str, limit: str) -> str:
+    """A limit's name without its family in front: agy prints a family-specific limit as
+    "Gemini 4 Argon Weekly" under the family "Gemini 4 Argon"; shown under the family it
+    is just "Weekly"."""
+    if limit.lower().startswith(family.lower() + " "):
+        return limit[len(family) :].strip() or limit
+    return limit
+
+
+def _agy_quota() -> Optional[list[dict]]:
+    """agy's remaining quota, read through the free `/usage` path (antigravity_status uses
+    it too): [{"family", "limits": [{"name", "left" (percent or None), "text", "resets"}]}].
+    None where it cannot be read or agy is not enabled."""
     try:
         if "antigravity" not in server.ENABLED_BACKENDS or not server.supports_print_usage():
             return None
         out = server._recent_agy_usage()
         if not out:
             return None
-        families = server._parse_usage_table(out)
-        lines = []
-        for family, limits in families.items():
-            parts = ", ".join(
-                f"{limit} {left}" + (f" (resets {resets})" if resets else "")
-                for limit, left, resets in limits
-            )
-            lines.append(f"- {family}: {parts}")
-        return "\n".join(lines) or None
+        rows = [
+            {
+                "family": family,
+                "limits": [
+                    {
+                        "name": _limit_name(family, limit),
+                        "left": server._percent_remaining(left),
+                        "text": left,
+                        "resets": resets,
+                    }
+                    for limit, left, resets in limits
+                ],
+            }
+            for family, limits in server._parse_usage_table(out).items()
+        ]
+        return rows or None
     except Exception:  # noqa: BLE001 - a stats view must not fail on a quota probe
         return None
+
+
+def _agy_quota_text() -> Optional[str]:
+    """agy's remaining quota as plain lines for the chat table, or None."""
+    rows = _agy_quota()
+    if not rows:
+        return None
+    return "\n".join(
+        f"- {row['family']}: "
+        + ", ".join(
+            f"{lim['name']} {lim['text']}" + (f" (resets {lim['resets']})" if lim["resets"] else "")
+            for lim in row["limits"]
+        )
+        for row in rows
+    )
 
 
 def clamp_days(days: Any) -> int:
@@ -129,14 +161,27 @@ def clamp_days(days: Any) -> int:
 
 
 def stats_payload(days: Any = 7, with_quota: bool = True) -> dict:
-    """What /stats.json serves and the table is drawn from."""
+    """What /stats.json serves and the table is drawn from. The page asks without the
+    quota (switching ranges must not wait on agy) and reads it once from /stats/quota.json."""
     n = clamp_days(days)
+    now = time.time()
+    records = stats.read_records(n, since=stats.range_start(n, now))
     return {
         "days": n,
-        "summary": stats.summarize(stats.read_records(n)),
+        "summary": stats.summarize(records, days=n, now=now),
         "quota": _agy_quota_text() if with_quota else None,
         "recording": recording_note(),
     }
+
+
+def quota_payload() -> dict:
+    """What /stats/quota.json serves: agy's quota as rows for the page's meters."""
+    return {"quota": _agy_quota()}
+
+
+# The stats page has a table and a chart side by side; the run viewer's narrow window
+# would squeeze both.
+STATS_WINDOW_SIZE = "1100,820"
 
 
 @server.mcp.tool(
@@ -167,7 +212,7 @@ async def agent_stats(days: int = 7, watch: bool = False) -> str:
         try:
             port = server._ensure_watch_server()
             url = f"http://127.0.0.1:{port}/stats?days={n}&k={server._WATCH_TOKEN}"
-            await asyncio.to_thread(server._open_watch_window, url, "stats")
+            await asyncio.to_thread(server._open_watch_window, url, "stats", size=STATS_WINDOW_SIZE)
             table += "\n\n(Opened the stats page in a local window.)"
         except Exception as e:  # noqa: BLE001
             table += f"\n\n(The stats page could not be opened: {type(e).__name__}.)"

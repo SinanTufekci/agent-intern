@@ -13,9 +13,10 @@ human-facing summary.
 ### Added
 
 - **`agent_stats` and `/agent-intern:stats`: a local usage summary.** One tool shows calls per backend
-  (ok, errors, average time) per day and week, each backend's error rate and last error category,
-  recent swarms and where their saved answers are, the token counts agy reports and the Antigravity
-  quota left; `watch=true` opens a chart page on the local watch server. Every delegated call is
+  (ok, errors, average time) per day and week in local time, each backend's error rate and last error
+  category, recent swarms and where their saved answers are, the token counts agy reports and the
+  Antigravity quota left; `watch=true` opens a page on the local watch server with totals, a chart you
+  switch between 24 hours, 7, 30 and 90 days, and the quota as meters. Every delegated call is
   recorded as one line in `~/.agent-intern/stats.jsonl`, kept 90 days: numbers and an error category
   only, never a prompt, an answer, a path or raw error text, and recording makes no network call.
   `AGENT_INTERN_NO_STATS=1` turns recording off. The server now has 33 tools (30 inside Claude Code).

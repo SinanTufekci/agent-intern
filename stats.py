@@ -27,7 +27,7 @@ import re
 import threading
 import time
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
 
@@ -402,10 +402,18 @@ def record(rec: Optional[dict], path: Optional[Path] = None, now: Optional[float
 
 
 def read_records(
-    days: int = 7, path: Optional[Path] = None, now: Optional[float] = None
+    days: int = 7,
+    path: Optional[Path] = None,
+    now: Optional[float] = None,
+    since: Optional[float] = None,
 ) -> list[dict]:
-    """Records from the last `days` days, oldest first. A bad line is skipped."""
-    cutoff = (now if now is not None else time.time()) - max(1, days) * 86400
+    """Records from the last `days` days (or from `since` on), oldest first. A bad line is
+    skipped."""
+    cutoff = (
+        since
+        if since is not None
+        else (now if now is not None else time.time()) - max(1, days) * 86400
+    )
     out: list[dict] = []
     try:
         with open(path or stats_path(), "r", encoding="utf-8", errors="replace") as fh:
@@ -426,28 +434,90 @@ def read_records(
 
 
 # ----------------------------------------------------------------------------- summary
+# Days and weeks are the machine's local time: the server runs on the user's own machine,
+# so a day ends at the user's midnight, not at UTC's.
 def _day(ts: float) -> str:
-    return datetime.fromtimestamp(ts, timezone.utc).strftime("%Y-%m-%d")
+    return datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
 
 
 def _week(ts: float) -> str:
-    y, w, _ = datetime.fromtimestamp(ts, timezone.utc).isocalendar()
+    y, w, _ = datetime.fromtimestamp(ts).isocalendar()
     return f"{y}-W{w:02d}"
 
 
-def summarize(records: list[dict]) -> dict:
-    """Plain numbers for the table and the page. `delegation` leaves swarms out of the
-    per-backend rows (their workers are not separate calls here) but counts them in the
-    per-day and per-week rows."""
+def _bucket_unit(days: int) -> str:
+    """How the page's chart splits a range: hours for one day, days up to a month, weeks
+    beyond, so no range draws more than about 31 bars."""
+    return "hour" if days <= 1 else "day" if days <= 31 else "week"
+
+
+def _bucket_start(ts: float, unit: str) -> datetime:
+    t = datetime.fromtimestamp(ts)
+    if unit == "hour":
+        return t.replace(minute=0, second=0, microsecond=0)
+    t = t.replace(hour=0, minute=0, second=0, microsecond=0)
+    return t - timedelta(days=t.weekday()) if unit == "week" else t
+
+
+def _bucket_starts(days: int, now: float) -> list[datetime]:
+    """Every bucket of the range, oldest first, the current one last: 24 hours, `days`
+    days, or enough ISO weeks to cover `days`."""
+    unit = _bucket_unit(days)
+    last = _bucket_start(now, unit)
+    if unit == "hour":
+        return [last - timedelta(hours=i) for i in range(23, -1, -1)]
+    if unit == "day":
+        return [last - timedelta(days=i) for i in range(days - 1, -1, -1)]
+    return [last - timedelta(weeks=i) for i in range(-(-days // 7) - 1, -1, -1)]
+
+
+def range_start(days: int, now: Optional[float] = None) -> float:
+    """Where a `days` range begins: the start of its first bucket (a local midnight, an hour
+    or a Monday), so the totals and the chart always count the same calls."""
+    return _bucket_starts(days, now if now is not None else time.time())[0].timestamp()
+
+
+def _series(records: list[dict], days: int, now: float) -> dict:
+    unit = _bucket_unit(days)
+    buckets = {s: {"calls": 0, "ok": 0, "err": 0} for s in _bucket_starts(days, now)}
+    for r in records:
+        b = buckets.get(_bucket_start(r["ts"], unit))
+        if b is not None:
+            b["calls"] += 1
+            b["ok" if r.get("ok") else "err"] += 1
+    return {
+        "unit": unit,
+        "buckets": [{"start": int(s.timestamp()), **v} for s, v in buckets.items()],
+    }
+
+
+def _is_swarm(r: dict) -> bool:
+    return r.get("kind") in ("swarm", "preset") or r.get("workers") is not None
+
+
+def summarize(records: list[dict], days: Optional[int] = None, now: Optional[float] = None) -> dict:
+    """Plain numbers for the table and the page. A swarm counts as one call of its own
+    backend ("swarm", or "antigravity" for an image swarm); its workers are not separate
+    calls here. With `days`, also the chart's `series` for that range."""
     by_backend: dict[str, dict] = {}
     per_day: dict[str, dict] = defaultdict(lambda: {"calls": 0, "ok": 0, "err": 0})
     per_week: dict[str, dict] = defaultdict(lambda: {"calls": 0, "ok": 0, "err": 0})
     swarms: list[dict] = []
+    totals: dict[str, Any] = {"calls": 0, "ok": 0, "errors": 0, "refused": 0, "ms": 0}
+    tokens: dict[str, int] = {}
     for r in records:
         ok = bool(r.get("ok"))
         for bucket in (per_day[_day(r["ts"])], per_week[_week(r["ts"])]):
             bucket["calls"] += 1
             bucket["ok" if ok else "err"] += 1
+        totals["calls"] += 1
+        totals["ms"] += int(r.get("ms", 0))
+        if ok:
+            totals["ok"] += 1
+        elif r.get("cat") == "refused":
+            totals["refused"] += 1
+        else:
+            totals["errors"] += 1
         b = by_backend.setdefault(
             r.get("backend", "?"),
             {"calls": 0, "ok": 0, "err": 0, "ms": 0, "last_err": None, "tokens": {}, "cats": {}},
@@ -462,25 +532,35 @@ def summarize(records: list[dict]) -> dict:
                 b["last_err"] = {"ts": r["ts"], "cat": r.get("cat", "other")}
             b["cats"][r.get("cat", "other")] = b["cats"].get(r.get("cat", "other"), 0) + 1
         for k, v in (r.get("tok") or {}).items():
-            if isinstance(v, int):
+            if isinstance(v, int) and not isinstance(v, bool):
                 b["tokens"][k] = b["tokens"].get(k, 0) + v
-        if r.get("kind") in ("swarm", "preset"):
+                tokens[k] = tokens.get(k, 0) + v
+        if _is_swarm(r):
             swarms.append(r)
     for b in by_backend.values():
         b["avg_s"] = round(b["ms"] / 1000 / b["calls"], 1) if b["calls"] else 0.0
         real = b["err"] - b.get("refused", 0)  # refused calls are the caller's, not the backend's
         b["error_rate"] = round(100 * real / b["calls"]) if b["calls"] else 0
-    return {
+    n = totals["calls"]
+    totals["avg_s"] = round(totals.pop("ms") / 1000 / n, 1) if n else 0.0
+    totals["error_rate"] = round(100 * totals["errors"] / n) if n else 0
+    totals["tokens"] = tokens
+    totals["swarms"] = len(swarms)
+    out = {
         "total": len(records),
+        "totals": totals,
         "backends": dict(sorted(by_backend.items())),
         "days": dict(sorted(per_day.items())),
         "weeks": dict(sorted(per_week.items())),
         "swarms": sorted(swarms, key=lambda r: r["ts"], reverse=True)[:10],
     }
+    if days is not None:
+        out["series"] = _series(records, days, now if now is not None else time.time())
+    return out
 
 
 def _when(ts: float) -> str:
-    return datetime.fromtimestamp(ts, timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    return datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
 
 
 def _tok(tokens: dict) -> str:
@@ -497,8 +577,10 @@ def render_table(
 ) -> str:
     """The summary as chat-ready markdown. `recording` is a one-line note when recording is
     off or could not be set up; `quota` is agy's remaining-quota text, if it could be read."""
+    period = "the last 24 hours" if days <= 1 else f"last {days} day(s)"
     lines = [
-        f"agent-intern stats, last {days} day(s). Numbers only; no prompts or answers are stored."
+        f"agent-intern stats, {period} (local time). "
+        "Numbers only; no prompts or answers are stored."
     ]
     if recording:
         lines.append(f"Note: {recording}")
@@ -515,10 +597,16 @@ def render_table(
                 f"| {name} | {b['calls']} | {b['ok']} | {b['err']} | {b['avg_s']} "
                 f"| {_tok(b['tokens'])} |"
             )
-        lines += ["\n**Per day (UTC)**", "| day | calls | ok | errors |", "|---|---|---|---|"]
-        lines += [
-            f"| {d} | {v['calls']} | {v['ok']} | {v['err']} |" for d, v in summary["days"].items()
-        ]
+        if days <= 31:  # past a month the per-week rows say the same in a readable length
+            lines += [
+                "\n**Per day (local time)**",
+                "| day | calls | ok | errors |",
+                "|---|---|---|---|",
+            ]
+            lines += [
+                f"| {d} | {v['calls']} | {v['ok']} | {v['err']} |"
+                for d, v in summary["days"].items()
+            ]
         lines += ["\n**Per week**", "| week | calls | ok | errors |", "|---|---|---|---|"]
         lines += [
             f"| {d} | {v['calls']} | {v['ok']} | {v['err']} |" for d, v in summary["weeks"].items()

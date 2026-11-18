@@ -463,10 +463,13 @@ def _ensure_watch_server() -> int:
                 import stats_page
                 import stats_tools
 
-                if self.path.startswith("/stats.json"):
-                    days = parse_qs(urlparse(self.path).query).get("days", ["7"])[0]
-                    body = json.dumps(stats_tools.stats_payload(days)).encode("utf-8")
+                if self.path.startswith("/stats/quota.json"):
+                    body = json.dumps(stats_tools.quota_payload()).encode("utf-8")
                     self._send(body, "application/json")
+                elif self.path.startswith("/stats.json"):
+                    days = parse_qs(urlparse(self.path).query).get("days", ["7"])[0]
+                    payload = stats_tools.stats_payload(days, with_quota=False)
+                    self._send(json.dumps(payload).encode("utf-8"), "application/json")
                 else:
                     self._send(stats_page.PAGE.encode("utf-8"), "text/html; charset=utf-8")
             elif self.path.startswith("/image"):
@@ -555,7 +558,7 @@ def _watch_viewer_live(rid: str) -> bool:
         return st is not None and (time.time() - st["last_poll"]) < _VIEWER_ALIVE_S
 
 
-def _open_watch_window(url: str, rid: str = _MAIN) -> None:
+def _open_watch_window(url: str, rid: str = _MAIN, size: Optional[str] = None) -> None:
     """Open the watch page in a small, dedicated window. Prefers a Chromium browser
     in `--app` mode (a sized, chromeless window — not a tab); falls back to a normal
     new browser window/tab. Best-effort — never raises.
@@ -570,7 +573,7 @@ def _open_watch_window(url: str, rid: str = _MAIN) -> None:
     for exe in _chromium_app_browsers():
         try:
             proc_tree.popen(
-                [exe, f"--app={url}", f"--window-size={_WATCH_WINDOW_SIZE}"],
+                [exe, f"--app={url}", f"--window-size={size or _WATCH_WINDOW_SIZE}"],
                 starts_agent=False,  # a probe, not an agent run
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,

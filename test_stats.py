@@ -736,3 +736,150 @@ def test_a_refused_argument_is_not_held_against_the_backend():
     codex = s["backends"]["codex"]
     assert (codex["calls"], codex["err"]) == (3, 2)
     assert codex["error_rate"] == 33 and codex["last_err"]["cat"] == "timeout"
+
+
+# ------------------------------------------------------- ranges, the chart and the page data
+def _local_midnight(ts):
+    t = time.localtime(ts)
+    return time.mktime((t.tm_year, t.tm_mon, t.tm_mday, 0, 0, 0, 0, 0, -1))
+
+
+@pytest.mark.parametrize(
+    "days, unit, count", [(1, "hour", 24), (7, "day", 7), (30, "day", 30), (90, "week", 13)]
+)
+def test_the_chart_covers_the_whole_range_with_empty_buckets_kept(days, unit, count):
+    now = 1_800_000_000
+    s = stats.summarize([_rec(now, "codex", True)], days=days, now=now)
+    series = s["series"]
+    assert series["unit"] == unit and len(series["buckets"]) == count
+    starts = [b["start"] for b in series["buckets"]]
+    assert starts == sorted(starts) and starts[0] == int(stats.range_start(days, now))
+    assert sum(b["calls"] for b in series["buckets"]) == 1
+    assert series["buckets"][-1]["calls"] == 1  # the current bucket holds the call
+    if unit == "week":
+        assert all(time.localtime(t).tm_wday == 0 for t in starts)  # weeks start on Monday
+
+
+def test_a_range_counts_the_same_calls_in_its_totals_and_its_chart():
+    """The page reads from range_start, so a call just before the first bar is out of the
+    totals too, not counted in one and missing from the other."""
+    now = 1_800_000_000
+    start = stats.range_start(7, now)
+    assert (
+        start == _local_midnight(now) - 6 * 86400
+        or abs(start - (_local_midnight(now) - 6 * 86400)) <= 3600
+    )  # a DST change inside the week moves it by an hour
+    for ts in (start - 1, start, now - 5):
+        stats.record(_rec(int(ts), "codex", True))
+    records = stats.read_records(7, now=now, since=start)
+    s = stats.summarize(records, days=7, now=now)
+    assert s["totals"]["calls"] == 2 == sum(b["calls"] for b in s["series"]["buckets"])
+
+
+def test_days_are_the_machines_local_days():
+    ts = 1_800_000_000
+    assert stats._day(ts) == time.strftime("%Y-%m-%d", time.localtime(ts))
+    assert "UTC" not in stats._when(ts)
+
+
+def test_totals_count_refused_apart_and_sum_tokens():
+    now = 1_800_000_000
+    s = stats.summarize(
+        [
+            _rec(now, "antigravity", True, 1000, tok={"i": 5, "o": 2}),
+            _rec(now, "antigravity", True, 3000, tok={"i": 1, "o": 1, "c": 4}),
+            _rec(now, "codex", False, 2000, cat="refused"),
+            _rec(now, "codex", False, 2000, cat="timeout"),
+        ]
+    )
+    t = s["totals"]
+    assert (t["calls"], t["ok"], t["errors"], t["refused"]) == (4, 2, 1, 1)
+    assert t["error_rate"] == 25 and t["avg_s"] == 2.0
+    assert t["tokens"] == {"i": 6, "o": 3, "c": 4}
+
+
+def test_an_image_swarm_is_listed_with_the_swarms():
+    now = 1_800_000_000
+    s = stats.summarize(
+        [
+            _rec(now, "antigravity", True, kind="image", workers=4, workers_ok=4),
+            _rec(now, "codex", True),
+        ]
+    )
+    assert [r["kind"] for r in s["swarms"]] == ["image"] and s["totals"]["swarms"] == 1
+
+
+def test_the_table_leaves_out_per_day_rows_past_a_month():
+    now = 1_800_000_000
+    s = stats.summarize([_rec(now, "codex", True)])
+    assert "Per day" in stats.render_table(s, 31)
+    long = stats.render_table(s, 90)
+    assert "Per day" not in long and "Per week" in long
+    assert "the last 24 hours" in stats.render_table(s, 1)
+
+
+_USAGE = (
+    "Gemini Models\tWeekly Limit Remaining\t100%\t2026-11-25T08:53:36Z\n"
+    "Gemini 4 Argon\tGemini 4 Argon Weekly Limit Remaining\t38%\t2026-11-25T07:02:59Z\n"
+)
+
+
+def test_the_quota_drops_a_familys_name_from_its_own_limit(monkeypatch):
+    monkeypatch.setattr(server, "ENABLED_BACKENDS", frozenset({"antigravity"}))
+    monkeypatch.setattr(server, "supports_print_usage", lambda: True)
+    monkeypatch.setattr(server, "_recent_agy_usage", lambda: _USAGE)
+    rows = stats_tools._agy_quota()
+    assert [r["family"] for r in rows] == ["Gemini Models", "Gemini 4 Argon"]
+    argon = rows[1]["limits"][0]
+    assert (argon["name"], argon["left"], argon["text"]) == ("Weekly", 38.0, "38%")
+    text = stats_tools._agy_quota_text()
+    assert "- Gemini 4 Argon: Weekly 38%" in text and "Argon Weekly" not in text
+
+
+def test_the_quota_is_none_where_agy_is_not_enabled(monkeypatch):
+    monkeypatch.setattr(server, "ENABLED_BACKENDS", frozenset({"codex"}))
+    assert stats_tools._agy_quota() is None and stats_tools._agy_quota_text() is None
+
+
+def test_the_page_data_never_waits_on_agy_and_the_quota_has_its_own_route(monkeypatch):
+    import watch_server
+
+    def no_probe():
+        raise AssertionError("/stats.json must not read agy's quota")
+
+    monkeypatch.setattr(stats_tools, "_agy_quota_text", no_probe)
+    monkeypatch.setattr(
+        stats_tools, "_agy_quota", lambda: [{"family": "Gemini Models", "limits": []}]
+    )
+    stats.record(_rec(int(time.time()), "codex", True))
+    port = watch_server._ensure_watch_server()
+    k = server._WATCH_TOKEN
+    status, _, body = _get(port, f"/stats.json?days=1&k={k}")
+    data = json.loads(body)
+    assert status == 200 and data["quota"] is None
+    assert data["summary"]["series"]["unit"] == "hour"
+    status, headers, body = _get(port, f"/stats/quota.json?k={k}")
+    assert status == 200 and json.loads(body)["quota"][0]["family"] == "Gemini Models"
+    assert headers["cache-control"] == "no-store"
+    assert _get(port, "/stats/quota.json?k=wrong")[0] == 403
+
+
+def test_the_stats_page_opens_in_a_wider_window(monkeypatch):
+    opened = {}
+    monkeypatch.setattr(stats_tools, "_agy_quota_text", lambda: None)
+    monkeypatch.setattr(server, "_ensure_watch_server", lambda: 9)
+    monkeypatch.setattr(
+        server, "_open_watch_window", lambda url, rid, **kw: opened.update(url=url, rid=rid, **kw)
+    )
+    out = asyncio.run(_tool_fn(stats_tools.agent_stats)(days=30, watch=True))
+    assert "Opened the stats page" in out
+    assert opened["rid"] == "stats" and opened["size"] == stats_tools.STATS_WINDOW_SIZE
+    assert "/stats?days=30&k=" in opened["url"]
+
+
+def test_the_stats_page_shares_the_watch_windows_look():
+    import watch_ui
+
+    assert watch_ui.BASE_CSS.strip() in stats_page.PAGE
+    assert "__BASE_CSS__" not in stats_page.PAGE and "__BASE_JS__" not in stats_page.PAGE
+    assert 'fetch("/stats/quota.json' in stats_page.PAGE
