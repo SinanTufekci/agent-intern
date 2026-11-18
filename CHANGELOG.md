@@ -10,6 +10,30 @@ human-facing summary.
 
 ## [Unreleased]
 
+### Added
+
+- **The Claude Code plugin has a README** (`plugin/README.md`): what the plugin adds, what the server
+  runs and sends, where long swarm answers are kept, and how to turn off the update check. It also
+  gets an icon for the plugin directory listing.
+
+### Changed
+
+- **The Claude Code plugin pins its server** to the plugin's own release (`uvx agent-intern==X.Y.Z`
+  in `plugin/.mcp.json`) instead of whatever PyPI calls newest, as the Claude plugin directory
+  requires. Plugin users get a new server with `claude plugin update agent-intern@agent-intern`
+  (or `/plugin update` inside a session), and the update notice and the `bridge version` status
+  row now name that command next to the uvx one. Manual `uvx agent-intern` registrations are
+  unchanged.
+
+### Docs
+
+- **The README starts with what you gain.** The top now says in two lines why you would hand errands to
+  your other coding CLIs, gives a two-command try-it (with the uv and Node.js notes, a new-terminal
+  reminder and a `doctor` fallback if no tools show up), and puts the swarm animation up front. A
+  line at the end says agent-intern is independent and not affiliated with or endorsed by the vendors
+  of the tools it works with.
+- **The card and social preview are redrawn without the mascot,** with a not-affiliated line.
+
 ## [0.39.0] - 2026-11-18
 
 ### Added

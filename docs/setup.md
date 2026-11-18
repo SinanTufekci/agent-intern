@@ -92,8 +92,8 @@ When the guide doesn't arrive, write it into `AGENTS.md` as above, or name the t
 ### Recommended — the Claude Code plugin
 
 This repo is also a Claude Code plugin marketplace. The plugin registers the same server (through
-`uvx agent-intern`, so updates work exactly as described in the next section) and adds three
-skills: `/agent-intern:second-opinion`, `/agent-intern:image` and `/agent-intern:doctor`.
+`uvx agent-intern==<version>`, pinned to the plugin's own release) and adds three skills:
+`/agent-intern:second-opinion`, `/agent-intern:image` and `/agent-intern:doctor`.
 
 ```bash
 claude plugin marketplace add SinanTufekci/agent-intern
@@ -103,9 +103,11 @@ claude plugin install agent-intern@agent-intern
 Inside a session, `/plugin marketplace add SinanTufekci/agent-intern` then
 `/plugin install agent-intern@agent-intern` does the same. The plugin's tools are namespaced
 `mcp__plugin_agent-intern_intern__*`. Use the plugin **or** one of the registrations below, not
-both, since both would give Claude every tool twice. When a new plugin version ships,
-`/plugin update agent-intern@agent-intern` picks up the new skills, and the server itself upgrades
-the same way the uvx install does.
+both, since both would give Claude every tool twice. Because the server is pinned, a new release
+reaches you through the plugin: `/plugin update agent-intern@agent-intern` (or
+`claude plugin update agent-intern@agent-intern` in a terminal) brings the new skills and the
+matching server version, then restart Claude Code. `uvx agent-intern@latest` does not move a
+plugin install; the update notice names the plugin command too.
 
 ### Approving the tools in Claude Code
 

@@ -435,6 +435,16 @@ def test_both_update_notices_name_the_same_upgrade_command(monkeypatch):
         assert "uvx agent-intern@latest" in notice, (
             f"update notice omits the upgrade command the other one gives: {notice!r}"
         )
+        # The plugin pins its server, so uvx@latest cannot move it: name its update too.
+        assert server.PLUGIN_UPDATE_CMD in notice, f"no plugin update command: {notice!r}"
+
+
+def test_the_plugin_update_command_names_this_plugin_and_marketplace():
+    root = Path(__file__).parent
+    plugin = json.loads((root / "plugin/.claude-plugin/plugin.json").read_text(encoding="utf-8"))
+    market = json.loads((root / ".claude-plugin/marketplace.json").read_text(encoding="utf-8"))
+    assert [p["name"] for p in market["plugins"]] == [plugin["name"]]
+    assert server.PLUGIN_UPDATE_CMD == f"claude plugin update {plugin['name']}@{market['name']}"
 
 
 def test_update_warning_none_for_older(monkeypatch):
@@ -4046,6 +4056,11 @@ def test_version_is_the_same_everywhere_a_release_writes_it():
     plugin = json.loads((root / "plugin/.claude-plugin/plugin.json").read_text(encoding="utf-8"))
     # Claude Code only offers a plugin update when this string changes.
     assert plugin["version"] == version
+    # The plugin launches the server pinned to its own release (the Claude plugin
+    # directory refuses an unpinned uvx launcher), so the pin moves with the version.
+    servers = json.loads((root / "plugin/.mcp.json").read_text(encoding="utf-8"))
+    (entry,) = servers["mcpServers"].values()
+    assert entry["args"] == [f"agent-intern=={version}"]
     # The registry proves we own the PyPI package by finding this line in the
     # README that PyPI renders; drop it and the next registry publish fails.
     readme = (root / "README.md").read_text(encoding="utf-8")
@@ -4097,13 +4112,27 @@ def test_doctor_skill_preapproves_exactly_the_status_tools():
     assert approved == {t for t in _registered_tool_names() if t.endswith("_status")}
 
 
-def test_plugin_launches_the_published_package_unpinned():
-    # Same update posture as the documented manual install: uvx caches the
-    # first version it resolves and never upgrades behind the user's back.
-    # Pinning a version here would silently strand plugin users on it.
+def test_plugin_launches_the_published_package_pinned():
+    # The Claude plugin directory blocks an unpinned uvx launcher, so the plugin runs
+    # exactly the release it ships with (the version test keeps the pin in step) and
+    # moves with a plugin update. The update notice names that command, so a pinned
+    # plugin user is not stranded.
     servers = json.loads((_plugin_root() / ".mcp.json").read_text(encoding="utf-8"))
-    (entry,) = servers["mcpServers"].values()
-    assert entry == {"command": "uvx", "args": ["agent-intern"]}
+    (name, entry) = next(iter(servers["mcpServers"].items()))
+    assert name == "intern"  # the tool prefix mcp__plugin_agent-intern_intern__ hangs on it
+    assert entry == {"command": "uvx", "args": [f"agent-intern=={server.__version__}"]}
+
+
+def test_the_plugin_has_a_readme_the_directory_accepts():
+    # The plugin directory blocks a plugin folder without a README of 40+ words, and
+    # uses it as the listing text. Count the prose, not the code.
+    text = (_plugin_root() / "README.md").read_text(encoding="utf-8")
+    prose = re.sub(r"```.*?```", " ", text, flags=re.S)
+    assert len(re.findall(r"[A-Za-z0-9][\w'.-]*", prose)) >= 40
+    skills = {p.parent.name for p in _plugin_root().glob("skills/*/SKILL.md")}
+    for skill in skills:  # it names every slash command the plugin adds
+        assert f"/agent-intern:{skill}" in text
+    assert "AGENT_INTERN_NO_UPDATE_CHECK=1" in text
 
 
 # --------------------------------------------------------------------------

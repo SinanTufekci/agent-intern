@@ -68,8 +68,9 @@ It's a live script that makes real calls on your own subscription, so run it by 
 
 ## Releasing (maintainers)
 
-A release writes the version into four places: `pyproject.toml`, `server.__version__`, `server.json`
-(both fields) and `plugin/.claude-plugin/plugin.json`. A test keeps them in step. Add a
+A release writes the version into five places: `pyproject.toml`, `server.__version__`, `server.json`
+(both fields), `plugin/.claude-plugin/plugin.json` and the `agent-intern==X.Y.Z` pin in
+`plugin/.mcp.json`. A test keeps them in step. Add a
 `CHANGELOG.md` entry, push, wait for CI to go green, then push a `vX.Y.Z` tag. From there the
 workflows publish to PyPI (after importing the built wheel in a clean venv), list the release in the
 MCP Registry, and cut the GitHub Release.

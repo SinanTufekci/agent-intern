@@ -721,6 +721,10 @@ AGY_BIN = os.environ.get("AGY_BIN", "agy")
 PYPI_JSON_URL = "https://pypi.org/pypi/agent-intern/json"
 _FORK_REPO = os.environ.get("AGY_BRIDGE_REPO") or None
 GITHUB_REPO = _FORK_REPO or "SinanTufekci/agent-intern"
+# The Claude Code plugin pins the server to its own release (plugin/.mcp.json), so
+# `uvx agent-intern@latest` cannot move it; a plugin update does. Named in the update
+# notice next to the uvx command, for that one install path only.
+PLUGIN_UPDATE_CMD = "claude plugin update agent-intern@agent-intern"
 
 AGY_DATA = Path.home() / ".gemini" / "antigravity-cli"
 LAST_CONVERSATIONS = AGY_DATA / "cache" / "last_conversations.json"
@@ -1024,7 +1028,8 @@ def _update_warning(latest: Optional[tuple[int, int, int]]) -> Optional[str]:
         f"A newer Agent Intern bridge is available: v{newest} "
         f"(you are running v{__version__}). What changed: {_release_notes_url(latest)} . "
         "Upgrade with `uvx agent-intern@latest --version` (or change the pinned version, "
-        "or `git pull` if you installed from source), then restart your MCP host. "
+        "or `git pull` if you installed from source; Claude Code plugin users: "
+        f"`{PLUGIN_UPDATE_CMD}`), then restart your MCP host. "
         "Set AGENT_INTERN_NO_UPDATE_CHECK=1 to silence this."
     )
 
@@ -1618,8 +1623,9 @@ def _bridge_version_status() -> tuple[str, bool, str]:
         return (
             label,
             True,
-            f"v{__version__} -> v{newest} available; upgrade: uvx agent-intern@latest --version, "
-            f"then restart your MCP host (what changed: {_release_notes_url(latest)})",
+            f"v{__version__} -> v{newest} available; upgrade: uvx agent-intern@latest --version "
+            f"(Claude Code plugin: {PLUGIN_UPDATE_CMD}), then restart your MCP host "
+            f"(what changed: {_release_notes_url(latest)})",
         )
     return (label, True, f"v{__version__} (latest)")
 
