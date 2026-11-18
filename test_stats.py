@@ -864,16 +864,18 @@ def test_the_page_data_never_waits_on_agy_and_the_quota_has_its_own_route(monkey
     assert _get(port, "/stats/quota.json?k=wrong")[0] == 403
 
 
-def test_the_stats_page_opens_in_a_wider_window(monkeypatch):
+def test_the_stats_page_opens_in_a_wider_window_of_its_own(monkeypatch):
+    """Through swarm_watch._launch (a fresh browser profile): a running Chrome ignores
+    --window-size for an --app window of its own profile."""
+    import swarm_watch
+
     opened = {}
     monkeypatch.setattr(stats_tools, "_agy_quota_text", lambda: None)
     monkeypatch.setattr(server, "_ensure_watch_server", lambda: 9)
-    monkeypatch.setattr(
-        server, "_open_watch_window", lambda url, rid, **kw: opened.update(url=url, rid=rid, **kw)
-    )
+    monkeypatch.setattr(swarm_watch, "_launch", lambda url, w, h: opened.update(url=url, w=w, h=h))
     out = asyncio.run(_tool_fn(stats_tools.agent_stats)(days=30, watch=True))
     assert "Opened the stats page" in out
-    assert opened["rid"] == "stats" and opened["size"] == stats_tools.STATS_WINDOW_SIZE
+    assert (opened["w"], opened["h"]) == stats_tools.STATS_WINDOW
     assert "/stats?days=30&k=" in opened["url"]
 
 

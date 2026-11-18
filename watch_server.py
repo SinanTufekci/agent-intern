@@ -558,7 +558,7 @@ def _watch_viewer_live(rid: str) -> bool:
         return st is not None and (time.time() - st["last_poll"]) < _VIEWER_ALIVE_S
 
 
-def _open_watch_window(url: str, rid: str = _MAIN, size: Optional[str] = None) -> None:
+def _open_watch_window(url: str, rid: str = _MAIN) -> None:
     """Open the watch page in a small, dedicated window. Prefers a Chromium browser
     in `--app` mode (a sized, chromeless window — not a tab); falls back to a normal
     new browser window/tab. Best-effort — never raises.
@@ -573,7 +573,7 @@ def _open_watch_window(url: str, rid: str = _MAIN, size: Optional[str] = None) -
     for exe in _chromium_app_browsers():
         try:
             proc_tree.popen(
-                [exe, f"--app={url}", f"--window-size={size or _WATCH_WINDOW_SIZE}"],
+                [exe, f"--app={url}", f"--window-size={_WATCH_WINDOW_SIZE}"],
                 starts_agent=False,  # a probe, not an agent run
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,

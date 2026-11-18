@@ -180,8 +180,10 @@ def quota_payload() -> dict:
 
 
 # The stats page has a table and a chart side by side; the run viewer's narrow window
-# would squeeze both.
-STATS_WINDOW_SIZE = "1100,820"
+# would squeeze both. It opens the way the swarm dashboard does (swarm_watch._launch, a
+# fresh browser profile), because a Chrome that is already running ignores --window-size
+# for an --app window of its own profile: measured at 931x1005 instead of this size.
+STATS_WINDOW = (1100, 820)
 
 
 @server.mcp.tool(
@@ -212,7 +214,9 @@ async def agent_stats(days: int = 7, watch: bool = False) -> str:
         try:
             port = server._ensure_watch_server()
             url = f"http://127.0.0.1:{port}/stats?days={n}&k={server._WATCH_TOKEN}"
-            await asyncio.to_thread(server._open_watch_window, url, "stats", size=STATS_WINDOW_SIZE)
+            import swarm_watch
+
+            await asyncio.to_thread(swarm_watch._launch, url, *STATS_WINDOW)
             table += "\n\n(Opened the stats page in a local window.)"
         except Exception as e:  # noqa: BLE001
             table += f"\n\n(The stats page could not be opened: {type(e).__name__}.)"
