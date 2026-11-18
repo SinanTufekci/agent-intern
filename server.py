@@ -468,6 +468,7 @@ from typing import Optional, Union
 from fastmcp import Context, FastMCP
 
 import proc_tree
+import stats
 
 # Server-level instructions: the routing guide. An MCP client may send these to its
 # model on connect, so a host model learns how and WHEN to reach for these tools
@@ -2984,6 +2985,7 @@ def _run_agy(
                 "end instead of here."
             )
         if result is not None:
+            stats.note_usage(result.get("usage"))  # usage statistics only
             conv_id = result.get("conversation_id") or ""
             if conv_id:
                 if pin:
@@ -3480,6 +3482,7 @@ import grok_tools  # noqa: E402
 import kimi_tools  # noqa: E402
 import opencode_tools  # noqa: E402
 import muse_tools  # noqa: E402
+import stats_tools  # noqa: E402
 # isort: on
 
 _TOOL_MODULES = (
@@ -3493,6 +3496,7 @@ _TOOL_MODULES = (
     kimi_tools,
     opencode_tools,
     muse_tools,
+    stats_tools,
 )
 
 
@@ -3514,6 +3518,11 @@ def _dropped_tools(enabled: tuple[str, ...]) -> list[str]:
 for _name in _dropped_tools(ENABLED_BACKENDS):
     # fastmcp 3 deprecates mcp.remove_tool for the provider's; 2.x has only mcp's.
     getattr(mcp, "local_provider", mcp).remove_tool(_name)
+
+# Usage statistics (stats.py): one middleware records every delegated call, so no backend
+# needs code of its own. AGENT_INTERN_NO_STATS=1 leaves it off; if it cannot be set up,
+# agent_stats says so instead of showing an empty table.
+stats_tools.install(mcp)
 
 
 def __getattr__(name: str):

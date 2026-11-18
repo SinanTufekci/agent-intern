@@ -29,7 +29,7 @@ ruff check .
 ruff format --check .
 pytest test_server.py test_swarm.py test_codex.py test_copilot.py test_cursor.py \
        test_grok.py test_kimi.py test_opencode.py test_proc_tree.py test_muse.py \
-       test_presets.py test_doctor.py test_claude.py -q
+       test_presets.py test_doctor.py test_claude.py test_stats.py -q
 ```
 
 These unit tests are offline: they use fake CLIs and spend no quota. `test_smoke.py` is different.
@@ -54,6 +54,13 @@ It's a live script that makes real calls on your own subscription, so run it by 
 - **The watch viewer is `watch_server.py`** (its page is `watch_ui.py`). `server.py` re-imports its
   names, so `server._watch_begin` and the rest still work, but code inside `watch_server.py` calls
   its own names: to change what it sees, patch `watch_server.<name>`, not `server.<name>`.
+- **Usage statistics are `stats.py`, `stats_tools.py` and `stats_page.py`.** One FastMCP middleware
+  (`stats_tools.StatsMiddleware`, added in `server.py`) records every delegated call as a line of
+  numbers in `~/.agent-intern/stats.jsonl`: never a prompt, an answer, a path or raw error text, only
+  a category. `stats.py` imports nothing from this repo, so `proc_tree.py` and the bridges can call
+  `stats.note_*` (exit code, timeout, tokens); those calls never raise, and outside a recorded call
+  (a swarm worker thread, say) they do nothing. A new backend needs no stats code beyond tools named
+  `<backend>_ask`, `_continue` or `_image`; a tool that isn't delegation (a `*_status`) isn't recorded.
 - **Unit tests can't start a real CLI.** `conftest.py` fails any test that starts an agent CLI or
   opens a browser, even if the code under test swallowed the error. A test that runs a real CLI on
   purpose is marked `@pytest.mark.real_cli`.

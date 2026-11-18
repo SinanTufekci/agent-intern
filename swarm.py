@@ -61,6 +61,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 import proc_tree
+import stats
 
 DEFAULT_MAX_CONCURRENCY = 4
 _REAL_SETTINGS = Path.home() / ".gemini" / "antigravity-cli" / "settings.json"
@@ -1842,6 +1843,7 @@ def budget_results(
         if not run_dir_error:
             try:
                 run_dir = run_dir or _new_run_dir()
+                stats.note_run_dir(run_dir)
                 path = run_dir / f"worker-{r.index}.md"
                 state = "OK" if r.ok else "ERROR"
                 head = f"# worker {r.index} · {r.backend or '?'} · {state} ({r.elapsed}s)"
@@ -1959,4 +1961,5 @@ def format_agent_results(results: list[WorkerResult]) -> str:
         body = r.answer if r.ok else f"(failed) {r.error}"
         parts.append(f"{head}\n{body}")
     ok = sum(1 for r in results if r.ok)
+    stats.note_swarm(len(results), ok)  # usage statistics: worker counts, never text
     return f"agent swarm: {ok}/{len(results)} succeeded\n\n" + "\n\n".join(parts)

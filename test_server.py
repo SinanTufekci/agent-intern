@@ -720,10 +720,11 @@ def test_dropped_tools():
         *("codex_ask", "codex_continue", "codex_status"),
         *("kimi_ask", "kimi_continue", "kimi_status"),
         *("agent_swarm", "preset_swarm", "swarm_presets"),
+        "agent_stats",  # belongs to no backend, so it is never dropped
     }
     # Kimi can't be a swarm worker, so on its own the swarm tools go too.
     kept = _registered_tool_names() - set(server._dropped_tools(("kimi",)))
-    assert kept == {"kimi_ask", "kimi_continue", "kimi_status"}
+    assert kept == {"kimi_ask", "kimi_continue", "kimi_status", "agent_stats"}
 
 
 def test_backends_env_var_filters_the_served_tools_and_instructions():
@@ -747,7 +748,7 @@ def test_backends_env_var_filters_the_served_tools_and_instructions():
     tools, instructions = json.loads(proc.stdout.strip().splitlines()[-1])
     assert tools == sorted(
         ["codex_ask", "codex_continue", "codex_status", "agent_swarm", "preset_swarm"]
-        + ["swarm_presets"]
+        + ["swarm_presets", "agent_stats"]
     )
     assert instructions == server._server_instructions(("codex",))
 
@@ -4238,7 +4239,7 @@ def test_plugin_skills_only_name_tools_the_server_registers():
     named = set()
     for skill in _plugin_root().glob("skills/*/SKILL.md"):
         text = skill.read_text(encoding="utf-8")
-        named |= set(re.findall(r"`((?:[a-z]+_)+(?:ask|continue|status|image|swarm))`", text))
+        named |= set(re.findall(r"`((?:[a-z]+_)+(?:ask|continue|status|image|swarm|stats))`", text))
     assert named, "found no tool names in the plugin skills; did the layout move?"
     assert named - tools == set(), f"skills name unregistered tools: {sorted(named - tools)}"
 
@@ -4370,6 +4371,7 @@ def test_watched_image_written_before_the_cut_is_still_returned(watched_image_ru
 # --------------------------------------------------------------------------
 
 _TOOL_SURFACE = {
+    "agent_stats": (["days", "watch"], []),
     "agent_swarm": (["tasks", "max_concurrency", "timeout_s", "watch"], ["tasks"]),
     "antigravity_ask": (
         ["prompt", "workspace", "model", "timeout_s", "watch", "plan", "schema"],
@@ -4449,8 +4451,8 @@ def test_the_tool_surface_is_unchanged():
     assert not changed, f"signature changed: {changed}"
 
 
-def test_there_are_thirty_two_tools():
-    assert len(_TOOL_SURFACE) == 32 and len(_tool_surface()) == 32
+def test_there_are_thirty_three_tools():
+    assert len(_TOOL_SURFACE) == 33 and len(_tool_surface()) == 33
 
 
 # --------------------------------------------------------------------------
@@ -4639,7 +4641,7 @@ def _tools(tool_docs, suffix):
 
 
 def test_every_tool_description_is_within_the_cap(tool_docs):
-    assert len(tool_docs) == 32
+    assert len(tool_docs) == 33
     long = {n: len(d) for n, (d, _) in tool_docs.items() if len(d) > _TOOL_DESCRIPTION_CAP}
     assert not long, f"over {_TOOL_DESCRIPTION_CAP} chars: {long}"
 

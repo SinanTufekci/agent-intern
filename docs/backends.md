@@ -464,7 +464,7 @@ plan or API key. It exists for **other hosts**: an Antigravity, Codex, Copilot, 
 session can hand work to Claude. Inside Claude Code the three tools (`claude_ask`, `claude_continue`,
 `claude_status`) are **hidden**, because delegating to yourself spends the same quota twice: the server
 sees `CLAUDECODE=1`, which Claude Code sets for its children, and leaves them out unless
-`AGENT_INTERN_BACKENDS` names `claude` (so a host sees 32 tools and Claude Code 29). `agent_swarm`
+`AGENT_INTERN_BACKENDS` names `claude` (so a host sees 33 tools and Claude Code 30). `agent_swarm`
 takes `backend: "claude"` (aliases `claude-code`, `anthropic`).
 
 - **How it runs.** `claude -p --output-format stream-json --verbose --disable-slash-commands

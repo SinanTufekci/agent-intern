@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+import stats
 import swarm
 
 KINDS = ("panel", "jury")
@@ -793,6 +794,7 @@ def run(
     # Jurors are scored from their full answers; only what is printed is held to the
     # output budget (render_jury prints a juror's raw answer when it cannot be scored).
     shown = swarm.budget_results(results)
+    stats.note_swarm(len(results), sum(1 for r in results if r.ok))
     if p.kind == "jury":
         verdicts = []
         for m, r, b in zip(p.members, results, shown, strict=True):

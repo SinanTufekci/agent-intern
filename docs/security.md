@@ -355,6 +355,14 @@ Everything the sub-agents do is covered above. Apart from that, the bridge itsel
   (the earlier name, `AGY_BRIDGE_NO_UPDATE_CHECK`, still works); the server then makes no network call
   of its own. A fork that is not on PyPI sets `AGY_BRIDGE_REPO=owner/repo` and the check reads that
   repository's tags from `api.github.com` instead.
+- **Writes one local file of numbers.** For `agent_stats` it appends one line per delegated call to
+  `~/.agent-intern/stats.jsonl` (mode 0600 on Linux and macOS; on Windows your home folder's own
+  permissions apply): when, which tool and backend, how long, ok or
+  not with a category (`timeout`, `quota`, ...), a model name or sandbox word if you passed a short
+  one, and token counts where the backend reports them. It never stores a prompt, an answer, a path
+  or a raw error message, keeps 90 days, and recording makes no network call (`agent_stats` itself runs
+  `agy /usage` to show your Antigravity quota). Set `AGENT_INTERN_NO_STATS=1` to
+  stop recording; delete the file any time.
 - **Opens a local port only when asked.** The watch window starts an HTTP listener on `127.0.0.1` the
   first time a call passes `watch=true`; it checks the `Host` header and a per-process token on every
   request. Without `watch` no listener exists.

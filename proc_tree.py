@@ -42,6 +42,8 @@ import subprocess
 import threading
 from typing import Optional
 
+import stats
+
 # SIGKILL is POSIX-only. The getattr keeps this module importable on Windows
 # (which has no SIGKILL) so the POSIX branch stays unit-testable there rather
 # than only on the platforms that execute it. SIGTERM is never the intent and
@@ -389,9 +391,11 @@ def popen(args: list[str], *, starts_agent: bool = True, **popen_kwargs) -> subp
     check_args(args)
     depth = current_depth()
     if starts_agent and depth >= MAX_DEPTH:
+        stats.note_flag("nesting")
         raise NestingTooDeep(nesting_refusal(depth))
     call = CURRENT_CALL.get()
     if starts_agent and call is not None and call.cancelled:
+        stats.note_flag("cancelled")
         raise CallCancelled("the tool call was cancelled before the agent started")
     env = popen_kwargs.get("env")
     popen_kwargs["env"] = {**(os.environ if env is None else env), DEPTH_ENV: str(depth + 1)}
@@ -401,6 +405,8 @@ def popen(args: list[str], *, starts_agent: bool = True, **popen_kwargs) -> subp
         named = _not_found(e, args, popen_kwargs.get("cwd"))
         if named is e:
             raise
+        if starts_agent:
+            stats.note_flag("not_installed")
         raise named from e
     if starts_agent:
         _register(proc, call)
@@ -559,9 +565,13 @@ def run_captured(
     except subprocess.TimeoutExpired:
         kill_tree(proc)
         out, err = _drain(proc)
+        if starts_agent:
+            stats.note_flag("timeout")
         raise subprocess.TimeoutExpired(args, timeout, output=out, stderr=err) from None
     finally:
         _unregister(proc)
+    if starts_agent:
+        stats.note_exit(proc.returncode)  # for the usage statistics; never raises
     return subprocess.CompletedProcess(args, proc.returncode, out, err)
 
 

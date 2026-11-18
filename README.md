@@ -107,13 +107,22 @@ so Claude knows which tool fits — you don't have to name them:
 - *"Summarise each of the six files in src/handlers in parallel with a swarm."* → one `agent_swarm`
   call, six workers at once, one answer block back.
 
-With the plugin you also get three slash commands:
+With the plugin you also get four slash commands:
 
 | Command | What it does |
 |---|---|
 | `/agent-intern:second-opinion [--council]` | Sends your diff to a reviewer from another model family, or to 2–3 of them in parallel. Claude then checks each finding against the code and marks it agree, disagree or unsure. |
 | `/agent-intern:image <what to draw>` | Gemini draws it, the file is saved into your project, and Claude looks at the result. |
 | `/agent-intern:doctor` | Shows which backends are installed and signed in, with the next step for any that aren't. Spends no quota. |
+| `/agent-intern:stats [days]` | Shows how much you delegate, which backend fails and what is left of the Antigravity quota, from a local file of numbers. Spends no quota. |
+
+### See what you delegate
+
+`agent_stats` (or `/agent-intern:stats`) shows calls per backend, error rates, recent swarms and your
+Antigravity quota; `watch=true` opens a chart page on the local watch server. It reads one local file,
+`~/.agent-intern/stats.jsonl`, with numbers and error categories only: no prompts, answers, paths or
+raw errors, kept 90 days. Turn recording off with `AGENT_INTERN_NO_STATS=1`. Tokens appear only for
+backends that report them (Antigravity today).
 
 Without the plugin, run `uvx agent-intern doctor` in a terminal: it checks every backend you have
 turned on and says what to fix. It spends no quota, and needs no host. Any `*_status` tool (say,
@@ -388,8 +397,8 @@ enforced by Claude Code itself; none is an OS boundary for file edits.
 Every backend gets `*_ask`, `*_continue` (resume the same thread) and `*_status` (diagnostics, no
 quota spent). Antigravity adds `antigravity_image` and `antigravity_image_swarm`, `agent_swarm`
 fans out across every backend but Kimi, and `preset_swarm` / `swarm_presets` run and list the
-ready-made panels — **32 tools** in all, or **29** inside Claude Code, where the three `claude_*`
-tools are hidden. Only use some backends? Set `AGENT_INTERN_BACKENDS` and the
+ready-made panels, and `agent_stats` shows your own usage — **33 tools** in all, or **30** inside
+Claude Code, where the three `claude_*` tools are hidden. Only use some backends? Set `AGENT_INTERN_BACKENDS` and the
 rest stay out of Claude's context. [How →](https://github.com/SinanTufekci/agent-intern/blob/main/docs/setup.md#load-only-the-backends-you-use)
 [Tool reference →](https://github.com/SinanTufekci/agent-intern/blob/main/docs/tools.md) ·
 [How each backend is driven →](https://github.com/SinanTufekci/agent-intern/blob/main/docs/backends.md)

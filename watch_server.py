@@ -455,6 +455,20 @@ def _ensure_watch_server() -> int:
                 rid = parse_qs(urlparse(self.path).query).get("id", [_MAIN])[0]
                 _watch_mark_poll(rid)
                 self._send(json.dumps(_watch_snapshot(rid)).encode("utf-8"), "application/json")
+            elif self.path.startswith("/stats"):
+                # The local usage-statistics page (agent_stats watch=true): same origin,
+                # same Host and token check as everything above, numbers only.
+                from urllib.parse import parse_qs, urlparse
+
+                import stats_page
+                import stats_tools
+
+                if self.path.startswith("/stats.json"):
+                    days = parse_qs(urlparse(self.path).query).get("days", ["7"])[0]
+                    body = json.dumps(stats_tools.stats_payload(days)).encode("utf-8")
+                    self._send(body, "application/json")
+                else:
+                    self._send(stats_page.PAGE.encode("utf-8"), "text/html; charset=utf-8")
             elif self.path.startswith("/image"):
                 from urllib.parse import parse_qs, urlparse
 

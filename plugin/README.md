@@ -1,9 +1,10 @@
 # agent-intern (Claude Code plugin)
 
-This plugin registers the `agent-intern` MCP server and adds three slash commands:
+This plugin registers the `agent-intern` MCP server and adds four slash commands:
 `/agent-intern:second-opinion` (the current change reviewed by another model family),
 `/agent-intern:image` (an image drawn by Gemini and saved into your project) and
-`/agent-intern:doctor` (which backends are installed and signed in; spends no quota).
+`/agent-intern:doctor` (which backends are installed and signed in; spends no quota) and
+`/agent-intern:stats` (how much you delegate and which backend fails; local numbers only).
 
 ```bash
 claude plugin marketplace add SinanTufekci/agent-intern

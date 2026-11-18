@@ -92,8 +92,8 @@ When the guide doesn't arrive, write it into `AGENTS.md` as above, or name the t
 ### Recommended — the Claude Code plugin
 
 This repo is also a Claude Code plugin marketplace. The plugin registers the same server (through
-`uvx agent-intern==<version>`, pinned to the plugin's own release) and adds three skills:
-`/agent-intern:second-opinion`, `/agent-intern:image` and `/agent-intern:doctor`.
+`uvx agent-intern==<version>`, pinned to the plugin's own release) and adds four skills:
+`/agent-intern:second-opinion`, `/agent-intern:image`, `/agent-intern:doctor` and `/agent-intern:stats`.
 
 ```bash
 claude plugin marketplace add SinanTufekci/agent-intern
