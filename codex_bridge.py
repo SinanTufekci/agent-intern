@@ -641,7 +641,10 @@ def build_args(
         args += ["-c", f"model_reasoning_effort={effort}"]
     if json_stream:
         args += ["--json"]
-    args += ["-o", output_file, prompt]
+    # "--" ends the options, so a prompt that starts with "-" stays the prompt instead
+    # of failing as "unexpected argument" (checked parse-only on codex-cli 0.166.0, for
+    # both `exec` and `exec resume`).
+    args += ["-o", output_file, "--", prompt]
     return args
 
 

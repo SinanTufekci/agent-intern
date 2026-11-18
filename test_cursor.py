@@ -115,6 +115,13 @@ def test_build_args_prompt_is_last_even_with_flags():
     assert args[args.index("--resume") + 1] == SAMPLE_CID
 
 
+def test_build_args_puts_a_dash_prompt_after_the_end_of_options():
+    # Without "--", cursor-agent reads "-x ..." as an option: "error: unknown option".
+    args = cursor_bridge.build_args("-x is a flag?", "ws", "read-only", "auto", SAMPLE_CID)
+    assert args[-2:] == ["--", "-x is a flag?"]
+    assert args.count("--") == 1
+
+
 # --------------------------------------------------------------------------
 # _workspace_hash + on-disk chat lookup (CHATS_DIR monkeypatched)
 # --------------------------------------------------------------------------

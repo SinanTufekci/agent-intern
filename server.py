@@ -1161,6 +1161,9 @@ def _startup_checks() -> None:
     """
     if _UNKNOWN_BACKENDS:
         log.warning(_backends_status()[2])
+    default_row = _agy_default_status()
+    if default_row and not default_row[1]:
+        log.warning(default_row[2])
     agy_warning = _compat_warning(_parse_agy_version(_get_agy_version() or ""))
     if agy_warning:
         log.warning(agy_warning)
@@ -1508,29 +1511,62 @@ def _resolve_output_path(output_path: Optional[str], workspace: str) -> str:
     """Resolve the absolute target path for a generated image.
 
     Omitted -> a timestamped default under `workspace`; relative -> joined to
-    `workspace`; absolute -> used as-is. The extension may still be corrected
-    after generation (agy picks JPEG or PNG itself, regardless of the name).
+    `workspace`; absolute -> used as-is. A name that is already taken gets -1, -2, …
+    (see _free_path), so agy never writes over an existing file. The extension may
+    still be corrected after generation (agy picks JPEG or PNG itself, regardless of
+    the name).
     """
     if not output_path:
         stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
-        return os.path.join(workspace, f"agy-image-{stamp}Z.png")
-    if os.path.isabs(output_path):
-        return os.path.abspath(output_path)
-    return os.path.abspath(os.path.join(workspace, output_path))
+        path = os.path.join(workspace, f"agy-image-{stamp}Z.png")
+    elif os.path.isabs(output_path):
+        path = os.path.abspath(output_path)
+    else:
+        path = os.path.abspath(os.path.join(workspace, output_path))
+    return _free_path(path)
 
 
-def _newest_scratch_image_after(start: float) -> Optional[str]:
+def _free_path(path: str, taken: frozenset = frozenset()) -> str:
+    """`path`, or `<stem>-1<ext>`, `<stem>-2<ext>`, … : the first name that is neither
+    an existing file nor in `taken` (paths already promised to other images)."""
+    taken_keys = {os.path.normcase(os.path.abspath(t)) for t in taken}
+
+    def free(p: str) -> bool:
+        return not os.path.exists(p) and os.path.normcase(os.path.abspath(p)) not in taken_keys
+
+    if free(path):
+        return path
+    stem, ext = os.path.splitext(path)
+    n = 1
+    while not free(f"{stem}-{n}{ext}"):
+        n += 1
+    return f"{stem}-{n}{ext}"
+
+
+def _inside(path: str, folder: str) -> bool:
+    """True if `path` resolves to somewhere under `folder` (symlinks followed)."""
+    try:
+        p = os.path.normcase(os.path.realpath(path))
+        f = os.path.normcase(os.path.realpath(folder))
+        return os.path.commonpath([p, f]) == f
+    except (OSError, ValueError):  # ValueError: different drives on Windows
+        return False
+
+
+def _newest_scratch_image_after(start: float, scratch_dir: Optional[Path] = None) -> Optional[str]:
     """Newest recognized image in agy's scratch dir, modified at/after `start`
     (with a ~2 s buffer to absorb filesystem timestamp lag).
 
     agy falls back to ~/.gemini/antigravity-cli/scratch/ when not given an
     explicit absolute save path. Returns an absolute path string, or None.
+    `scratch_dir` defaults to the real HOME's; an isolated swarm worker passes its own.
     """
-    if not SCRATCH_DIR.exists():
+    scratch = SCRATCH_DIR if scratch_dir is None else scratch_dir
+    if not scratch.exists():
         return None
     best: Optional[str] = None
     best_mtime = start - 2
-    for child in SCRATCH_DIR.iterdir():
+    for child in scratch.iterdir():
         if not child.is_file():
             continue
         try:
@@ -1559,47 +1595,90 @@ def _wrap_image_prompt(prompt: str, target: str) -> str:
     )
 
 
-def _finalize_image(target: str, agy_text: Optional[str], start: float) -> tuple[str, str, int]:
-    """Locate the generated image, move it to `target` (with its extension
-    corrected to the real magic-byte format), and return path + format + size.
+def _made_since(path: str, start: float) -> bool:
+    """True if `path` is a file modified at/after `start` (same ~2 s buffer as the
+    scratch scan), i.e. something this run could have written."""
+    try:
+        return os.path.isfile(path) and os.path.getmtime(path) >= start - 2
+    except OSError:
+        return False
 
-    Candidate order: the resolved `target`, then an absolute path agy reported in
-    `agy_text`, then the newest image in the scratch dir created at/after `start`.
-    Renames to the canonical extension for the real (magic-byte) format, so the
-    returned path never lies about its bytes.
+
+def _image_source(
+    target: str, agy_text: Optional[str], start: float, scratch_dir: Path
+) -> Optional[str]:
+    """The file this run produced, or None. Tried in order:
+
+    1. `target`, the path agy was told to save to, if written during this run;
+    2. the path agy names on the first line of its reply, but only inside the scratch
+       dir or the target's folder and only if written during this run. agy's reply is
+       model output: without these checks a wrong or injected path would hand the
+       bridge any image on the machine, which it would then take into the workspace;
+    3. the newest image the scratch dir gained during this run.
+    """
+    if _made_since(target, start):
+        return target
+    if agy_text and agy_text.strip():
+        # agy may add prose after the path; take the first non-empty line.
+        said = agy_text.strip().splitlines()[0].strip().strip('"')
+        if (
+            said
+            and os.path.isabs(said)
+            and (_inside(said, str(scratch_dir)) or _inside(said, os.path.dirname(target)))
+            and _made_since(said, start)
+        ):
+            return said
+    return _newest_scratch_image_after(start, scratch_dir)
+
+
+def _place_image(src: str, target: str, scratch_dir: Path) -> tuple[str, str, int]:
+    """Put the image `src` at `target` with its extension corrected to the real
+    bytes, without replacing any existing file; return (final_path, format, size).
+
+    `src` is MOVED only when it is the target itself (the file agy was asked to write)
+    or lives in agy's scratch dir. Anything else is COPIED, so a file that is not
+    clearly agy's own scratch output is never taken from where it was. A final name
+    that is already taken gets -1, -2, … (see _free_path); the returned path says
+    where the image really is. Raises RuntimeError if `src` is not an image.
+    """
+    fmt = _detect_image_format(src)
+    if fmt is None:
+        raise RuntimeError(
+            f"{src!r} is not a recognized image. agy may have refused "
+            "the request or returned text instead of an image."
+        )
+    final_path = _with_ext(target, _canonical_ext(fmt))
+    same = os.path.normcase(os.path.abspath(src)) == os.path.normcase(os.path.abspath(final_path))
+    if not same:
+        final_path = _free_path(final_path)
+        os.makedirs(os.path.dirname(final_path) or ".", exist_ok=True)
+        own = os.path.normcase(os.path.abspath(src)) == os.path.normcase(os.path.abspath(target))
+        if own or _inside(src, str(scratch_dir)):
+            shutil.move(src, final_path)
+        else:
+            shutil.copy2(src, final_path)
+    return final_path, fmt, os.path.getsize(final_path)
+
+
+def _finalize_image(target: str, agy_text: Optional[str], start: float) -> tuple[str, str, int]:
+    """Locate the generated image (see _image_source), place it at `target` with its
+    extension corrected to the real magic-byte format (see _place_image), and
+    return path + format + size. The returned path never lies about its bytes, and
+    may carry a -N suffix when the corrected name was already taken.
 
     Returns (final_path, format, size_bytes). Raises RuntimeError if no image
     file is found, or if the located file is not a recognized image.
     """
-    candidates = [target]
-    if agy_text and agy_text.strip():
-        # agy may add prose after the path; take the first non-empty line.
-        candidates.append(agy_text.strip().splitlines()[0].strip().strip('"'))
-    scratch = _newest_scratch_image_after(start)
-    if scratch:
-        candidates.append(scratch)
-
-    src = next((c for c in candidates if c and os.path.isfile(c)), None)
+    src = _image_source(target, agy_text, start, SCRATCH_DIR)
     if src is None:
         raise RuntimeError(
             f"antigravity_image: no image file found. Looked at target {target!r} and "
             f"scratch dir {SCRATCH_DIR}."
         )
-
-    fmt = _detect_image_format(src)
-    if fmt is None:
-        raise RuntimeError(
-            f"antigravity_image: {src!r} is not a recognized image. agy may have refused "
-            "the request or returned text instead of an image."
-        )
-
-    final_path = _with_ext(target, _canonical_ext(fmt))
-    os.makedirs(os.path.dirname(final_path) or ".", exist_ok=True)
-    if os.path.abspath(src) != os.path.abspath(final_path):
-        if os.path.exists(final_path):
-            os.remove(final_path)
-        shutil.move(src, final_path)
-    return final_path, fmt, os.path.getsize(final_path)
+    try:
+        return _place_image(src, target, SCRATCH_DIR)
+    except RuntimeError as e:
+        raise RuntimeError(f"antigravity_image: {e}") from e
 
 
 def _bridge_version_status() -> tuple[str, bool, str]:
@@ -1780,6 +1859,10 @@ def _agy_status_rows() -> list[tuple[str, bool, str]]:
         rows.append(("agy CLI", True, detail))
         rows.extend(_quota_status_rows())
 
+    default_row = _agy_default_status()
+    if default_row:
+        rows.append(default_row)
+
     rows.append(("base dir", AGY_DATA.exists(), str(AGY_DATA)))
 
     if BRAIN_DIR.is_dir():
@@ -1948,6 +2031,54 @@ def plan_from_sandbox(sandbox: Optional[str]) -> bool:
     raise ValueError(
         f"unknown sandbox {sandbox!r} for antigravity; expected 'read-only' or "
         "'danger-full-access' (or omit it)"
+    )
+
+
+AGY_DEFAULT_ENV = "AGENT_INTERN_AGY_DEFAULT"
+_AGY_DEFAULTS = ("plan",)
+
+
+def agy_plan_by_default() -> bool:
+    """True when AGENT_INTERN_AGY_DEFAULT=plan: antigravity_ask/continue calls that
+    leave `plan` out, and agy swarm tasks with no `sandbox`, run in plan mode. Unset
+    or blank keeps today's default (unrestricted). Read per call, not at import.
+
+    An unknown value raises ValueError rather than being ignored the way an unknown
+    AGENT_INTERN_BACKENDS name is: this switch asks for a restriction, and a typo
+    that quietly ran agy unrestricted would be the one failure that matters. Images
+    never read it (image generation has to write its file).
+    """
+    raw = os.environ.get(AGY_DEFAULT_ENV, "").strip().lower()
+    if not raw:
+        return False
+    if raw in _AGY_DEFAULTS:
+        return True
+    raise ValueError(
+        f"{AGY_DEFAULT_ENV}={os.environ.get(AGY_DEFAULT_ENV)!r} is not a known value; "
+        f"valid: {', '.join(_AGY_DEFAULTS)} (or unset for agy's unrestricted default). "
+        "Refusing to run agy rather than guess which one was meant."
+    )
+
+
+def resolve_agy_plan(plan: Optional[bool]) -> bool:
+    """`plan` as the caller passed it; when left out (None), the AGENT_INTERN_AGY_DEFAULT
+    default (see agy_plan_by_default). An explicit True or False always wins."""
+    return agy_plan_by_default() if plan is None else bool(plan)
+
+
+def _agy_default_status() -> Optional[tuple[str, bool, str]]:
+    """Status row for AGENT_INTERN_AGY_DEFAULT, or None while it is unset."""
+    if not os.environ.get(AGY_DEFAULT_ENV, "").strip():
+        return None
+    try:
+        agy_plan_by_default()
+    except ValueError as e:
+        return ("default mode", False, str(e))
+    return (
+        "default mode",
+        True,
+        f"plan ({AGY_DEFAULT_ENV}): ask/continue without `plan` and swarm tasks without "
+        "`sandbox` run in plan mode; images are unaffected",
     )
 
 

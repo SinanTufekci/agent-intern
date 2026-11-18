@@ -15,6 +15,11 @@ human-facing summary.
 - **The Claude Code plugin has a README** (`plugin/README.md`): what the plugin adds, what the server
   runs and sends, where long swarm answers are kept, and how to turn off the update check. It also
   gets an icon for the plugin directory listing.
+- **`AGENT_INTERN_AGY_DEFAULT=plan` makes Antigravity read-only by default.** `antigravity_ask`,
+  `antigravity_continue` and agy swarm tasks that omit `sandbox` then run in plan mode; an explicit
+  `plan` or `sandbox` still wins, and images are unaffected. To tell "not given" from `false`, `plan`
+  now defaults to `null`. Any other value makes those calls fail instead of running unrestricted, and
+  `antigravity_status` shows the mode. Without the variable nothing changes.
 
 ### Changed
 
@@ -25,8 +30,24 @@ human-facing summary.
   row now name that command next to the uvx one. Manual `uvx agent-intern` registrations are
   unchanged.
 
+### Fixed
+
+- **An image never replaces or takes away an existing file.** When the target name is taken,
+  `antigravity_image` and the swarm's image tasks pick a free one (`-1`, `-2`…) and return the real
+  path, so two swarm tasks with the same `output_path` no longer collide. A path agy names in its
+  reply is used only if it is in agy's scratch folder or the target folder and was written during the
+  call, and a file outside the scratch folder is copied, never moved.
+- **A codex or cursor prompt that starts with `-`** (a Markdown list, say) is no longer read as a
+  command-line option: the prompt now follows `--`.
+- **The opencode and kimi status rows no longer repeat the CLI's credential listing.** They say
+  whether credentials are configured, and a listing that fails shows its exit code.
+
 ### Security
 
+- **The live-view pages send security headers:** `Cache-Control: no-store`, a Content-Security-Policy,
+  `nosniff` and no referrer, so what the window shows stays out of the browser's disk cache. Swarm
+  viewer Chrome profiles are removed when the server exits, and leftovers older than a day at the
+  next launch.
 - **The release pipeline is pinned and split.** Every GitHub Action is pinned to a full commit SHA
   (Dependabot now proposes updates for the actions and the Python dependency), the job that holds the
   PyPI upload permission no longer builds anything (it uploads the artifact a separate build job
@@ -40,6 +61,9 @@ human-facing summary.
   line at the end says agent-intern is independent and not affiliated with or endorsed by the vendors
   of the tools it works with.
 - **The card and social preview are redrawn without the mascot,** with a not-affiliated line.
+- **docs/security.md says what reaches a sub-agent:** every agent inherits the server's environment,
+  so start the host with only the keys you need; Grok, Kimi and Muse are experimental and on by
+  default, Kimi with no sandbox at all, and `AGENT_INTERN_BACKENDS` turns them off.
 
 ## [0.39.0] - 2026-11-18
 

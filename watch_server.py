@@ -433,6 +433,10 @@ def _ensure_watch_server() -> int:
         def log_message(self, *args):  # silence default stderr request logging
             pass
 
+        def end_headers(self):  # every response, including 403 and 404
+            watch_ui.send_security_headers(self)
+            super().end_headers()
+
         def _send(self, body: bytes, content_type: str) -> None:
             self.send_response(200)
             self.send_header("Content-Type", content_type)

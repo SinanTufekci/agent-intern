@@ -36,6 +36,8 @@ os.environ.pop("AGENT_INTERN_BACKENDS", None)
 os.environ.pop("CLAUDECODE", None)
 os.environ.pop("AGENT_INTERN_DEPTH", None)
 os.environ.pop("AGENT_INTERN_NO_UPDATE_CHECK", None)
+# Read per call: set, it turns every agy call that omits `plan` into a plan-mode one.
+os.environ.pop("AGENT_INTERN_AGY_DEFAULT", None)
 # The rest of what Claude Code exports to its children (the session id, the
 # cross-session messaging socket and token, AI_AGENT, ...) and the settings that
 # move the claude backend's binary or config home: none may reach a test.

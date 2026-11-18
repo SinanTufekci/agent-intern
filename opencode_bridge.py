@@ -1069,8 +1069,10 @@ def _auth_status_v2() -> tuple[bool, str]:
 
     Verified on 2.2.5 with nothing configured: it prints "No authenticated
     integrations". Its output with a key configured is unverified, so anything else
-    is reported as-is (first line) rather than parsed into a count. As on 1.x, no
-    credentials is fine while free models are listed."""
+    reads as "configured" without being parsed into a count, and none of it is
+    echoed: the row ends up in tool results and doctor output, and an auth listing
+    is not something to copy there. As on 1.x, no credentials is fine while free
+    models are listed."""
     try:
         proc = proc_tree.run_captured(
             [OPENCODE_BIN, *_diagnostic_prefix(), "auth", "list"],
@@ -1092,7 +1094,10 @@ def _auth_status_v2() -> tuple[bool, str]:
             "none — free `opencode/*` models only "
             "(run `opencode auth login` for Anthropic/OpenAI/…)",
         )
-    return (True, out.splitlines()[0].strip()[:120])
+    if proc.returncode:
+        # An error, not a listing. Free models still decide whether this can answer.
+        return (bool(list_models()), f"`opencode auth list` failed (exit {proc.returncode})")
+    return (True, "credentials configured (`opencode auth list` shows them)")
 
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")

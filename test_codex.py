@@ -87,7 +87,7 @@ def test_build_args_effort_is_an_unquoted_config_override_on_both_paths():
     assert fresh[fresh.index("-c") + 1] == "model_reasoning_effort=low"
     resumed = codex_bridge.build_args("p", "ws", "read-only", None, "sid", "o.txt", effort="high")
     assert resumed[resumed.index("-c") + 1] == "model_reasoning_effort=high"
-    assert resumed[-1] == "p" and resumed[-3] == "-o"  # the prompt stays last
+    assert resumed[-1] == "p" and resumed[-4] == "-o"  # the prompt stays last, after "--"
     assert "-c" not in codex_bridge.build_args("p", "ws", "read-only", None, None, "o.txt")
 
 
@@ -165,6 +165,14 @@ def test_build_args_resume_with_model():
     args = codex_bridge.build_args("p", "ws", "read-only", "o3", SAMPLE_SID, "o.txt")
     assert "resume" in args
     assert args[args.index("-m") + 1] == "o3"
+
+
+@pytest.mark.parametrize("sid", [None, SAMPLE_SID])
+def test_build_args_puts_a_dash_prompt_after_the_end_of_options(sid):
+    # Without "--", codex's parser reads "-x ..." as a flag: "unexpected argument '-x'".
+    args = codex_bridge.build_args("-x is a flag?", "ws", "read-only", None, sid, "o.txt")
+    assert args[-2:] == ["--", "-x is a flag?"]
+    assert args.count("--") == 1
 
 
 # --------------------------------------------------------------------------

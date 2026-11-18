@@ -10,9 +10,9 @@ All 32 tools (29 inside Claude Code, which hides the three Claude Code tools), t
 
 | Tool | Purpose |
 |---|---|
-| `antigravity_ask(prompt, workspace?, model?, timeout_s?=180, watch?=false, plan?=false, schema?)` | Start a **new** Antigravity conversation. `model` selects the model (agy's `--model`, e.g. `"gemini-4-argon-high"`); validated against `agy models`, defaults to your `settings.json` model. `watch=true` opens the live browser view ([Watch mode](watch-and-swarm.md#watch-mode)). `plan=true` runs agy in **plan mode** — it reads and writes a plan, but does not edit files or run commands ([Security](security.md#security); agy 1.1.12+). `schema` (a JSON Schema) returns the **validated object** as JSON text instead of prose — read the caveat in [Status & caveats](status.md#status--caveats) before using it for a judgment (agy 1.1.8+). |
-| `antigravity_continue(prompt, workspace?, model?, timeout_s?=180, watch?=false, plan?=false, schema?)` | Continue the conversation **rooted at `workspace`** (pinned by id). agy's model is per-invocation, so `model` can differ from the original ask — and so are `plan` and `schema`, so a follow-up can be restricted, or shaped, even if the original ask was not. `watch=true` opens the live view. |
-| `antigravity_image(prompt, output_path?, workspace?, timeout_s?=240, watch?=false)` | Generate an image; saves the file (extension corrected to the real bytes) and returns its path + format/size. `watch=true` streams progress and **shows the image** inline. |
+| `antigravity_ask(prompt, workspace?, model?, timeout_s?=180, watch?=false, plan?, schema?)` | Start a **new** Antigravity conversation. `model` selects the model (agy's `--model`, e.g. `"gemini-4-argon-high"`); validated against `agy models`, defaults to your `settings.json` model. `watch=true` opens the live browser view ([Watch mode](watch-and-swarm.md#watch-mode)). `plan=true` runs agy in **plan mode** — it reads and writes a plan, but does not edit files or run commands ([Security](security.md#security); agy 1.1.12+). `schema` (a JSON Schema) returns the **validated object** as JSON text instead of prose — read the caveat in [Status & caveats](status.md#status--caveats) before using it for a judgment (agy 1.1.8+). |
+| `antigravity_continue(prompt, workspace?, model?, timeout_s?=180, watch?=false, plan?, schema?)` | Continue the conversation **rooted at `workspace`** (pinned by id). agy's model is per-invocation, so `model` can differ from the original ask — and so are `plan` and `schema`, so a follow-up can be restricted, or shaped, even if the original ask was not. `watch=true` opens the live view. |
+| `antigravity_image(prompt, output_path?, workspace?, timeout_s?=240, watch?=false)` | Generate an image; saves the file (extension corrected to the real bytes; an existing file is never replaced, a taken name gets `-1`, `-2`, …) and returns its path + format/size. `watch=true` streams progress and **shows the image** inline. |
 | `antigravity_image_swarm(prompts, output_paths?, workspaces?, max_concurrency?=4, timeout_s?=240, watch?=false)` | Generate **several images in parallel** (one worker per prompt). |
 | `antigravity_status()` | Setup diagnostics: **the bridge's own version + whether a newer release is available**, **remaining AI Pro quota per model family** (agy 1.1.11+), plus agy version/compat, state dirs, and newest-transcript readability. Spends no quota. |
 
@@ -108,7 +108,9 @@ that the worker is unrestricted, and `"workspace-write"` is **refused** — agy 
 offer, and accepting it would promise a fence that doesn't exist. **Omitting `sandbox` leaves an
 Antigravity worker unrestricted**, unlike every other backend, whose default is `read-only`: that
 long-standing default is left alone so existing file-writing swarms keep working, so fence agy
-explicitly when you want it fenced.
+explicitly when you want it fenced, or set
+[`AGENT_INTERN_AGY_DEFAULT=plan`](setup.md#make-antigravity-read-only-by-default) to make plan mode
+the default for agy tasks that omit `sandbox`.
 
 `antigravity_image` forces agy to save to an explicit absolute path — without one, agy
 falls back to its own scratch dir (`~/.gemini/antigravity-cli/scratch/`). It then
@@ -143,6 +145,10 @@ diverted into a plan document under agy's own directory, even with `--dangerousl
 disables plan mode when `--disable-slash-commands` is present, so the bridge drops that flag and
 rejects a prompt whose first token is a slash command instead. Plan mode is agent-enforced like
 Copilot's and Cursor's modes, not an OS boundary ([Security](security.md#security)).
+
+Omitted, `plan` is false, unless you set
+[`AGENT_INTERN_AGY_DEFAULT=plan`](setup.md#make-antigravity-read-only-by-default): then
+`antigravity_ask` and `antigravity_continue` run in plan mode unless a call passes `plan=false`.
 
 ### `antigravity_ask`: `model`
 
@@ -190,7 +196,8 @@ Antigravity:
 - **Copilot, Cursor, Claude Code and opencode:** enforced inside the agent, not by the OS.
 - **Muse:** `read-only` switches its write, shell and web tools off.
 - **Antigravity:** `"read-only"` is **plan mode**, `"workspace-write"` is **refused**, and **omitting
-  `sandbox` leaves the worker unrestricted** (see the note above this section).
+  `sandbox` leaves the worker unrestricted** unless `AGENT_INTERN_AGY_DEFAULT=plan` is set (see the
+  note above this section).
 
 A swarm reply is capped at about 40,000 characters, 15,000 per worker; a longer answer is saved in full under
 `~/.agent-intern/runs/` and the reply keeps an excerpt and the path ([details](watch-and-swarm.md#swarm)).

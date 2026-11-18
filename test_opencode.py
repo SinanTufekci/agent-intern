@@ -2053,15 +2053,12 @@ def test_auth_status_2x_no_integrations_and_no_models_is_not_ok(monkeypatch):
     assert detail.startswith("none")
 
 
-def test_auth_status_2x_other_output_reports_its_first_line(monkeypatch):
-    _auth_with(monkeypatch, 2, "anthropic (api key)\nopenai (oauth)\n")
-    assert opencode_bridge.auth_status() == (True, "anthropic (api key)")
-
-
-def test_auth_status_2x_first_line_is_cut_at_120_characters(monkeypatch):
-    _auth_with(monkeypatch, 2, "x" * 300 + "\nsecond")
+def test_auth_status_2x_other_output_reads_configured_and_is_not_echoed(monkeypatch):
+    _auth_with(monkeypatch, 2, "anthropic (api key sk-ant-123)\nopenai (oauth)\n")
     ok, detail = opencode_bridge.auth_status()
-    assert ok is True and detail == "x" * 120
+    assert ok is True
+    assert detail.startswith("credentials configured")
+    assert "sk-ant-123" not in detail and "anthropic" not in detail
 
 
 def test_auth_status_2x_strips_ansi_colour(monkeypatch):
@@ -2069,7 +2066,7 @@ def test_auth_status_2x_strips_ansi_colour(monkeypatch):
     ok, detail = opencode_bridge.auth_status()
     assert ok is True and detail.startswith("none")
     _auth_with(monkeypatch, 2, "\x1b[32manthropic\x1b[0m (key)\n")
-    assert opencode_bridge.auth_status() == (True, "anthropic (key)")
+    assert opencode_bridge.auth_status()[1].startswith("credentials configured")
 
 
 def test_auth_status_2x_empty_output_is_not_ok(monkeypatch):
@@ -2079,7 +2076,19 @@ def test_auth_status_2x_empty_output_is_not_ok(monkeypatch):
 
 def test_auth_status_2x_reads_stderr_too(monkeypatch):
     _auth_with(monkeypatch, 2, "", "anthropic (key)\n")
-    assert opencode_bridge.auth_status() == (True, "anthropic (key)")
+    assert opencode_bridge.auth_status()[0] is True
+
+
+def test_auth_status_2x_a_failing_listing_is_not_read_as_configured(monkeypatch):
+    monkeypatch.setattr(opencode_bridge, "_MAJOR_CACHE", 2)
+    monkeypatch.setattr(
+        opencode_bridge.proc_tree,
+        "run_captured",
+        lambda args, **k: _P("", "Error: token sk-xyz rejected\n", 1),
+    )
+    ok, detail = opencode_bridge.auth_status()
+    assert ok is False  # the same fake lists no models
+    assert detail == "`opencode auth list` failed (exit 1)"
 
 
 def test_auth_status_2x_unrunnable_is_not_ok(monkeypatch):

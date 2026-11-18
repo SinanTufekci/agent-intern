@@ -179,11 +179,21 @@ def test_auth_status_no_providers_is_not_ok(monkeypatch):
 
 def test_auth_status_configured_is_ok(monkeypatch):
     monkeypatch.setattr(
-        kimi_bridge.proc_tree, "run_captured", _fake_run(stdout="kimi (managed) — 3 models")
+        kimi_bridge.proc_tree,
+        "run_captured",
+        _fake_run(stdout="kimi (managed) sk-abc123 — 3 models"),
     )
     ok, detail = kimi_bridge.auth_status()
     assert ok is True
-    assert "kimi" in detail.lower()
+    assert detail.startswith("provider configured")
+    assert "sk-abc123" not in detail and "managed" not in detail  # never the raw line
+
+
+def test_auth_status_failing_listing_is_not_read_as_configured(monkeypatch):
+    monkeypatch.setattr(
+        kimi_bridge.proc_tree, "run_captured", _fake_run(returncode=2, stderr="bad config")
+    )
+    assert kimi_bridge.auth_status() == (False, "`kimi provider list` failed (exit 2)")
 
 
 def test_auth_status_error_is_not_ok(monkeypatch):

@@ -229,7 +229,11 @@ def auth_status() -> tuple[bool, str]:
     out = ((proc.stdout or "") + (proc.stderr or "")).strip()
     if not out or "no providers configured" in out.lower():
         return (False, "no providers configured (run `kimi login` or set config.toml)")
-    return (True, out.splitlines()[0].strip() or "provider configured")
+    if proc.returncode:
+        return (False, f"`kimi provider list` failed (exit {proc.returncode})")
+    # Not echoed: the listing's format past "none" is unverified and it may name
+    # endpoints or keys, while this row lands in tool results and doctor output.
+    return (True, "provider configured (`kimi provider list` shows it)")
 
 
 def status_rows() -> list[tuple[str, bool, str]]:

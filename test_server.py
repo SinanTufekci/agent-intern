@@ -1100,6 +1100,71 @@ def test_check_plan_mode_passes_on_supported_agy(monkeypatch):
     server._check_plan_mode("summarise this repo")  # must not raise
 
 
+def _plan_seen_by_run_agy(monkeypatch, tool, **kwargs):
+    seen = {}
+
+    def fake_run(prompt, ws, continue_conv, timeout_s, model=None, plan=False, schema=None):
+        seen["plan"] = plan
+        return "ok"
+
+    monkeypatch.setattr(server, "_run_agy", fake_run)
+    monkeypatch.setattr(server, "_AGY_PLAN_GATE", True)
+    asyncio.run(getattr(server, tool)("look around", workspace=os.getcwd(), **kwargs))
+    return seen["plan"]
+
+
+@pytest.mark.parametrize("tool", ["antigravity_ask", "antigravity_continue"])
+def test_agy_default_env_unset_keeps_plan_off(monkeypatch, tool):
+    assert _plan_seen_by_run_agy(monkeypatch, tool) is False
+
+
+@pytest.mark.parametrize("tool", ["antigravity_ask", "antigravity_continue"])
+@pytest.mark.parametrize("value", ["plan", " PLAN "])
+def test_agy_default_env_plan_turns_an_omitted_plan_on(monkeypatch, tool, value):
+    monkeypatch.setenv("AGENT_INTERN_AGY_DEFAULT", value)
+    assert _plan_seen_by_run_agy(monkeypatch, tool) is True
+
+
+@pytest.mark.parametrize("tool", ["antigravity_ask", "antigravity_continue"])
+def test_agy_default_env_loses_to_an_explicit_plan(monkeypatch, tool):
+    monkeypatch.setenv("AGENT_INTERN_AGY_DEFAULT", "plan")
+    assert _plan_seen_by_run_agy(monkeypatch, tool, plan=False) is False
+
+
+def test_agy_default_env_unknown_value_refuses_to_run(monkeypatch):
+    monkeypatch.setenv("AGENT_INTERN_AGY_DEFAULT", "read-only")
+    with pytest.raises(ValueError, match="AGENT_INTERN_AGY_DEFAULT='read-only' is not a known"):
+        _plan_seen_by_run_agy(monkeypatch, "antigravity_ask")
+    # ...unless the caller decided for itself, which needs no default at all
+    assert _plan_seen_by_run_agy(monkeypatch, "antigravity_ask", plan=True) is True
+
+
+def test_agy_default_status_row(monkeypatch):
+    assert server._agy_default_status() is None
+    monkeypatch.setenv("AGENT_INTERN_AGY_DEFAULT", "plan")
+    label, ok, detail = server._agy_default_status()
+    assert ok is True and detail.startswith("plan (AGENT_INTERN_AGY_DEFAULT)")
+    monkeypatch.setenv("AGENT_INTERN_AGY_DEFAULT", "plann")
+    label, ok, detail = server._agy_default_status()
+    assert ok is False and "plann" in detail
+
+
+def test_agy_default_env_leaves_images_alone(monkeypatch, tmp_path, scratch_dir):
+    monkeypatch.setenv("AGENT_INTERN_AGY_DEFAULT", "plann")  # would refuse a text call
+    target = str(tmp_path / "art.png")
+
+    def fake_run(prompt, ws, continue_conv, timeout_s, *rest, **kw):
+        assert not kw.get("plan") and not any(r is True for r in rest)
+        (tmp_path / "art.png").write_bytes(_JPEG)
+        return target
+
+    monkeypatch.setattr(server, "_run_agy", fake_run)
+    out = asyncio.run(
+        server.antigravity_image("a cat", output_path=target, workspace=str(tmp_path))
+    )
+    assert "format=JPEG" in out
+
+
 def test_run_agy_plan_reaches_argv(fake_agy_slash, brain_dir, last_conv_file):
     """End-to-end through _run_agy: the flag reaches the real argv, and the shield
     it replaces is genuinely absent rather than merely reordered.
@@ -3732,7 +3797,89 @@ def test_finalize_image_uses_agy_text_when_target_missing(tmp_path, scratch_dir)
     assert fmt == "JPEG"
     assert final == str(tmp_path / "requested.jpg")  # landed at target's base name
     assert os.path.isfile(final)
-    assert not os.path.exists(tmp_path / "actual.jpg")  # moved, not copied
+    # Outside the scratch dir, so copied: the bridge never takes a file from where it was.
+    assert os.path.isfile(tmp_path / "actual.jpg")
+
+
+def test_finalize_image_moves_agy_text_path_inside_scratch(tmp_path, scratch_dir):
+    s = scratch_dir / "named.png"
+    s.write_bytes(_JPEG)
+    target = str(tmp_path / "out.png")
+    final, _, _ = server._finalize_image(target, str(s), time.time())
+    assert final == str(tmp_path / "out.jpg")
+    assert not os.path.exists(s)  # agy's own scratch output: moved
+
+
+def test_finalize_image_ignores_agy_text_outside_scratch_and_target_dir(tmp_path, scratch_dir):
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    secret = elsewhere / "private.jpg"
+    secret.write_bytes(_JPEG)
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    target = str(out_dir / "pic.png")
+    with pytest.raises(RuntimeError, match="no image file found"):
+        server._finalize_image(target, str(secret), time.time())
+    assert secret.read_bytes() == _JPEG  # left alone
+    assert list(out_dir.iterdir()) == []
+
+
+def test_finalize_image_ignores_relative_agy_text(tmp_path, scratch_dir, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "rel.jpg").write_bytes(_JPEG)
+    target = str(tmp_path / "pic.png")
+    with pytest.raises(RuntimeError, match="no image file found"):
+        server._finalize_image(target, "rel.jpg", time.time())
+
+
+def test_finalize_image_ignores_stale_agy_text_path(tmp_path, scratch_dir):
+    start = time.time()
+    old = tmp_path / "old.jpg"  # in the target's folder, but older than this run
+    old.write_bytes(_JPEG)
+    os.utime(old, (start - 100, start - 100))
+    target = str(tmp_path / "pic.png")
+    with pytest.raises(RuntimeError, match="no image file found"):
+        server._finalize_image(target, str(old), start)
+    assert old.is_file()
+
+
+def test_finalize_image_ignores_stale_target_and_keeps_it(tmp_path, scratch_dir):
+    start = time.time()
+    target = tmp_path / "pic.jpg"
+    target.write_bytes(b"\xff\xd8\xff old bytes")  # a file that was already there
+    os.utime(target, (start - 100, start - 100))
+    s = scratch_dir / "gen.jpg"
+    s.write_bytes(_JPEG)
+    os.utime(s, (start + 5, start + 5))
+    final, fmt, _ = server._finalize_image(str(target), None, start)
+    assert final == str(tmp_path / "pic-1.jpg")  # the old file was not replaced
+    assert target.read_bytes() == b"\xff\xd8\xff old bytes"
+    assert (tmp_path / "pic-1.jpg").read_bytes() == _JPEG
+    assert fmt == "JPEG"
+
+
+def test_finalize_image_never_overwrites_the_corrected_name(tmp_path, scratch_dir):
+    keep = tmp_path / "art.jpg"
+    keep.write_bytes(b"precious")
+    (tmp_path / "art.png").write_bytes(_JPEG)  # agy wrote JPEG under the .png it was given
+    final, _, _ = server._finalize_image(str(tmp_path / "art.png"), None, time.time())
+    assert final == str(tmp_path / "art-1.jpg")
+    assert keep.read_bytes() == b"precious"
+    assert not (tmp_path / "art.png").exists()
+
+
+def test_free_path_counts_up_past_files_and_taken_names(tmp_path):
+    p = str(tmp_path / "a.png")
+    assert server._free_path(p) == p
+    (tmp_path / "a.png").write_bytes(b"x")
+    (tmp_path / "a-1.png").write_bytes(b"x")
+    taken = frozenset({str(tmp_path / "a-2.png")})
+    assert server._free_path(p, taken) == str(tmp_path / "a-3.png")
+
+
+def test_resolve_output_path_skips_an_existing_file(tmp_path):
+    (tmp_path / "pic.png").write_bytes(b"x")
+    assert server._resolve_output_path("pic.png", str(tmp_path)) == str(tmp_path / "pic-1.png")
 
 
 # --------------------------------------------------------------------------
@@ -3757,10 +3904,10 @@ def test_antigravity_image_happy_path(tmp_path, scratch_dir, monkeypatch):
 
 
 def test_antigravity_image_recovers_when_run_agy_raises(tmp_path, scratch_dir, monkeypatch):
-    (tmp_path / "art.png").write_bytes(_JPEG)  # file already on disk
     target = str(tmp_path / "art.png")
 
     def boom(prompt, ws, continue_conv, timeout_s):
+        (tmp_path / "art.png").write_bytes(_JPEG)  # agy saved the image, then failed
         raise RuntimeError("transcript read failed")
 
     monkeypatch.setattr(server, "_run_agy", boom)

@@ -675,35 +675,19 @@ def _finalize_or_timeout(home, target, agy_text, start, stderr: str, timeout_s: 
 
 def _finalize_image_isolated(home: Path, target: str, agy_text: Optional[str], start: float):
     """Locate the generated image (target / agy-reported path / isolated scratch),
-    correct its extension to the real bytes, and return (path, fmt, size)."""
+    correct its extension to the real bytes, and return (path, fmt, size).
+
+    Same rules as server._finalize_image, with this worker's own scratch dir: agy's
+    reply path counts only inside that scratch dir or the target's folder, a file
+    outside the scratch dir is copied rather than moved, and an existing file at the
+    final name is never replaced (-1, -2, …)."""
     import server
 
     scratch = home / ".gemini" / "antigravity-cli" / "scratch"
-    candidates = [target]
-    if agy_text and agy_text.strip():
-        candidates.append(agy_text.strip().splitlines()[0].strip().strip('"'))
-    if scratch.exists():
-        imgs = [
-            c
-            for c in scratch.iterdir()
-            if c.is_file() and c.stat().st_mtime > start - 2 and server._detect_image_format(str(c))
-        ]
-        if imgs:
-            candidates.append(str(max(imgs, key=lambda c: c.stat().st_mtime)))
-
-    src = next((c for c in candidates if c and os.path.isfile(c)), None)
+    src = server._image_source(target, agy_text, start, scratch)
     if src is None:
         raise RuntimeError(f"no image file produced (looked at {target} and scratch)")
-    fmt = server._detect_image_format(src)
-    if fmt is None:
-        raise RuntimeError(f"{src} is not a recognized image")
-    final_path = server._with_ext(target, server._canonical_ext(fmt))
-    os.makedirs(os.path.dirname(final_path) or ".", exist_ok=True)
-    if os.path.abspath(src) != os.path.abspath(final_path):
-        if os.path.exists(final_path):
-            os.remove(final_path)
-        shutil.move(src, final_path)
-    return final_path, fmt, os.path.getsize(final_path)
+    return server._place_image(src, target, scratch)
 
 
 def _run_image_worker_serialized(
@@ -940,7 +924,13 @@ def swarm_image(
     if len(output_paths) != len(prompts):
         raise ValueError("output_paths must align with prompts")
     ws = _normalize_workspaces(len(prompts), workspaces)
-    targets = [os.path.abspath(p) for p in output_paths]
+    import server
+
+    # Each worker gets a name no existing file and no other worker holds, so two
+    # images never land on the same path and none replaces a file already there.
+    targets: list[str] = []
+    for p in output_paths:
+        targets.append(server._free_path(os.path.abspath(p), frozenset(targets)))
     runner = _run_image_worker_watched if watch else _run_image_worker
     if watch:
         import swarm_watch
@@ -1110,9 +1100,13 @@ def _normalize_tasks(tasks) -> list[dict]:
             import server
 
             model = server.validate_model(t.get("model") or None)  # fail fast on a typo
-            sandbox = t.get("sandbox") or None  # omitted stays unrestricted; see below
+            # Omitted: unrestricted, unless AGENT_INTERN_AGY_DEFAULT=plan; see below.
+            sandbox = t.get("sandbox") or None
             try:
-                plan = server.plan_from_sandbox(sandbox)
+                if sandbox is None:
+                    plan = server.agy_plan_by_default()
+                else:
+                    plan = server.plan_from_sandbox(sandbox)
                 if plan:
                     # Fail the whole swarm here rather than N calls in: this checks
                     # the agy version gate and the slash-command guard that plan mode

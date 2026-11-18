@@ -75,6 +75,11 @@ a real restriction, but an agent-enforced one, so it does not change the default
   it is **mutually exclusive with the slash-command shield** — agy silently disables plan mode when
   `--disable-slash-commands` is present, so the bridge drops that flag and rejects a prompt whose
   first token is a slash command instead.
+- **Make plan mode the default.** Set `AGENT_INTERN_AGY_DEFAULT=plan` to make plan mode the default for
+  `antigravity_ask`, `antigravity_continue` and agy swarm tasks that omit `sandbox`; an explicit
+  `plan=false` or `sandbox: "danger-full-access"` still runs unrestricted, images are unaffected, and
+  any other value makes those calls fail rather than run unrestricted
+  ([setup](setup.md#make-antigravity-read-only-by-default)).
 
 ### Codex — a real sandbox you should use
 
@@ -326,6 +331,13 @@ shim.
 - Only invoke these with **trusted prompts on trusted content**. Untrusted input here is the classic
   prompt-injection *lethal trifecta*: private-data access + code execution + network egress.
 - For real isolation, run the **whole bridge inside a container or VM**.
+- **Every agent inherits the server's environment.** API keys and tokens exported in the shell that
+  starts your host reach each sub-agent, and so anything it runs. Start the host with only the
+  variables you need.
+- **Grok, Kimi and Muse are on by default, and all three are experimental.** Kimi has no sandbox and
+  auto-executes every tool call. If you don't use them, turn them off with `AGENT_INTERN_BACKENDS`,
+  for example `AGENT_INTERN_BACKENDS=antigravity,codex,copilot,cursor,opencode`
+  ([setup](setup.md#load-only-the-backends-you-use)).
 
 The bridge itself does only cross-platform filesystem reads under `~/.gemini/antigravity-cli/`,
 `~/.codex/`, `~/.copilot/`, and `~/.cursor/` — no private APIs, no token theft. The risk above is
@@ -346,6 +358,10 @@ Everything the sub-agents do is covered above. Apart from that, the bridge itsel
 - **Opens a local port only when asked.** The watch window starts an HTTP listener on `127.0.0.1` the
   first time a call passes `watch=true`; it checks the `Host` header and a per-process token on every
   request. Without `watch` no listener exists.
+  Its pages and `/events` answers go out with `Cache-Control: no-store`, `nosniff`, no referrer and a
+  Content-Security-Policy that allows only the page's own inline script and its own origin, so what the
+  window shows is not written to the browser's disk cache. The swarm window runs in a throwaway Chrome
+  profile; the server removes its own at exit and prunes ones older than a day at the next launch.
 - **Does not update itself.** Which version runs is decided by how the host launches it (`uvx
   agent-intern` follows new releases on each launch, `uvx agent-intern==X.Y.Z` stays put; see
   [setup](setup.md#no-plugin--register-the-server-yourself-you-control-updates)).

@@ -446,6 +446,28 @@ change.
 - A name that matches no backend is ignored, and the `backends` row flags it. If no name matches,
   every backend stays on.
 
+### Make Antigravity read-only by default
+
+Antigravity has no OS sandbox, and by default `antigravity_ask`, `antigravity_continue` and an
+`agent_swarm` agy task without a `sandbox` run unrestricted. Set **`AGENT_INTERN_AGY_DEFAULT=plan`**
+to make those calls run in agy's [plan mode](tools.md#antigravity_ask-plan) instead: agy reads and
+answers, and writes a plan rather than editing files or running commands.
+
+```bash
+claude mcp add -s user agent-intern -e AGENT_INTERN_AGY_DEFAULT=plan -- uvx agent-intern
+```
+
+- An explicit choice still wins: `plan=false` on a call, or `sandbox: "danger-full-access"` on a
+  swarm task, runs that one unrestricted.
+- Images are unaffected, since generating one means writing its file.
+- Plan mode is enforced by agy itself, not by the OS, and needs agy 1.1.12 or newer.
+- `plan` is the only value. Anything else makes those agy calls fail with an error naming the
+  variable rather than guess, and `antigravity_status` shows it as a problem in its `default mode`
+  row. Unset, nothing changes.
+
+Set it the same way as `AGENT_INTERN_BACKENDS` above (with the plugin, in the `env` block of
+`~/.claude/settings.json`), and restart the host after a change.
+
 ## Troubleshooting
 
 Start with `uvx agent-intern doctor` in a terminal: it shows what is installed and signed in, spends

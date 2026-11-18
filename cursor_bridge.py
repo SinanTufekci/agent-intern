@@ -490,7 +490,9 @@ def build_args(
     args += _sandbox_flags(sandbox)
     if model:
         args += ["--model", model]
-    args.append(prompt)
+    # "--" ends the options, so a prompt that starts with "-" stays the prompt instead
+    # of failing as "unknown option" (checked parse-only on cursor-agent 2026.11.05).
+    args += ["--", prompt]
     return args
 
 

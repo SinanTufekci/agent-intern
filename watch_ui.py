@@ -488,3 +488,26 @@ def page(title: str, script: str, css: str = "", body: str = "") -> str:
         f"<title>{title}</title><style>{BASE_CSS}{CSS}{css}</style></head><body>{BODY}{body}"
         f"<script>{BASE_JS}{JS}{script}</script></body></html>"
     )
+
+
+# ------------------------------------------------------------ response headers
+# Both viewers are one inline-script page that polls its own origin, so the policy can be
+# tight: no outside loads, no framing, and `connect-src 'self'` keeps a script (even an
+# injected one) from sending what it sees anywhere else. `no-store` keeps prompts and
+# answers out of the browser's disk cache (the single-run viewer uses the user's own profile).
+SECURITY_HEADERS: tuple[tuple[str, str], ...] = (
+    ("Cache-Control", "no-store"),
+    ("X-Content-Type-Options", "nosniff"),
+    ("Referrer-Policy", "no-referrer"),
+    (
+        "Content-Security-Policy",
+        "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
+        "img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'",
+    ),
+)
+
+
+def send_security_headers(handler) -> None:
+    """Add SECURITY_HEADERS to the response `handler` is writing (call before end_headers)."""
+    for name, value in SECURITY_HEADERS:
+        handler.send_header(name, value)

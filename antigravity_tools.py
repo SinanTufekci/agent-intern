@@ -44,7 +44,7 @@ async def antigravity_ask(
     model: Optional[str] = None,
     timeout_s: int = 180,
     watch: bool = False,
-    plan: bool = False,
+    plan: Optional[bool] = None,
     schema: Optional[Union[dict, str]] = None,
     ctx: Optional[Context] = None,
 ) -> str:
@@ -77,7 +77,8 @@ async def antigravity_ask(
               at a repo you don't want edited. Agent-enforced, not an OS sandbox
               (codex has the real one). A prompt whose first token is a slash
               command is rejected in plan mode, and an agy older than 1.1.12 raises
-              rather than running unrestricted. Default false.
+              rather than running unrestricted. Omitted: false, unless the user set
+              AGENT_INTERN_AGY_DEFAULT=plan; an explicit true/false always wins.
         schema: Optional JSON Schema (an object, or its JSON text). Returns agy's
                 VALIDATED object (`structured_output`) as JSON text instead of prose;
                 json.loads it. Raises if agy produces none. Needs agy 1.1.8+.
@@ -89,6 +90,7 @@ async def antigravity_ask(
     """
     ws = server._normalize_workspace(workspace)
     server.validate_model(model)  # fail fast on a typo (agy would silently ignore it)
+    plan = server.resolve_agy_plan(plan)  # omitted -> AGENT_INTERN_AGY_DEFAULT
     if plan:
         server._check_plan_mode(prompt)  # refuses rather than downgrading; see _agy_base_args
     schema_text = None
@@ -118,7 +120,7 @@ async def antigravity_continue(
     model: Optional[str] = None,
     timeout_s: int = 180,
     watch: bool = False,
-    plan: bool = False,
+    plan: Optional[bool] = None,
     schema: Optional[Union[dict, str]] = None,
     ctx: Optional[Context] = None,
 ) -> str:
@@ -146,13 +148,14 @@ async def antigravity_continue(
               commands, while reads still work. Per-invocation like `model`, so a
               follow-up can plan even if the original ask was unrestricted. See
               antigravity_ask's `plan` for what it does and does not guarantee.
-              Default false.
+              Omitted: false, unless the user set AGENT_INTERN_AGY_DEFAULT=plan.
         schema: Optional JSON Schema for this turn — returns the validated object as
                 JSON text instead of prose. Per-invocation like `model` and `plan`.
                 See antigravity_ask's `schema`. Needs agy 1.1.8+.
     """
     ws = server._normalize_workspace(workspace)
     server.validate_model(model)  # fail fast on a typo (agy would silently ignore it)
+    plan = server.resolve_agy_plan(plan)  # omitted -> AGENT_INTERN_AGY_DEFAULT
     if plan:
         server._check_plan_mode(prompt)  # refuses rather than downgrading; see _agy_base_args
     schema_text = None
@@ -194,7 +197,8 @@ async def antigravity_image(
     Args:
         prompt: Description of the image to generate.
         output_path: Where to save. Absolute, or relative to `workspace`. If
-                     omitted, a timestamped name under `workspace` is used.
+                     omitted, a timestamped name under `workspace` is used. An
+                     existing file is never replaced: a taken name gets -1, -2, …
         workspace: Working directory for the conversation. Defaults to cwd.
         timeout_s: Max seconds to wait for agy to complete. Default 240
                    (image generation is slower than text).

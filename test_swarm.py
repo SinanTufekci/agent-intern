@@ -212,6 +212,38 @@ def test_finalize_image_missing_raises(tmp_path):
         swarm._finalize_image_isolated(tmp_path, str(tmp_path / "nope.png"), None, 0.0)
 
 
+def test_finalize_image_isolated_copies_a_reply_path_outside_its_scratch(tmp_path):
+    home = tmp_path / "home"
+    out = tmp_path / "out"
+    out.mkdir()
+    named = out / "agy-named.png"  # in the target's folder: accepted, but copied
+    named.write_bytes(_PNG_HEAD)
+    final, fmt, _ = swarm._finalize_image_isolated(home, str(out / "pic.png"), str(named), 0.0)
+    assert final == str(out / "pic.png") and fmt == "PNG"
+    assert named.is_file()
+
+
+def test_finalize_image_isolated_ignores_a_reply_path_elsewhere(tmp_path):
+    home = tmp_path / "home"
+    other = tmp_path / "other"
+    other.mkdir()
+    (other / "x.png").write_bytes(_PNG_HEAD)
+    out = tmp_path / "out"
+    out.mkdir()
+    with pytest.raises(RuntimeError, match="no image file produced"):
+        swarm._finalize_image_isolated(home, str(out / "pic.png"), str(other / "x.png"), 0.0)
+
+
+def test_finalize_image_isolated_moves_from_its_own_scratch(tmp_path):
+    home = tmp_path / "home"
+    scratch = home / ".gemini" / "antigravity-cli" / "scratch"
+    scratch.mkdir(parents=True)
+    (scratch / "gen.png").write_bytes(_PNG_HEAD)
+    final, _, _ = swarm._finalize_image_isolated(home, str(tmp_path / "pic.png"), None, 0.0)
+    assert final == str(tmp_path / "pic.png")
+    assert not (scratch / "gen.png").exists()
+
+
 # --------------------------------------------------------------------------
 # result formatting
 # --------------------------------------------------------------------------
@@ -385,6 +417,31 @@ def test_normalize_tasks_antigravity_read_only_becomes_plan(monkeypatch):
         [{"backend": "antigravity", "prompt": "review this", "sandbox": "read-only"}]
     )
     assert out[0]["plan"] is True
+
+
+def test_normalize_tasks_antigravity_default_env_plans_tasks_without_a_sandbox(monkeypatch):
+    import server
+
+    monkeypatch.setattr(server, "list_agy_models", lambda: [])
+    monkeypatch.setattr(server, "_AGY_PLAN_GATE", True)
+    monkeypatch.setenv("AGENT_INTERN_AGY_DEFAULT", "plan")
+    out = swarm._normalize_tasks(
+        [
+            {"backend": "antigravity", "prompt": "a"},
+            {"backend": "antigravity", "prompt": "b", "sandbox": "danger-full-access"},
+        ]
+    )
+    assert out[0]["plan"] is True  # omitted -> the user's default
+    assert out[1]["plan"] is False  # an explicit sandbox still wins
+
+
+def test_normalize_tasks_antigravity_unknown_default_env_fails_the_swarm(monkeypatch):
+    import server
+
+    monkeypatch.setattr(server, "list_agy_models", lambda: [])
+    monkeypatch.setenv("AGENT_INTERN_AGY_DEFAULT", "plann")
+    with pytest.raises(ValueError, match="task 0: AGENT_INTERN_AGY_DEFAULT='plann'"):
+        swarm._normalize_tasks([{"backend": "antigravity", "prompt": "a"}])
 
 
 def test_normalize_tasks_antigravity_rejects_workspace_write(monkeypatch):
@@ -1489,6 +1546,24 @@ def test_swarm_image_reports_each_finished_worker(monkeypatch, tmp_path):
     assert seen == [(0, 2), (1, 2), (2, 2)]
 
 
+def test_swarm_image_gives_every_worker_its_own_free_target(monkeypatch, tmp_path):
+    (tmp_path / "a.png").write_bytes(b"already here")
+    got = {}
+
+    def fake_image(index, prompt, target, workspace, timeout_s):
+        got[index] = target
+        return swarm.WorkerResult(index, True, image_path=target, image_format="png", image_size=1)
+
+    monkeypatch.setattr(swarm, "_run_image_worker", fake_image)
+    same = str(tmp_path / "a.png")
+    swarm.swarm_image(["x", "y", "z"], [same, same, str(tmp_path / "b.png")], str(tmp_path))
+    assert got == {
+        0: str(tmp_path / "a-1.png"),
+        1: str(tmp_path / "a-2.png"),
+        2: str(tmp_path / "b.png"),
+    }
+
+
 class _Ctx:
     """The part of fastmcp's Context the progress helper uses."""
 
@@ -1765,3 +1840,137 @@ def test_old_run_directories_are_pruned_and_other_entries_left_alone(_runs_in_tm
     swarm.format_agent_results([_result(0, swarm.WORKER_OUTPUT_CAP + 1)])
     assert not old.exists()
     assert fresh.exists() and other.exists()
+
+
+# ----------------------------------------------- viewer security headers and profile cleanup
+def _viewer_get(port, path, host=None):
+    import http.client
+
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    try:
+        conn.request("GET", path, headers={"Host": host or f"127.0.0.1:{port}"})
+        r = conn.getresponse()
+        r.read()
+        return r.status, {k.lower(): v for k, v in r.getheaders()}
+    finally:
+        conn.close()
+
+
+def _assert_security_headers(headers):
+    assert headers["cache-control"] == "no-store"
+    assert headers["x-content-type-options"] == "nosniff"
+    assert headers["referrer-policy"] == "no-referrer"
+    csp = headers["content-security-policy"]
+    for part in (
+        "default-src 'none'",
+        "script-src 'unsafe-inline'",
+        "connect-src 'self'",
+        "img-src 'self' data:",
+        "frame-ancestors 'none'",
+        "base-uri 'none'",
+    ):
+        assert part in csp
+
+
+def test_swarm_viewer_responses_carry_security_headers():
+    port = swarm_watch.ensure_server()
+    k = server._WATCH_TOKEN
+    for path in (f"/?k={k}", f"/events?k={k}", f"/worker?k={k}", f"/image?p=nope&k={k}"):
+        status, headers = _viewer_get(port, path)
+        assert status in (200, 404)
+        _assert_security_headers(headers)
+    # a refused request carries them too
+    status, headers = _viewer_get(port, "/events?k=wrong")
+    assert status == 403
+    _assert_security_headers(headers)
+
+
+def test_single_run_viewer_responses_carry_security_headers():
+    import watch_server
+
+    port = watch_server._ensure_watch_server()
+    k = server._WATCH_TOKEN
+    for path in (f"/?k={k}", f"/events?id=main&k={k}", f"/image?p=nope&k={k}"):
+        status, headers = _viewer_get(port, path)
+        assert status in (200, 404)
+        _assert_security_headers(headers)
+    status, headers = _viewer_get(port, "/events?id=main&k=wrong")
+    assert status == 403
+    _assert_security_headers(headers)
+
+
+def test_the_policy_still_allows_what_the_pages_do():
+    """The pages use an inline script, fetch their own origin and show data:/same-origin
+    images; the policy must not forbid any of that, and the pages must not load anything else."""
+    import re
+
+    import watch_ui
+
+    csp = dict(
+        (p.split(" ", 1)[0], p.split(" ", 1)[1])
+        for p in dict(watch_ui.SECURITY_HEADERS)["Content-Security-Policy"].split("; ")
+    )
+    assert "'unsafe-inline'" in csp["script-src"] and "'unsafe-inline'" in csp["style-src"]
+    for html in (swarm_watch._HTML, swarm_watch._WORKER_HTML, server._watch_html()):
+        assert not re.search(r"<script[^>]+src=|<link[^>]+href=|@import|<iframe", html)
+        assert not re.search(r"""fetch\(["']https?:""", html)
+
+
+def _make_profile(root, name, age_s):
+    d = root / name
+    d.mkdir()
+    (d / "Local State").write_text("x")
+    old = time.time() - age_s
+    os.utime(d, (old, old))
+    return d
+
+
+def test_old_viewer_profiles_are_pruned_at_launch(monkeypatch, tmp_path):
+    monkeypatch.setattr(swarm_watch.tempfile, "gettempdir", lambda: str(tmp_path))
+    old = _make_profile(tmp_path, "agy_chrome_old", 2 * 86400)
+    fresh = _make_profile(tmp_path, "agy_chrome_fresh", 60)
+    other = _make_profile(tmp_path, "someone_elses_dir", 5 * 86400)
+    swarm_watch._prune_old_profiles()
+    assert not old.exists()
+    assert fresh.exists() and other.exists()
+
+
+def test_a_locked_viewer_profile_is_skipped_quietly(monkeypatch, tmp_path):
+    monkeypatch.setattr(swarm_watch.tempfile, "gettempdir", lambda: str(tmp_path))
+    held = _make_profile(tmp_path, "agy_chrome_held", 3 * 86400)
+    gone = _make_profile(tmp_path, "agy_chrome_gone", 3 * 86400)
+    monkeypatch.setattr(swarm_watch, "_profile_in_use", lambda p: p.endswith("held"))
+    swarm_watch._prune_old_profiles()
+    assert held.exists() and not gone.exists()
+
+
+def test_profile_in_use_sees_an_unremovable_lockfile(monkeypatch, tmp_path):
+    (tmp_path / "lockfile").write_text("")
+
+    def deny(path):
+        raise PermissionError(path)
+
+    monkeypatch.setattr(swarm_watch.os, "remove", deny)
+    assert swarm_watch._profile_in_use(str(tmp_path)) is True
+    monkeypatch.undo()
+    assert (
+        swarm_watch._profile_in_use(str(tmp_path)) is False
+    )  # removable lockfile: nobody holds it
+
+
+def test_new_profile_is_tracked_and_removed_at_exit(monkeypatch, tmp_path):
+    monkeypatch.setattr(swarm_watch.tempfile, "gettempdir", lambda: str(tmp_path))
+    real_mkdtemp = swarm_watch.tempfile.mkdtemp
+    monkeypatch.setattr(
+        swarm_watch.tempfile, "mkdtemp", lambda prefix: real_mkdtemp(prefix=prefix, dir=tmp_path)
+    )
+    monkeypatch.setattr(swarm_watch, "_OWN_PROFILES", [])
+    registered = []
+    monkeypatch.setattr(swarm_watch.atexit, "register", registered.append)
+    monkeypatch.setattr(swarm_watch, "_CLEANUP_REGISTERED", False)
+    prof = swarm_watch._new_profile()
+    swarm_watch._new_profile()
+    assert os.path.isdir(prof) and os.path.basename(prof).startswith("agy_chrome_")
+    assert registered == [swarm_watch._cleanup_own_profiles]  # once, not per window
+    swarm_watch._cleanup_own_profiles()
+    assert not os.path.exists(prof) and swarm_watch._OWN_PROFILES == []

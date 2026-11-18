@@ -430,7 +430,8 @@ the same thread. No private APIs, no token handling: it only bridges what the CL
 > **Every backend is an autonomous agent running with your privileges.** Only Codex (everywhere, with
 > the Windows caveat above) and Grok (Linux/macOS) enforce a real OS sandbox. Copilot, Cursor, opencode and
 > Claude Code enforce theirs inside the agent (on opencode 2.x, `workspace-write` keeps file
-> edits inside the workspace, but the shell can write anywhere and read `.env` files); Antigravity has none unless you opt into `plan=True`, and
+> edits inside the workspace, but the shell can write anywhere and read `.env` files); Antigravity has none unless you opt into `plan=True` (or make it the default with
+> [`AGENT_INTERN_AGY_DEFAULT=plan`](https://github.com/SinanTufekci/agent-intern/blob/main/docs/setup.md#make-antigravity-read-only-by-default)), and
 > Kimi has none at all. `workspace` is a starting directory, **not** a boundary. Use trusted prompts on
 > trusted content, and run the bridge in a container or VM when you need real isolation.
 > [What each `sandbox` actually enforces →](https://github.com/SinanTufekci/agent-intern/blob/main/docs/security.md)

@@ -14,8 +14,10 @@ circular import.
 
 from __future__ import annotations
 
+import atexit
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import threading
@@ -126,6 +128,10 @@ def ensure_server() -> int:
         def log_message(self, *a):  # silence
             pass
 
+        def end_headers(self):  # every response, including 403 and 404
+            watch_ui.send_security_headers(self)
+            super().end_headers()
+
         def _send(self, body: bytes, ctype: str):
             self.send_response(200)
             self.send_header("Content-Type", ctype)
@@ -194,6 +200,86 @@ def _port() -> int:
     return ensure_server()
 
 
+# ---------------------------------------------------------- viewer profile cleanup
+# Every viewer window gets its own throwaway Chrome profile (see _launch). Each is tens of MB
+# and its cache can hold what the page showed, so old ones are pruned at the next launch and
+# this process's own are removed at exit.
+_PROFILE_PREFIX = "agy_chrome_"
+_PROFILE_MAX_AGE_S = 86400
+_OWN_PROFILES: list[str] = []
+_CLEANUP_REGISTERED = False
+
+
+def _profile_in_use(path: str) -> bool:
+    """True if a Chrome still seems to hold this profile: its lock file cannot be removed
+    (Windows keeps `lockfile` open) or its `SingletonLock` names a live process (POSIX)."""
+    lock = os.path.join(path, "lockfile")
+    if os.path.exists(lock):
+        try:
+            os.remove(lock)
+        except OSError:
+            return True
+    single = os.path.join(path, "SingletonLock")
+    if os.path.islink(single):
+        try:
+            pid = int(os.readlink(single).rsplit("-", 1)[-1])
+            os.kill(pid, 0)
+            return True
+        except (OSError, ValueError):
+            pass
+    return False
+
+
+def _remove_profile(path: str) -> None:
+    shutil.rmtree(path, ignore_errors=True)
+
+
+def _prune_old_profiles(max_age_s: float = _PROFILE_MAX_AGE_S) -> None:
+    """Remove `agy_chrome_*` profiles in the temp dir not touched for `max_age_s`, skipping
+    any a running Chrome still holds. Best effort and silent."""
+    root = tempfile.gettempdir()
+    cutoff = time.time() - max_age_s
+    try:
+        names = os.listdir(root)
+    except OSError:
+        return
+    for name in names:
+        path = os.path.join(root, name)
+        try:
+            if (
+                name.startswith(_PROFILE_PREFIX)
+                and os.path.isdir(path)
+                and not os.path.islink(path)
+                and os.path.getmtime(path) < cutoff
+                and not _profile_in_use(path)
+            ):
+                _remove_profile(path)
+        except OSError:
+            continue
+
+
+def _cleanup_own_profiles() -> None:
+    """At exit: try to remove the profiles this process made. A Chrome that is still open
+    keeps its files locked on Windows; those stay for the next launch's prune."""
+    for path in list(_OWN_PROFILES):
+        _remove_profile(path)
+    _OWN_PROFILES.clear()
+
+
+def _new_profile() -> str:
+    global _CLEANUP_REGISTERED
+    try:
+        _prune_old_profiles()
+    except Exception:  # noqa: BLE001 - housekeeping must never stop a window opening
+        pass
+    prof = tempfile.mkdtemp(prefix=_PROFILE_PREFIX)
+    _OWN_PROFILES.append(prof)
+    if not _CLEANUP_REGISTERED:
+        atexit.register(_cleanup_own_profiles)
+        _CLEANUP_REGISTERED = True
+    return prof
+
+
 def _launch(url: str, w: int, h: int, x: Optional[int] = None, y: Optional[int] = None) -> None:
     """Open `url` in a chromeless --app window at a given size/position.
 
@@ -203,7 +289,7 @@ def _launch(url: str, w: int, h: int, x: Optional[int] = None, y: Optional[int] 
     which is why earlier windows opened too wide and stacked on top of each other).
     """
     pos = [f"--window-position={x},{y}"] if x is not None and y is not None else []
-    prof = tempfile.mkdtemp(prefix="agy_chrome_")
+    prof = _new_profile()
     flags = [
         f"--app={url}",
         f"--window-size={w},{h}",
