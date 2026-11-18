@@ -92,10 +92,12 @@ from __future__ import annotations
 import json
 import logging
 import os
+import random
 import re
 import shutil
 import subprocess
 import threading
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -855,7 +857,67 @@ def _run_impl(
     major = check_supported_version()  # before anything runs: fail closed
     resume_id, use_continue = _resume_flags(workspace, continue_conv)
     args = build_args(prompt, workspace, sandbox, model, resume_id, use_continue, agent, major)
+    env = _env(sandbox, major)
 
+    # One budget for the run and its retries, so a retry never stretches the timeout.
+    budget = timeout_s + 30
+    deadline = time.monotonic() + budget
+    retries = 0
+    while True:
+        state, stderr, returncode, timed_out = _run_once(
+            args, workspace, env, max(1.0, deadline - time.monotonic()), on_event
+        )
+        if timed_out:
+            # Free models normally answer in seconds, so a timeout means a long task,
+            # a busy free tier or a stuck run; the caller can rule out the first two.
+            raise RuntimeError(
+                f"opencode timed out after {budget}s. For a long task raise "
+                f"timeout_s; if a short prompt timed out, the free `opencode/*` tier may "
+                f"be congested: retry later, or use another model."
+            )
+        if retries >= _NOT_READY_RETRIES or not _never_got_ready(state):
+            break
+        pause = random.uniform(*_NOT_READY_PAUSE_S)
+        if deadline - time.monotonic() < pause + 1:
+            break
+        retries += 1
+        logging.getLogger("agy_bridge").info(
+            "opencode's standalone server did not start (parallel start); retry %d/%d in %.1fs",
+            retries,
+            _NOT_READY_RETRIES,
+            pause,
+        )
+        time.sleep(pause)
+
+    answer = _finish(state, stderr, returncode, sandbox)
+    if not continue_conv and pin and state.get("session_id"):
+        _pin(workspace, state["session_id"])
+    return answer
+
+
+# opencode 2.x `run --standalone` starts a private server per run. Several started in
+# the same instant race for it, and the losers exit 1 within ~0.5 s with this error
+# before any session exists (live on 2.2.5: 3 runs started together, 1-2 failed;
+# started 0.3 s apart, 10 of 10 ran). Nothing ran, so starting again is safe; a
+# jittered pause keeps two losers from colliding again. Any other error is not retried.
+_NOT_READY_MARKER = "exited before reporting readiness"
+_NOT_READY_RETRIES = 2
+_NOT_READY_PAUSE_S = (0.5, 1.5)
+
+
+def _never_got_ready(state: dict) -> bool:
+    """True if the run failed because its standalone server never started."""
+    return (
+        _NOT_READY_MARKER in (state.get("error") or "").lower()
+        and not state.get("session_id")
+        and not state.get("chunks")
+    )
+
+
+def _run_once(
+    args: list[str], workspace: str, env: dict, wait_s: float, on_event
+) -> tuple[dict, str, Optional[int], bool]:
+    """One `opencode run`: (event state, stderr, return code, timed out)."""
     state: dict = {}
     proc = proc_tree.popen(
         args,
@@ -863,7 +925,7 @@ def _run_impl(
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        env=_env(sandbox, major),
+        env=env,
         **_TEXT,
         **_spawn_kwargs(),
     )
@@ -903,7 +965,7 @@ def _run_impl(
     et.start()
     timed_out = False
     try:
-        proc.wait(timeout=timeout_s + 30)
+        proc.wait(timeout=wait_s)
     except subprocess.TimeoutExpired:
         timed_out = True
         _kill_tree(proc)  # the npm shim's grandchild must die too — see _kill_tree
@@ -915,20 +977,7 @@ def _run_impl(
     # return anyway rather than inheriting its lifetime.
     ot.join(timeout=1)
     et.join(timeout=1)
-
-    if timed_out:
-        # Free models normally answer in seconds, so a timeout means a long task, a
-        # busy free tier or a stuck run; the caller can rule out the first two.
-        raise RuntimeError(
-            f"opencode timed out after {timeout_s + 30}s. For a long task raise "
-            f"timeout_s; if a short prompt timed out, the free `opencode/*` tier may "
-            f"be congested: retry later, or use another model."
-        )
-
-    answer = _finish(state, "".join(err_chunks), proc.returncode, sandbox)
-    if not continue_conv and pin and state.get("session_id"):
-        _pin(workspace, state["session_id"])
-    return answer
+    return state, "".join(err_chunks), proc.returncode, timed_out
 
 
 # ----------------------------------------------------------------- diagnostics

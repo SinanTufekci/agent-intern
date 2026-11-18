@@ -494,6 +494,127 @@ def test_run_opencode_timeout_kills_the_whole_tree(tmp_path, monkeypatch):
     assert len(killed) == 1
 
 
+# The failure opencode 2.2.5 printed live when several `run --standalone` started at
+# once: no session yet, exit 1, about half a second in.
+NOT_READY_EVENT = {
+    "type": "error",
+    "timestamp": 1794992711846,
+    "sessionID": "",
+    "error": {"type": "unknown", "message": "Standalone server exited before reporting readiness"},
+}
+
+
+class _Clock:
+    """A fake monotonic clock: time passes only in sleep() and in the fake wait()."""
+
+    def __init__(self):
+        self.now = 1000.0
+        self.pauses = []
+
+    def monotonic(self):
+        return self.now
+
+    def sleep(self, s):
+        self.pauses.append(s)
+        self.now += s
+
+
+def _popen_sequence(runs, clock, seen, waits, run_s=0.5):
+    """One fake process per entry in `runs` [(stdout, returncode)], each taking `run_s`."""
+    runs = list(runs)
+
+    class _FP:
+        def __init__(self, args, **kwargs):
+            seen.append(args)
+            out, self.returncode = runs.pop(0)
+            self.pid = -1
+            self.stdout = io.StringIO(out)
+            self.stderr = io.StringIO("")
+
+        def wait(self, timeout=None):
+            waits.append(timeout)
+            clock.now += run_s
+            return self.returncode
+
+    return _FP
+
+
+@pytest.fixture
+def clock(monkeypatch):
+    c = _Clock()
+    monkeypatch.setattr(opencode_bridge, "time", c)
+    return c
+
+
+def test_a_run_whose_server_never_started_is_retried(tmp_path, monkeypatch, clock):
+    seen, waits = [], []
+    runs = [(_ndjson(NOT_READY_EVENT), 1), (_ndjson(NOT_READY_EVENT), 1), (_ndjson(TEXT_EVENT), 0)]
+    monkeypatch.setattr(subprocess, "Popen", _popen_sequence(runs, clock, seen, waits))
+    assert opencode_bridge.run_opencode("hi", str(tmp_path)) == "TURQUOISE-31415"
+    assert len(seen) == 3 and seen[0] == seen[1] == seen[2]  # the same run, started again
+    assert len(clock.pauses) == 2
+    lo, hi = opencode_bridge._NOT_READY_PAUSE_S
+    assert all(lo <= p <= hi for p in clock.pauses)
+    assert opencode_bridge.get_pinned(str(tmp_path)) == SAMPLE_SID
+
+
+def test_the_retries_stop_after_two(tmp_path, monkeypatch, clock):
+    seen, waits = [], []
+    runs = [(_ndjson(NOT_READY_EVENT), 1)] * 4
+    monkeypatch.setattr(subprocess, "Popen", _popen_sequence(runs, clock, seen, waits))
+    with pytest.raises(RuntimeError, match="before reporting readiness"):
+        opencode_bridge.run_opencode("hi", str(tmp_path))
+    assert len(seen) == 1 + opencode_bridge._NOT_READY_RETRIES
+
+
+@pytest.mark.parametrize(
+    "event",
+    [
+        ERROR_EVENT,  # any other opencode error
+        {**NOT_READY_EVENT, "sessionID": SAMPLE_SID},  # a session existed: work may have run
+        # The free tier's quota message (text from 2.2.5 live) is final, even with no session.
+        {
+            **NOT_READY_EVENT,
+            "error": {
+                "type": "unknown",
+                "message": "Free usage limit reached. Connect a provider or subscribe to "
+                "OpenCode Go to keep going, or switch models",
+            },
+        },
+    ],
+)
+def test_other_failures_are_not_retried(event, tmp_path, monkeypatch, clock):
+    seen, waits = [], []
+    runs = [(_ndjson(event), 1), (_ndjson(TEXT_EVENT), 0)]
+    monkeypatch.setattr(subprocess, "Popen", _popen_sequence(runs, clock, seen, waits))
+    with pytest.raises(RuntimeError, match="opencode error"):
+        opencode_bridge.run_opencode("hi", str(tmp_path))
+    assert len(seen) == 1 and clock.pauses == []
+
+
+def test_the_retries_share_the_one_timeout_budget(tmp_path, monkeypatch, clock):
+    seen, waits = [], []
+    runs = [(_ndjson(NOT_READY_EVENT), 1), (_ndjson(NOT_READY_EVENT), 1), (_ndjson(TEXT_EVENT), 0)]
+    monkeypatch.setattr(subprocess, "Popen", _popen_sequence(runs, clock, seen, waits))
+    start = clock.now
+    opencode_bridge.run_opencode("hi", str(tmp_path), timeout_s=60)
+    budget = 60 + 30
+    assert waits[0] == budget
+    used = [0.5 + clock.pauses[0], 1.0 + sum(clock.pauses)]  # run_s per run, plus pauses
+    assert waits[1:] == [pytest.approx(budget - u) for u in used]
+    assert clock.now - start <= budget
+
+
+def test_no_retry_when_the_budget_is_spent(tmp_path, monkeypatch, clock):
+    seen, waits = [], []
+    runs = [(_ndjson(NOT_READY_EVENT), 1), (_ndjson(TEXT_EVENT), 0)]
+    # The failed run took 30 of the 31 s a timeout_s=1 call has: no room for a pause.
+    monkeypatch.setattr(subprocess, "Popen", _popen_sequence(runs, clock, seen, waits, run_s=30))
+    with pytest.raises(RuntimeError, match="before reporting readiness"):
+        opencode_bridge.run_opencode("hi", str(tmp_path), timeout_s=1)
+    assert len(seen) == 1
+
+
 def test_kill_tree_uses_taskkill_on_windows(monkeypatch):
     calls = []
     monkeypatch.setattr(subprocess, "run", _fake_run(seen=calls))
