@@ -44,9 +44,10 @@ human-facing summary.
 
 - **An image never replaces or takes away an existing file.** When the target name is taken,
   `antigravity_image` and the swarm's image tasks pick a free one (`-1`, `-2`…) and return the real
-  path, so two swarm tasks with the same `output_path` no longer collide. A path agy names in its
-  reply is used only if it is in agy's scratch folder or the target folder and was written during the
-  call, and a file outside the scratch folder is copied, never moved.
+  path, so two swarm tasks with the same `output_path`, or with names that differ only in the
+  extension (`a.png`, `a.jpg`), no longer collide. A path agy names in its reply is used only if it is in agy's scratch folder or
+  the target folder and was written during the call. Apart from the file agy was told to write, which
+  is renamed in place, a file outside the scratch folder is copied, never moved.
 - **A codex or cursor prompt that starts with `-`** (a Markdown list, say) is no longer read as a
   command-line option: the prompt now follows `--`.
 - **The opencode and kimi status rows no longer repeat the CLI's credential listing.** They say

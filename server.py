@@ -1527,13 +1527,26 @@ def _resolve_output_path(output_path: Optional[str], workspace: str) -> str:
     return _free_path(path)
 
 
+_IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".webp", ".gif"})
+
+
+def _taken_key(path: str) -> str:
+    """How `taken` compares names: an image name by its stem alone, since the
+    extension is corrected to the real bytes only after generation (a.png can end
+    up as a.jpg); any other name in full."""
+    stem, ext = os.path.splitext(os.path.normcase(os.path.abspath(path)))
+    return stem if ext in _IMAGE_SUFFIXES else stem + ext
+
+
 def _free_path(path: str, taken: frozenset = frozenset()) -> str:
     """`path`, or `<stem>-1<ext>`, `<stem>-2<ext>`, … : the first name that is neither
-    an existing file nor in `taken` (paths already promised to other images)."""
-    taken_keys = {os.path.normcase(os.path.abspath(t)) for t in taken}
+    an existing file nor in `taken` (paths already promised to other images). An
+    image name in `taken` blocks every image extension of its stem (see _taken_key),
+    so a.png and a.jpg promised to two workers cannot both land on a.jpg."""
+    taken_keys = {_taken_key(t) for t in taken}
 
     def free(p: str) -> bool:
-        return not os.path.exists(p) and os.path.normcase(os.path.abspath(p)) not in taken_keys
+        return not os.path.exists(p) and _taken_key(p) not in taken_keys
 
     if free(path):
         return path

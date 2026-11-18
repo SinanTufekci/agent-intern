@@ -1564,6 +1564,27 @@ def test_swarm_image_gives_every_worker_its_own_free_target(monkeypatch, tmp_pat
     }
 
 
+def test_swarm_image_targets_differing_only_in_extension_get_distinct_stems(monkeypatch, tmp_path):
+    # agy may write JPEG bytes to a.png, which is then renamed a.jpg: the same name
+    # worker 1 was promised. Names are compared by stem across image extensions.
+    got = {}
+
+    def fake_image(index, prompt, target, workspace, timeout_s):
+        got[index] = target
+        return swarm.WorkerResult(index, True, image_path=target, image_format="png", image_size=1)
+
+    monkeypatch.setattr(swarm, "_run_image_worker", fake_image)
+    paths = [str(tmp_path / n) for n in ("a.png", "a.jpg", "a.JPEG", "a.webp", "a.txt")]
+    swarm.swarm_image(["p"] * len(paths), paths, str(tmp_path))
+    assert got == {
+        0: str(tmp_path / "a.png"),
+        1: str(tmp_path / "a-1.jpg"),
+        2: str(tmp_path / "a-2.JPEG"),
+        3: str(tmp_path / "a-3.webp"),
+        4: str(tmp_path / "a.txt"),  # not an image name: compared in full
+    }
+
+
 class _Ctx:
     """The part of fastmcp's Context the progress helper uses."""
 
