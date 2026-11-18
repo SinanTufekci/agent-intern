@@ -260,9 +260,50 @@ def test_render_layout():
     assert any(line.startswith("bridge version") for line in lines[1:3])
     assert any(line.split() == ["backend", "state", "detail"] for line in lines)
     assert any(line.startswith("codex") and "ready" in line for line in lines)
-    assert any(line.startswith("grok") and "unusable" in line for line in lines)
-    assert "next: install grok" in text
+    # grok's CLI is missing: it is listed as not installed, not as a failing row.
+    assert not any(line.startswith("grok") for line in lines)
+    assert "Not installed (fine unless you want them): grok (experimental)." in text
+    assert "next: install grok" not in text  # the hint is for --verbose
+    assert "install grok" in doctor.render(data, verbose=True)
     assert "1 of 2 backend(s) usable." in text
+    assert "Ready: codex." in text
+
+
+def test_render_attention_needed_stays_in_the_table_with_its_next_step():
+    # Installed but signed out: that one needs the user, so it keeps its row.
+    rows = _rows("codex CLI", extra=[("codex auth", False, "Not logged in")])
+    text = doctor.render(_data(codex=rows, grok=_rows("grok CLI", cli=False)))
+    assert any(line.startswith("codex") and "unusable" in line for line in text.splitlines())
+    assert "next: run `codex login` once" in text
+    assert "Nothing is ready." in text
+    assert "Follow a `next:` step above" in text  # opencode is not among the backends
+
+
+def test_render_nothing_installed_lists_install_steps_and_points_at_opencode():
+    data = _data(
+        codex=_rows("codex CLI", cli=False),
+        opencode=_rows("opencode CLI", cli=False),
+        muse=_rows("muse CLI", cli=False),
+    )
+    text = doctor.render(data)
+    assert "backend  state" not in text  # no table when nothing is installed
+    assert "Not installed. Install any one of these:" in text
+    assert "  codex: install codex" in text
+    assert "  muse (experimental): install muse" in text
+    assert "0 of 3 backend(s) usable." in text
+    assert "Nothing is ready. Fastest start: `npm i -g @opencode/cli`" in text
+
+
+def test_render_a_crashed_check_is_not_called_not_installed():
+    data = _data(codex=[("codex status", False, "status check crashed: boom")])
+    text = doctor.render(data)
+    assert "Not installed" not in text
+    assert any(line.startswith("codex") and "unusable" in line for line in text.splitlines())
+
+
+def test_render_json_state_is_unchanged_for_a_missing_cli():
+    b = _data(grok=_rows("grok CLI", cli=False))["backends"][0]
+    assert b["state"] == doctor.UNUSABLE and b["usable"] is False
 
 
 def test_render_hides_echo_rows_when_cli_is_missing():

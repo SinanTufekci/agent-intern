@@ -102,7 +102,7 @@ def _spawn_kwargs() -> dict:
 
 def normalize_workspace(ws: Optional[str]) -> str:
     """Absolute path for `ws`, or the server's cwd when omitted."""
-    return os.path.abspath(ws) if ws else os.getcwd()
+    return proc_tree.resolve_workspace(ws)
 
 
 def validate_model(model: Optional[str]) -> Optional[str]:
@@ -159,7 +159,6 @@ def run_kimi(
     it unchanged, matching the agy/text worker's (prompt, ws, model, continue,
     timeout) shape.
     """
-    os.makedirs(workspace, exist_ok=True)  # kimi's cwd must exist
     args = build_args(prompt, workspace, model, continue_conv)
 
     proc = proc_tree.run_captured(

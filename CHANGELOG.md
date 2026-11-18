@@ -4,11 +4,46 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-GitHub Release notes are auto-generated from commits on each `vX.Y.Z` tag
-(see `.github/workflows/release.yml`); this file is the curated, human-facing
-summary.
+Each `vX.Y.Z` tag's GitHub Release takes its notes from the matching section of
+this file (see `.github/workflows/release.yml`); this file is the curated,
+human-facing summary.
 
 ## [Unreleased]
+
+### Changed
+
+- **A `workspace` that doesn't exist is now an error instead of being created.** A typo or an
+  unexpanded `~/proj` used to give the sub-agent an empty directory to look at, and it answered as if
+  the repo were empty; now the call names the path and the server's working directory. `~` is
+  expanded; an omitted `workspace` is still the server's cwd. This applies to every
+  `*_ask`/`*_continue`, to `agent_swarm` and to `preset_swarm`.
+- **`agent-intern doctor` reads like a to-do list.** Backends whose CLI isn't installed are listed on
+  one line instead of as failing rows, it says how to install them when nothing is installed, and it
+  ends with a start-here line (the ready backends, or opencode as the no-account start). `--json` and
+  the exit codes are unchanged.
+- **`agent-intern rules` always includes the `claude` section,** also when run inside Claude Code,
+  which hides `claude_*` from its own server. `AGENT_INTERN_BACKENDS` still filters.
+- **GitHub Releases read like this changelog.** `release.yml` titles each release
+  `vX.Y.Z — <headline>` (from the `release: X.Y.Z — headline` commit subject) and uses the matching
+  section of this file as its notes, falling back to the bare tag and generated notes when either is
+  missing.
+- **The package description no longer assumes Claude Code is the host** and lists the Claude Code
+  backend.
+
+### Fixed
+
+- **A missing CLI says which one and how to get it.** When a backend's CLI is not installed,
+  `*_ask`, `*_continue` and swarm workers name the CLI and say how to install it or point `<X>_BIN`
+  at it, instead of a bare `[WinError 2]` / `[Errno 2]` error. agy's plan and schema version gates and
+  the claude and opencode version checks give the same message when the CLI is missing.
+
+### Docs
+
+- **README Quick start:** prerequisites (uv, Node.js with npm for opencode) and a "check it" step.
+  docs/setup.md gets a Troubleshooting section, a Claude Code permission-allowlist section, a
+  corrected from-source path and a Cursor install line that no longer assumes a POSIX shell; the
+  opencode 2.x package is named in backends.md; the FAQ snippet works with either server name.
+- **The bug report template asks for the host and the install method.**
 
 ## [0.38.0] - 2026-11-16
 

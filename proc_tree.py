@@ -31,9 +31,11 @@ platform and its worse failure mode, completely unaddressed.
 
 from __future__ import annotations
 
+import errno
 import os
 import platform
 import re
+import shutil
 import signal
 import subprocess
 from typing import Optional
@@ -262,6 +264,113 @@ def nesting_refusal(depth: int) -> str:
     )
 
 
+# The backends' CLIs: executable name -> (backend, the variable that overrides its
+# path). A start that fails because one of these is missing is reported by name, with
+# the install hint `agent-intern doctor` gives, instead of the bare OS error: on
+# Windows that is "[WinError 2] The system cannot find the file specified", in the
+# system's language, naming neither the program nor the fix.
+CLIS: dict[str, tuple[str, str]] = {
+    "agy": ("antigravity", "AGY_BIN"),
+    "codex": ("codex", "CODEX_BIN"),
+    "copilot": ("copilot", "COPILOT_BIN"),
+    "cursor-agent": ("cursor", "CURSOR_BIN"),
+    "claude": ("claude", "CLAUDE_BIN"),
+    "grok": ("grok", "GROK_BIN"),
+    "kimi": ("kimi", "KIMI_BIN"),
+    "muse": ("muse", "MUSE_BIN"),
+    "opencode": ("opencode", "OPENCODE_BIN"),
+}
+
+
+class CliNotFound(FileNotFoundError):
+    """A backend's CLI could not be started: its executable is not there.
+
+    A FileNotFoundError, so every probe that already reads an OSError as "not
+    installed" (the `*_status` rows, doctor) keeps doing so. str() is the whole
+    message, without the "[Errno 2]" prefix, because it reaches the host model as
+    the tool's error text."""
+
+    def __init__(self, message: str, filename: str):
+        super().__init__(errno.ENOENT, message, filename)
+        self.message = message
+
+    def __str__(self) -> str:
+        return self.message
+
+
+def _install_hint(backend: str, var: str) -> str:
+    """doctor's install hint for `backend`, so both say the same thing."""
+    try:
+        import doctor  # imported here: it imports server, and only a failed start needs it
+
+        hint = doctor._CHECKS[backend][2]
+    except Exception:  # noqa: BLE001 - the hint is a courtesy; the error must still go out
+        hint = f"install it so it is on PATH, or set {var}"
+    hint = hint.replace(f"set {var}", f"set {var} to its full path", 1)
+    return hint[:1].upper() + hint[1:]
+
+
+def not_found_error(cli: str, tried: str) -> CliNotFound:
+    """The error for CLI `cli` (a key of CLIS) missing at `tried`, the path or name
+    the bridge used."""
+    backend, var = CLIS[cli]
+    return CliNotFound(
+        f"{cli} was not found (tried '{tried}'). {_install_hint(backend, var)}. After "
+        f"that, restart the MCP host (the server reads PATH and {var} when it starts) "
+        "and run `uvx agent-intern doctor` to check.",
+        tried,
+    )
+
+
+def cli_for(executable: str) -> Optional[str]:
+    """The key of CLIS that `executable` starts, or None if it is none of them.
+
+    An override variable naming exactly this path counts first, so a renamed binary
+    (CODEX_BIN=D:/tools/codex-nightly.exe) is still recognised; otherwise the file
+    name without its extension, case-insensitively."""
+    for cli, (_, var) in CLIS.items():
+        override = os.environ.get(var)
+        if override and os.path.normcase(override) == os.path.normcase(executable):
+            return cli
+    stem = _parts(executable)[-1:]
+    return stem[0] if stem and stem[0] in CLIS else None
+
+
+def _parts(path: str) -> list[str]:
+    """`path`'s components, lowercased, the last without its extension; either slash."""
+    parts = [p for p in path.replace("\\", "/").split("/") if p]
+    if parts:
+        parts[-1] = os.path.splitext(parts[-1])[0]
+    return [p.lower() for p in parts]
+
+
+def resolve_workspace(ws: Optional[str]) -> str:
+    """The absolute directory a backend runs in: `ws` with `~` expanded, or the
+    server's cwd when `ws` is omitted.
+
+    A given `ws` must already be a directory; this raises ValueError otherwise. It
+    used to be created, so a typo or an unexpanded `~/proj` gave the agent an empty
+    directory to look at, and it answered as if the repo were empty."""
+    if not ws:
+        return os.getcwd()
+    path = os.path.abspath(os.path.expanduser(ws))
+    if os.path.isdir(path):
+        return path
+    # Quoted, not repr(): repr doubles every backslash in a Windows path.
+    shown = f"'{ws}'" if path == ws else f"'{ws}' ({path})"
+    what = "is not a directory" if os.path.exists(path) else "does not exist"
+    raise ValueError(
+        f"workspace {shown} {what}. Pass the project directory as an absolute path "
+        f"(the server's cwd is '{os.getcwd()}'). If you meant a new project, create the "
+        "directory first."
+    )
+
+
+def cli_missing(executable: str) -> bool:
+    """True when `executable` is neither a file nor found on PATH."""
+    return not (os.path.isfile(executable) or shutil.which(executable))
+
+
 def popen(args: list[str], *, starts_agent: bool = True, **popen_kwargs) -> subprocess.Popen:
     """`subprocess.Popen` behind the batch-shim check and the nesting guard. Use this,
     never Popen directly.
@@ -271,14 +380,42 @@ def popen(args: list[str], *, starts_agent: bool = True, **popen_kwargs) -> subp
     (NestingTooDeep). `starts_agent=False` marks a spawn that only probes (`--version`,
     an auth or model-list check) or opens a viewer: it runs at any depth, so status
     and doctor keep working where delegation is refused. The default is guarded,
-    so a new call site that forgets the flag errs on the safe side."""
+    so a new call site that forgets the flag errs on the safe side.
+
+    A backend CLI that is not installed raises CliNotFound, which names it and says
+    how to install it (see CLIS)."""
     check_args(args)
     depth = current_depth()
     if starts_agent and depth >= MAX_DEPTH:
         raise NestingTooDeep(nesting_refusal(depth))
     env = popen_kwargs.get("env")
     popen_kwargs["env"] = {**(os.environ if env is None else env), DEPTH_ENV: str(depth + 1)}
-    return subprocess.Popen(args, **popen_kwargs)
+    try:
+        return subprocess.Popen(args, **popen_kwargs)
+    except FileNotFoundError as e:
+        named = _not_found(e, args, popen_kwargs.get("cwd"))
+        if named is e:
+            raise
+        raise named from e
+
+
+def _not_found(e: FileNotFoundError, args: list, cwd) -> FileNotFoundError:
+    """CliNotFound for `e` when it means a backend CLI is missing, else `e` itself.
+
+    POSIX names the missing file in e.filename; Windows leaves it None. A missing
+    cwd is the other way Popen raises this (POSIX, filename = the cwd), and that is
+    not a missing CLI, so it passes through unchanged."""
+    if isinstance(e, CliNotFound) or not args:
+        return e
+    exe = os.fsdecode(args[0])
+    if e.filename not in (None, exe) or (cwd is not None and not os.path.isdir(cwd)):
+        return e
+    cli = cli_for(exe)
+    if cli is None and _parts(exe)[-1:] == ["node"] and len(args) > 1:
+        # A CLI the bridge launches as `node <its script>` (cursor's index.js, an npm
+        # shim's target): its install dir is gone, node.exe with it.
+        cli = next((p for p in reversed(_parts(os.fsdecode(args[1]))) if p in CLIS), None)
+    return e if cli is None else not_found_error(cli, exe)
 
 
 def run_captured(

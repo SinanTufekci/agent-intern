@@ -1174,7 +1174,7 @@ def _configure_logging() -> None:
 
 
 def _normalize_workspace(ws: Optional[str]) -> str:
-    return os.path.abspath(ws) if ws else os.getcwd()
+    return proc_tree.resolve_workspace(ws)
 
 
 def _read_last_conv_id(workspace: str) -> Optional[str]:
@@ -1944,10 +1944,20 @@ def plan_from_sandbox(sandbox: Optional[str]) -> bool:
     )
 
 
+def _agy_missing_or(unknown: str) -> str:
+    """`unknown`, after raising CliNotFound if agy is not installed at all.
+
+    For the version gates: an agy whose version can't be read because there is no agy
+    gets the install hint, not "needs agy 1.1.12+ (found unknown)"."""
+    if proc_tree.cli_missing(AGY_BIN):
+        raise proc_tree.not_found_error("agy", AGY_BIN)
+    return unknown
+
+
 def _check_plan_mode(prompt: str) -> None:
     """Validate a plan-mode request before any quota is spent."""
     if not supports_plan_mode():
-        found = _get_agy_version() or "unknown"
+        found = _get_agy_version() or _agy_missing_or("unknown")
         raise ValueError(
             f"plan=True needs agy {'.'.join(map(str, PLAN_MODE_MIN_VERSION))}+ "
             f"(found {found}). Older agy accepts --mode and then ignores it in print "
@@ -1996,7 +2006,7 @@ def _check_schema_support() -> None:
     end instead of ours.
     """
     if not supports_json_output():
-        found = _get_agy_version() or "unknown"
+        found = _get_agy_version() or _agy_missing_or("unknown")
         raise ValueError(
             f"schema needs agy {'.'.join(map(str, JSON_OUTPUT_MIN_VERSION))}+ "
             f"(found {found}), which is where --json-schema and the structured result "
@@ -2739,7 +2749,6 @@ def _run_agy(
     one-shot tasks, and letting the last one to finish claim the workspace's
     continue slot would silently redirect the user's next continue.
     """
-    os.makedirs(workspace, exist_ok=True)  # agy's cwd must exist (mirrors the swarm)
     use_json = supports_json_output()
     args, pinned_conv = _build_agy_args(
         prompt,
@@ -2988,7 +2997,6 @@ def _run_agy_watched(
     from the stream's terminal `result` event, matching antigravity_ask exactly.
     Older agy keeps the transcript-polling path (_WatchFeed) unchanged.
     """
-    os.makedirs(workspace, exist_ok=True)  # agy's cwd must exist (mirrors the swarm)
     use_stream = supports_json_output()
     args, pinned_conv = _build_agy_args(
         prompt,
@@ -3168,7 +3176,6 @@ def _run_agy_image_watched(
     is the user's original prompt, shown as the window title (not the wrapped
     save-path instructions that actually go to agy).
     """
-    os.makedirs(workspace, exist_ok=True)  # agy's cwd must exist (mirrors the swarm)
     use_stream = supports_json_output()
     args, _ = _build_agy_args(
         wrapped_prompt,

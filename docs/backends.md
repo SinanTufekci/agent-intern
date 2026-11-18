@@ -245,7 +245,7 @@ set `CURSOR_API_KEY` for headless use. Check with `cursor_status`. If `cursor-ag
 
 ## 🧩 opencode bridge — the one you can try without a subscription
 
-[opencode](https://opencode.ai/) (SST's open-source terminal coding agent, `npm i -g opencode-ai`) is
+[opencode](https://opencode.ai/) (SST's open-source terminal coding agent, `npm i -g @opencode/cli` for 2.x, or `npm i -g opencode-ai` for 1.x) is
 stdout-native like Codex/Copilot/Cursor: `opencode run --format json "<prompt>"` runs a prompt
 non-interactively and writes **NDJSON events** to stdout. Three things make it worth a slot of its own:
 

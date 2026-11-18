@@ -393,12 +393,20 @@ def test_a_very_long_prompt_still_fits(tmp_path, monkeypatch):
     assert seen[0][2].text == prompt
 
 
-def test_the_run_starts_in_the_workspace_and_creates_it(tmp_path, monkeypatch):
+def test_the_run_starts_in_the_workspace(tmp_path, monkeypatch):
     seen = []
-    ws = tmp_path / "does" / "not" / "exist"
+    ws = tmp_path / "proj"
+    ws.mkdir()
     monkeypatch.setattr(subprocess, "Popen", fake_popen(OK_RUN, seen=seen))
     claude_bridge.run_claude("hi", str(ws))
-    assert seen[0][1]["cwd"] == str(ws) and ws.is_dir()
+    assert seen[0][1]["cwd"] == str(ws)
+
+
+def test_a_missing_workspace_is_an_error_and_nothing_is_created(tmp_path):
+    ws = tmp_path / "does" / "not" / "exist"
+    with pytest.raises(ValueError, match="does not exist"):
+        claude_bridge.normalize_workspace(str(ws))
+    assert not (tmp_path / "does").exists()
 
 
 def test_a_fresh_run_names_its_own_session(tmp_path, monkeypatch):
@@ -678,6 +686,7 @@ def test_a_real_child_process_gets_the_prompt_the_args_and_the_scrubbed_env(tmp_
     monkeypatch.setenv("CLAUDE_CODE_MESSAGING_TOKEN", "secret-token")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
     ws = tmp_path / "work"
+    ws.mkdir()
     answer = claude_bridge.run_claude(
         "say PONG\nplease é", str(ws), "read-only", "haiku", pin=False
     )
@@ -746,8 +755,14 @@ def test_the_gate_refuses_every_sandbox_mode_before_spawning(tmp_path, monkeypat
     assert seen == []
 
 
-def test_the_gate_refuses_an_unreadable_version(tmp_path, monkeypatch):
+@pytest.fixture
+def installed_but_unreadable(monkeypatch):
+    """claude is there (CLAUDE_BIN names a real file) but its version can't be read."""
+    monkeypatch.setattr(claude_bridge, "CLAUDE_BIN", sys.executable)
     monkeypatch.setattr(claude_bridge, "claude_version", lambda: None)
+
+
+def test_the_gate_refuses_an_unreadable_version(tmp_path, monkeypatch, installed_but_unreadable):
     seen = []
     monkeypatch.setattr(subprocess, "Popen", fake_popen(OK_RUN, seen=seen))
     with pytest.raises(RuntimeError, match="could not read claude's version"):
@@ -755,16 +770,25 @@ def test_the_gate_refuses_an_unreadable_version(tmp_path, monkeypatch):
     assert seen == []
 
 
-def test_the_gate_runs_before_the_workspace_is_created(tmp_path, monkeypatch):
+def test_a_missing_claude_gets_the_install_hint(tmp_path, monkeypatch):
+    monkeypatch.setattr(claude_bridge, "CLAUDE_BIN", str(tmp_path / "gone" / "claude.exe"))
     monkeypatch.setattr(claude_bridge, "claude_version", lambda: None)
+    seen = []
+    monkeypatch.setattr(subprocess, "Popen", fake_popen(OK_RUN, seen=seen))
+    with pytest.raises(proc_tree.CliNotFound, match="^claude was not found") as info:
+        claude_bridge.run_claude("hi", str(tmp_path))
+    assert "CLAUDE_BIN" in str(info.value) and "agent-intern doctor" in str(info.value)
+    assert seen == []
+
+
+def test_the_gate_runs_before_the_workspace_is_created(tmp_path, installed_but_unreadable):
     ws = tmp_path / "not-created"
     with pytest.raises(RuntimeError):
         claude_bridge.run_claude("hi", str(ws))
     assert not ws.exists()
 
 
-def test_the_streaming_run_is_gated_too(tmp_path, monkeypatch):
-    monkeypatch.setattr(claude_bridge, "claude_version", lambda: None)
+def test_the_streaming_run_is_gated_too(tmp_path, installed_but_unreadable):
     seen = []
     with pytest.raises(RuntimeError):
         claude_bridge.run_claude_streaming(

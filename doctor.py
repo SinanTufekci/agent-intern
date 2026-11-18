@@ -38,8 +38,8 @@ _CHECKS: dict[str, tuple[str, Optional[str], str, str]] = {
     "antigravity": (
         "agy CLI",
         None,
-        "install Antigravity (https://antigravity.google/) so `agy` is on PATH, or set "
-        "AGY_BIN; then sign in once through the IDE or `agy -i`",
+        "install Antigravity (https://antigravity.google/product/antigravity-cli) so `agy` is "
+        "on PATH, or set AGY_BIN; then sign in once through the IDE or `agy -i`",
         "",
     ),
     "codex": (
@@ -259,8 +259,28 @@ def report(
     return _redact(data, identity_redactor(home))
 
 
+_EXPERIMENTAL = frozenset({"grok", "kimi", "muse"})
+_OPENCODE_START = "`npm i -g @opencode/cli` (Node.js needed), no account"
+
+
+def _not_installed(b: dict) -> bool:
+    """True when the backend's CLI is simply absent: nothing is broken, the user
+    just never installed it. A crashed status check is not that: it needs a report."""
+    return b["blocked_by"] == _CHECKS[b["name"]][0]
+
+
+def _tag(name: str) -> str:
+    return f"{name} (experimental)" if name in _EXPERIMENTAL else name
+
+
 def render(data: dict, verbose: bool = False) -> str:
-    """The compact table `agent-intern doctor` prints."""
+    """The compact table `agent-intern doctor` prints.
+
+    Backends whose CLI is not installed are kept apart from the ones that need
+    attention (installed, but signed out, out of quota, ...): a newcomer has most
+    of them missing, and nine red rows with nine install lines hide the one step
+    that matters. The JSON (`state`, `usable`) is unchanged.
+    """
     # ASCII only here: a legacy-codepage pipe on Windows turns "·" into "?".
     lines = [f"agent-intern {data['version']} (Python {data['python']}, {data['platform']})"]
     width = max((len(r["label"]) for r in data["bridge"]), default=0)
@@ -269,28 +289,57 @@ def render(data: dict, verbose: bool = False) -> str:
         lines.append(f"{r['label'].ljust(width)}  {r['detail']}{mark}")
     lines.append("")
 
-    name_w = max([len("backend")] + [len(b["name"]) for b in data["backends"]])
-    state_w = max(len(READY), len(WARNING), len(UNUSABLE))
-    pad = " " * (name_w + 2 + state_w + 2)
-    lines.append(f"{'backend'.ljust(name_w)}  {'state'.ljust(state_w)}  detail")
-    for b in data["backends"]:
-        lines.append(f"{b['name'].ljust(name_w)}  {b['state'].ljust(state_w)}  {b['summary']}")
-        # With the CLI itself missing, every other failed check is its echo.
-        cli_missing = b["blocked_by"] in (_CHECKS[b["name"]][0], f"{b['name']} status")
-        for r in b["rows"]:
-            blocking = r["label"] == b["blocked_by"] or (
-                b["blocked_by"] == "quota" and r["label"].startswith(_AGY_QUOTA_PREFIX)
+    installed = [b for b in data["backends"] if not _not_installed(b)]
+    missing = [b for b in data["backends"] if _not_installed(b)]
+
+    if installed:
+        name_w = max([len("backend")] + [len(b["name"]) for b in installed])
+        state_w = max(len(READY), len(WARNING), len(UNUSABLE))
+        pad = " " * (name_w + 2 + state_w + 2)
+        lines.append(f"{'backend'.ljust(name_w)}  {'state'.ljust(state_w)}  detail")
+        for b in installed:
+            lines.append(f"{b['name'].ljust(name_w)}  {b['state'].ljust(state_w)}  {b['summary']}")
+            for r in b["rows"]:
+                blocking = r["label"] == b["blocked_by"] or (
+                    b["blocked_by"] == "quota" and r["label"].startswith(_AGY_QUOTA_PREFIX)
+                )
+                shown = not r["ok"] and not blocking
+                if verbose or shown:
+                    mark = "ok" if r["ok"] else "!!"
+                    lines.append(f"{pad}[{mark}] {r['label']}: {r['detail']}")
+            if b["next"]:
+                lines.append(f"{pad}next: {b['next']}")
+        lines.append("")
+
+    if missing:
+        if installed and not verbose:
+            names = ", ".join(_tag(b["name"]) for b in missing)
+            lines.append(f"Not installed (fine unless you want them): {names}.")
+            lines.append("`agent-intern doctor --verbose` shows how to install each.")
+        else:
+            # Nothing installed yet (or --verbose): this is the list to act on.
+            heading = (
+                "Not installed. Install any one of these:"
+                if not installed
+                else "Not installed (fine unless you want them):"
             )
-            shown = not r["ok"] and not blocking and not cli_missing
-            if verbose or shown:
-                mark = "ok" if r["ok"] else "!!"
-                lines.append(f"{pad}[{mark}] {r['label']}: {r['detail']}")
-        if b["next"]:
-            lines.append(f"{pad}next: {b['next']}")
+            lines.append(heading)
+            for b in missing:
+                lines.append(f"  {_tag(b['name'])}: {b['next']}")
+        lines.append("")
 
     total = len(data["backends"])
-    lines.append("")
     lines.append(f"{data['usable']} of {total} backend(s) usable.")
+    ready = [b["name"] for b in data["backends"] if b["usable"]]
+    if ready:
+        lines.append(
+            f"Ready: {', '.join(ready)}. Restart your host if it was already running, "
+            "then ask it to use one."
+        )
+    elif any(b["name"] == "opencode" for b in missing):
+        lines.append(f"Nothing is ready. Fastest start: {_OPENCODE_START}; then run this again.")
+    else:
+        lines.append("Nothing is ready. Follow a `next:` step above, then run this again.")
     if not verbose:
         lines.append("`agent-intern doctor --verbose` shows every check.")
     return "\n".join(lines)
@@ -324,8 +373,9 @@ def _parser() -> argparse.ArgumentParser:
         "rules",
         help="print the routing guide to paste into a host's rules file",
         description=(
-            "Print the routing guide: the same text this server sends as MCP "
-            "instructions, for the backends AGENT_INTERN_BACKENDS enables. Paste it "
+            "Print the routing guide: the text this server sends as MCP "
+            "instructions, for the backends AGENT_INTERN_BACKENDS enables, always "
+            "including claude (Claude Code hides it from itself, other hosts have it). Paste it "
             "into a host's rules file for hosts that don't show MCP instructions to "
             "their model (the agy CLI, Copilot without its flag)."
         ),
@@ -334,10 +384,24 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def rules_text() -> str:
+    """The routing guide `rules` prints.
+
+    The server's own SERVER_INSTRUCTIONS, except for one thing: inside Claude Code
+    (CLAUDECODE=1) the server leaves the claude backend out, because Claude Code
+    must not delegate to itself. The file `rules` writes is for other hosts, which
+    do have it, so the claude section is put back here. AGENT_INTERN_BACKENDS still
+    filters as it does for the server."""
+    if not server.CLAUDE_HIDDEN:
+        return server.SERVER_INSTRUCTIONS
+    enabled = tuple(b for b in server.BACKENDS if b in (*server.ENABLED_BACKENDS, "claude"))
+    return server._server_instructions(enabled)
+
+
 def print_rules() -> None:
-    """Write SERVER_INSTRUCTIONS to stdout as UTF-8 bytes, so a redirect on Windows
-    (`agent-intern rules > AGENTS.md`) is not written in the legacy codepage."""
-    data = (server.SERVER_INSTRUCTIONS + "\n").encode("utf-8")
+    """Write the routing guide (rules_text) to stdout as UTF-8 bytes, so a redirect on
+    Windows (`agent-intern rules > AGENTS.md`) is not written in the legacy codepage."""
+    data = (rules_text() + "\n").encode("utf-8")
     raw = getattr(sys.stdout, "buffer", None)
     if raw is None:  # a replaced stdout (tests) takes text
         sys.stdout.write(data.decode("utf-8"))

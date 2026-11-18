@@ -146,7 +146,7 @@ def _env() -> dict:
 
 def normalize_workspace(ws: Optional[str]) -> str:
     """Absolute path for `ws`, or the server's cwd when omitted."""
-    return os.path.abspath(ws) if ws else os.getcwd()
+    return proc_tree.resolve_workspace(ws)
 
 
 def validate_sandbox(mode: str) -> str:
@@ -384,7 +384,6 @@ def _run_impl(
     validate_sandbox(sandbox)
     effort = validate_effort(effort)
     check_supported_version()
-    os.makedirs(workspace, exist_ok=True)
     resume_id = get_pinned(workspace) if continue_conv else None
     session_id = None if continue_conv else str(uuid.uuid4())
     args = build_args(
@@ -529,8 +528,12 @@ def unsupported_version_reason(version: Optional[tuple[int, int, int]]) -> Optio
 
 
 def check_supported_version() -> None:
-    """Raise RuntimeError if the bridge won't run the installed claude."""
-    reason = unsupported_version_reason(parse_version(claude_version()))
+    """Raise RuntimeError if the bridge won't run the installed claude, or
+    proc_tree.CliNotFound if there is no claude at all."""
+    version = parse_version(claude_version())
+    if version is None and proc_tree.cli_missing(CLAUDE_BIN):
+        raise proc_tree.not_found_error("claude", CLAUDE_BIN)
+    reason = unsupported_version_reason(version)
     if reason:
         raise RuntimeError(reason)
 

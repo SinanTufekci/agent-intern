@@ -199,7 +199,7 @@ def _env() -> dict:
 
 def normalize_workspace(ws: Optional[str]) -> str:
     """Absolute path for `ws`, or the server's cwd when omitted."""
-    return os.path.abspath(ws) if ws else os.getcwd()
+    return proc_tree.resolve_workspace(ws)
 
 
 def validate_sandbox(mode: str) -> str:
@@ -435,7 +435,6 @@ def run_muse(
     call it unchanged. `pin=False` for swarm workers (one-shot, never continued).
     """
     validate_sandbox(sandbox)
-    os.makedirs(workspace, exist_ok=True)
     session_id = _session_for(workspace, continue_conv, pin)
     prompt_file = _write_prompt(prompt)
     try:
@@ -471,7 +470,6 @@ def run_muse_streaming(
 ) -> str:
     """Like run_muse, but call `on_event(event_dict)` for each JSONL event as it arrives."""
     validate_sandbox(sandbox)
-    os.makedirs(workspace, exist_ok=True)
     session_id = _session_for(workspace, continue_conv, pin)
     prompt_file = _write_prompt(prompt)
     state: dict = {}

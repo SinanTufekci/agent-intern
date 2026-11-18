@@ -381,7 +381,7 @@ def _spawn_kwargs() -> dict:
 
 def normalize_workspace(ws: Optional[str]) -> str:
     """Absolute path for `ws`, or the server's cwd when omitted."""
-    return os.path.abspath(ws) if ws else os.getcwd()
+    return proc_tree.resolve_workspace(ws)
 
 
 def validate_sandbox(mode: str) -> str:
@@ -676,7 +676,6 @@ def run_codex(
     """
     validate_sandbox(sandbox)
     effort = validate_effort(effort)
-    os.makedirs(workspace, exist_ok=True)  # codex's cwd (-C) must exist
     resume_session = _resolve_resume_session(workspace, continue_conv)
 
     # NamedTemporaryFile(delete=False): we only want a unique path; codex opens and
@@ -761,7 +760,6 @@ def run_codex_streaming(
     """
     validate_sandbox(sandbox)
     effort = validate_effort(effort)
-    os.makedirs(workspace, exist_ok=True)  # codex's cwd (-C) must exist
     resume_session = _resolve_resume_session(workspace, continue_conv)
 
     fd = tempfile.NamedTemporaryFile(suffix=".txt", prefix="codex_out_", delete=False)

@@ -8,6 +8,8 @@ AI Pro quota. The live parallel round-trip is in test_smoke.py.
 
 import io
 import os
+import subprocess
+import sys
 
 import pytest
 
@@ -53,8 +55,33 @@ def test_normalize_workspaces_str_broadcasts(tmp_path):
 
 def test_normalize_workspaces_list_per_worker(tmp_path):
     a, b = tmp_path / "a", tmp_path / "b"
+    a.mkdir()
+    b.mkdir()
     out = swarm._normalize_workspaces(2, [str(a), str(b)])
     assert out == [os.path.abspath(str(a)), os.path.abspath(str(b))]
+
+
+def test_normalize_workspaces_missing_dir_is_an_error_and_is_not_created(tmp_path):
+    with pytest.raises(ValueError, match="does not exist"):
+        swarm._normalize_workspaces(2, str(tmp_path / "nope"))
+    with pytest.raises(ValueError, match="does not exist"):
+        swarm._normalize_workspaces(1, [str(tmp_path / "nope")])
+    assert not (tmp_path / "nope").exists()
+
+
+def test_normalize_tasks_missing_workspace_names_the_task(tmp_path):
+    tasks = [{"backend": "codex", "prompt": "hi", "workspace": str(tmp_path / "nope")}]
+    with pytest.raises(ValueError, match=r"task 0: workspace .* does not exist"):
+        swarm._normalize_tasks(tasks)
+    assert not (tmp_path / "nope").exists()
+
+
+def test_normalize_tasks_expands_the_home_marker(tmp_path, monkeypatch):
+    (tmp_path / "proj").mkdir()
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    out = swarm._normalize_tasks([{"backend": "codex", "prompt": "hi", "workspace": "~/proj"}])
+    assert os.path.samefile(out[0]["workspace"], tmp_path / "proj")
 
 
 def test_normalize_workspaces_length_mismatch_raises():
@@ -381,6 +408,54 @@ def test_normalize_tasks_antigravity_plan_refused_on_old_agy(monkeypatch):
     monkeypatch.setattr(server, "_get_agy_version", lambda: "1.1.11")
     with pytest.raises(ValueError, match="task 0: plan=True needs agy 1.1.12"):
         swarm._normalize_tasks([{"backend": "antigravity", "prompt": "x", "sandbox": "read-only"}])
+
+
+def test_normalize_tasks_antigravity_plan_with_no_agy_names_the_install(monkeypatch, tmp_path):
+    import server
+
+    monkeypatch.setattr(server, "AGY_BIN", str(tmp_path / "gone" / "agy.exe"))
+    monkeypatch.setattr(server, "list_agy_models", lambda: [])
+    monkeypatch.setattr(server, "_AGY_PLAN_GATE", False)
+    monkeypatch.setattr(server, "_get_agy_version", lambda: None)
+    with pytest.raises(ValueError, match="task 0: agy was not found") as info:
+        swarm._normalize_tasks([{"backend": "antigravity", "prompt": "x", "sandbox": "read-only"}])
+    assert "AGY_BIN" in str(info.value) and "needs agy" not in str(info.value)
+
+
+def test_schema_gate_with_no_agy_names_the_install(monkeypatch, tmp_path):
+    import proc_tree
+    import server
+
+    monkeypatch.setattr(server, "AGY_BIN", str(tmp_path / "gone" / "agy.exe"))
+    monkeypatch.setattr(server, "_AGY_JSON_SUPPORT", False)
+    monkeypatch.setattr(server, "_get_agy_version", lambda: None)
+    with pytest.raises(proc_tree.CliNotFound, match="^agy was not found"):
+        server._check_schema_support()
+
+
+def test_version_gates_keep_their_message_when_agy_is_installed(monkeypatch):
+    import server
+
+    monkeypatch.setattr(server, "AGY_BIN", sys.executable)  # there, version unreadable
+    monkeypatch.setattr(server, "_AGY_JSON_SUPPORT", False)
+    monkeypatch.setattr(server, "_get_agy_version", lambda: None)
+    with pytest.raises(ValueError, match=r"schema needs agy .*\(found unknown\)"):
+        server._check_schema_support()
+
+
+def test_a_swarm_worker_whose_cli_is_missing_reports_the_install_hint(monkeypatch, tmp_path):
+    import codex_bridge
+
+    def no_such_file(args, *a, **k):
+        raise FileNotFoundError(2, "No such file or directory")
+
+    monkeypatch.setattr(codex_bridge, "CODEX_BIN", str(tmp_path / "gone" / "codex.exe"))
+    monkeypatch.setattr(subprocess, "Popen", no_such_file)
+    results = swarm.swarm_agents(
+        [{"backend": "codex", "prompt": "hi", "workspace": str(tmp_path)}], 1, 30, False
+    )
+    out = swarm.format_agent_results(results)
+    assert "codex was not found" in out and "CODEX_BIN" in out and "WinError" not in out
 
 
 def test_normalize_tasks_antigravity_rejects_unknown_model(monkeypatch):

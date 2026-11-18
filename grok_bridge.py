@@ -190,7 +190,7 @@ def _env() -> dict:
 
 def normalize_workspace(ws: Optional[str]) -> str:
     """Absolute path for `ws`, or the server's cwd when omitted."""
-    return os.path.abspath(ws) if ws else os.getcwd()
+    return proc_tree.resolve_workspace(ws)
 
 
 def validate_sandbox(mode: str) -> str:
@@ -442,7 +442,6 @@ def run_grok(
     run_cursor so server.py's _run_with_progress can call it unchanged.
     """
     validate_sandbox(sandbox)
-    os.makedirs(workspace, exist_ok=True)  # grok's cwd must exist
     resume_id, use_continue = _resume_flags(workspace, continue_conv)
     args = build_args(prompt, workspace, sandbox, model, resume_id, use_continue)
 
@@ -516,7 +515,6 @@ def run_grok_streaming(
     matching the codex/copilot/cursor path.
     """
     validate_sandbox(sandbox)
-    os.makedirs(workspace, exist_ok=True)
     resume_id, use_continue = _resume_flags(workspace, continue_conv)
     args = build_args(prompt, workspace, sandbox, model, resume_id, use_continue, json_stream=True)
 

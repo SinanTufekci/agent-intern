@@ -22,11 +22,42 @@ body:
         - Copilot
         - Cursor
         - opencode
+        - Claude Code (the claude_* tools, for other hosts)
         - Grok Build (experimental)
         - Kimi Code (experimental)
         - Muse Code (experimental)
         - More than one / swarm
         - Not backend-specific
+    validations:
+      required: true
+
+  - type: dropdown
+    id: host
+    attributes:
+      label: Which host runs the server
+      description: The program that launches `agent-intern` and calls its tools.
+      options:
+        - Claude Code
+        - Antigravity CLI (agy)
+        - Antigravity IDE
+        - Copilot CLI
+        - Cursor CLI
+        - opencode
+        - A terminal only (`doctor`, `rules`)
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: How you installed agent-intern
+      options:
+        - Claude Code plugin
+        - "`claude mcp add` (uvx)"
+        - Another host's `mcp add` or config file (uvx)
+        - From source (git clone)
+        - Other
     validations:
       required: true
 

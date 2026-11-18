@@ -231,7 +231,7 @@ def _env() -> dict:
 
 def normalize_workspace(ws: Optional[str]) -> str:
     """Absolute path for `ws`, or the server's cwd when omitted."""
-    return os.path.abspath(ws) if ws else os.getcwd()
+    return proc_tree.resolve_workspace(ws)
 
 
 def validate_sandbox(mode: str) -> str:
@@ -511,7 +511,6 @@ def run_cursor(
     run_copilot so server.py's _run_with_progress can call it unchanged.
     """
     validate_sandbox(sandbox)
-    os.makedirs(workspace, exist_ok=True)  # cursor's cwd / --workspace must exist
     chat_id = _resolve_session(workspace, continue_conv)
     args = build_args(prompt, workspace, sandbox, model, chat_id)
 
@@ -582,7 +581,6 @@ def run_cursor_streaming(
     (with a deadline) rather than stdout closing, matching the codex/copilot path.
     """
     validate_sandbox(sandbox)
-    os.makedirs(workspace, exist_ok=True)
     chat_id = _resolve_session(workspace, continue_conv)
     args = build_args(prompt, workspace, sandbox, model, chat_id, json_stream=True)
 

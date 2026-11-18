@@ -41,7 +41,7 @@ proactive, put it where Claude Code treats it as an instruction. Add this to you
 ```markdown
 ## Delegating to sub-agents
 
-The `intern` MCP server bridges Antigravity/Gemini, Codex, Copilot, Cursor and opencode as sub-agents
+The agent-intern MCP server (listed as `intern` when installed through the plugin) bridges Antigravity/Gemini, Codex, Copilot, Cursor and opencode as sub-agents
 running on my own subscriptions. Before starting bulk mechanical work (a rename across many
 files, boilerplate, a first-pass port), or anything that splits into independent parallel
 subtasks, propose delegating it in one line and wait for my answer — e.g. "this is 6

@@ -12,7 +12,8 @@ Every install path, per-backend prerequisites, and the `*_BIN` overrides for CLI
 - **Codex:** install `codex` and run `codex login` once (ChatGPT account or API key).
 - **Copilot:** install `copilot` (`npm i -g @github/copilot`, or `winget install GitHub.Copilot`)
   and run `copilot` then `/login` once (or set a `COPILOT_GITHUB_TOKEN`/`GH_TOKEN` env var).
-- **Cursor:** install `cursor-agent` (`curl https://cursor.com/install -fsSL | bash`) and run
+- **Cursor:** install `cursor-agent` as described at [cursor.com/cli](https://cursor.com/cli)
+  (macOS/Linux: `curl https://cursor.com/install -fsSL | bash`) and run
   `cursor-agent login` once (or set a `CURSOR_API_KEY` env var).
 - **opencode:** install `opencode` (`npm i -g @opencode/cli` for 2.x; 1.x, `npm i -g opencode-ai`,
   still works). **That's it** — its free `opencode/*`
@@ -36,7 +37,10 @@ uvx agent-intern doctor
 `doctor` does what the plugin's `/agent-intern:doctor` skill does, in any host or in a plain
 terminal. It runs the same checks as the `*_status` tools for every backend that
 [`AGENT_INTERN_BACKENDS`](#load-only-the-backends-you-use) leaves on, and shows each backend as
-`ready`, `warning` or `unusable` with the next step to fix it. It spends no quota.
+`ready`, `warning` or `unusable` with the next step to fix it. Backends whose CLI isn't installed
+are listed apart, in one line, so the ones that need attention stand out; with nothing installed it
+lists the install steps and points at opencode as the quickest start (`--verbose` shows the install
+steps in any case). It spends no quota. In `--json` nothing changes: a missing CLI is still `unusable`.
 
 | Flag | What it does |
 |---|---|
@@ -54,8 +58,12 @@ still read the output before you post it in a public issue.
 uvx agent-intern rules
 ```
 
-Prints the routing guide: the same text the server sends as MCP instructions (byte for byte) for the
-backends that [`AGENT_INTERN_BACKENDS`](#load-only-the-backends-you-use) leaves on, as UTF-8. Some
+Prints the routing guide: the text the server sends as MCP instructions, for the backends that
+[`AGENT_INTERN_BACKENDS`](#load-only-the-backends-you-use) leaves on, as UTF-8. One difference: the
+server leaves the `claude` backend out when its host is Claude Code (`CLAUDECODE=1`), but `rules`
+writes a file for other hosts, which do have the `claude_*` tools, so it always includes the `claude`
+section (unless `AGENT_INTERN_BACKENDS` leaves `claude` out). Run from any shell, inside Claude Code
+or not, it prints the same guide. Some
 hosts never show MCP instructions to their model, so a host's model doesn't learn when to reach for
 which tool unless you put the guide where that host reads its rules:
 
@@ -98,6 +106,31 @@ Inside a session, `/plugin marketplace add SinanTufekci/agent-intern` then
 both, since both would give Claude every tool twice. When a new plugin version ships,
 `/plugin update agent-intern@agent-intern` picks up the new skills, and the server itself upgrades
 the same way the uvx install does.
+
+### Approving the tools in Claude Code
+
+Claude Code asks before each MCP tool runs. To stop it asking for the free checks, allow them by full
+name in `permissions.allow` of `~/.claude/settings.json`. The name is `mcp__<server>__<tool>`, and the
+server is `plugin_agent-intern_intern` with the plugin or `agent-intern` with `claude mcp add`:
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "mcp__plugin_agent-intern_intern__opencode_status",
+      "mcp__plugin_agent-intern_intern__codex_status",
+      "mcp__agent-intern__opencode_status",
+      "mcp__agent-intern__codex_status"
+    ]
+  }
+}
+```
+
+Keep only the two lines for the way you installed it, and add the `*_status` tool of each backend you
+use. Leave `*_ask`, `*_continue` and the swarm tools on the prompt: they spend your quota and run an
+agent. `mcp__<server>__*` allows every tool of that server, the paid ones too (rules for MCP tools take no
+`(...)` part; Claude Code skips such a rule). See Claude Code's
+[permissions page](https://code.claude.com/docs/en/permissions) for the full syntax.
 
 ### No plugin — register the server yourself, you control updates
 
@@ -294,14 +327,18 @@ Clone it instead if you want to hack on the bridge or pin a local copy:
 ```bash
 git clone https://github.com/SinanTufekci/agent-intern.git
 cd agent-intern
-pip install fastmcp
-python test_smoke.py        # 4 real round-trips (ask, continue, image, swarm) — prints four PASS lines
+pip install -e .            # installs fastmcp within the supported range, and the `agent-intern` command
+python server.py doctor     # spends no quota: shows which backends are installed and signed in
 ```
 
-> [!NOTE]
-> The smoke test costs a tiny bit of quota and takes ~30–60 s. It exercises the Antigravity path.
+Register it with the absolute path to `server.py`, using the Python that has the dependencies (inside a
+virtual environment, that environment's `python`):
 
-Then point Claude Code at the absolute path to `server.py` under `mcpServers` in `~/.claude.json`:
+```bash
+claude mcp add -s user agent-intern -- python /absolute/path/to/server.py
+```
+
+Or write the entry by hand under `mcpServers` in `~/.claude.json`:
 
 <table>
 <tr><th>Windows</th><th>macOS / Linux</th></tr>
@@ -325,6 +362,10 @@ Then point Claude Code at the absolute path to `server.py` under `mcpServers` in
 
 </td></tr>
 </table>
+
+Optional: `python test_smoke.py` makes 4 real round-trips (ask, continue, image, swarm) through
+Antigravity and prints four PASS lines. It spends a little of your own quota and takes about 30–60 s,
+so run it by hand, never through pytest.
 
 Restart Claude Code. **Twenty-nine tools** appear, each prefixed `mcp__agent-intern__`. (Three more,
 the `claude_*` tools below, appear in every other host: **thirty-two** in all.)
@@ -386,6 +427,39 @@ change.
   Kimi).
 - A name that matches no backend is ignored, and the `backends` row flags it. If no name matches,
   every backend stays on.
+
+## Troubleshooting
+
+Start with `uvx agent-intern doctor` in a terminal: it shows what is installed and signed in, spends
+no quota, and needs no host.
+
+- **The server shows as failed in `/mcp`, or no agent-intern tools appear.** Run
+  `uvx agent-intern --version` in a terminal. If the command is not found, uv is not on `PATH`: install
+  it (see the [README](../README.md#quick-start)), open a new terminal and restart the host, since a
+  running host keeps the `PATH` it started with. The first run downloads the packages and can be slow;
+  running that command once warms uv's cache before the host starts the server.
+- **Every tool shows twice (`agent-intern_…` and `plugin_agent-intern_intern_…`).** You installed the
+  plugin and also ran `claude mcp add`. Keep one: `claude mcp remove agent-intern` drops the manual
+  one, and `claude plugin uninstall agent-intern@agent-intern` (or `/plugin`) removes the plugin.
+- **A tool call fails with "No such file or directory" or `[WinError 2]`.** The backend's CLI isn't on
+  the host's `PATH`. Run `<backend>_status` or `uvx agent-intern doctor`, then install the CLI or set its
+  `*_BIN` variable ([the overrides](#requirements)). An installer that edits `PATH` doesn't reach a host
+  that is already running: restart it.
+- **The sub-agent answers as if it saw no repo, or a call fails with "workspace … does not exist".**
+  Pass `workspace` as the absolute path of an existing project directory. A `workspace` that isn't a
+  directory is an error: the bridge no longer creates it (an empty directory made from a typo is what
+  made a sub-agent look at nothing). `~` is expanded; a relative path is resolved against the server's
+  working directory, which is wherever the host started it, and without `workspace` that directory is
+  used. `workspace` is where the sub-agent starts, not a boundary.
+- **Antigravity: a headless `agy -p` run answers without calling any tool.** It denies MCP calls unless
+  `permissions.allow` allows them; see [Antigravity](#antigravity-the-agy-cli).
+- **Claude Code asks before every call.** That is Claude Code's default; see
+  [Approving the tools](#approving-the-tools-in-claude-code).
+- **A new release is out.** Restart the host. A pinned install (`uvx agent-intern==X.Y.Z`) changes only
+  when you change the number.
+
+Still stuck? [Open an issue](https://github.com/SinanTufekci/agent-intern/issues/new/choose) with the
+`doctor --verbose` output and say which host and install method you use.
 
 ## Requirements
 

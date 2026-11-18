@@ -343,10 +343,10 @@ def _normalize_workspaces(n: int, workspaces: Union[None, str, list]) -> list[st
     if workspaces is None:
         return [os.getcwd()] * n
     if isinstance(workspaces, str):
-        return [os.path.abspath(workspaces)] * n
+        return [proc_tree.resolve_workspace(workspaces)] * n
     if len(workspaces) != n:
         raise ValueError(f"workspaces length {len(workspaces)} != prompts {n}")
-    return [os.path.abspath(w) for w in workspaces]
+    return [proc_tree.resolve_workspace(w) for w in workspaces]
 
 
 def _labels(prompts: list[str]) -> list[str]:
@@ -401,7 +401,6 @@ def _run_text_worker_serialized(
     import server
 
     try:
-        os.makedirs(workspace, exist_ok=True)
         ans = server._run_agy(prompt, workspace, False, timeout_s, model, plan, pin=False)
         return WorkerResult(
             index, True, answer=ans, elapsed=round(time.time() - t0, 1), workspace=workspace
@@ -422,7 +421,6 @@ def _run_text_worker(index, prompt, workspace, model, timeout_s, plan=False) -> 
     home = _make_isolated_home()
     t0 = time.time()
     try:
-        os.makedirs(workspace, exist_ok=True)
         args = server._agy_base_args(timeout_s, plan)
         if model:
             args += ["--model", model]
@@ -544,7 +542,6 @@ def _run_text_worker_watched(
     swarm_watch.worker_update(index, status="working", started=start)
     feed = _Feed(home, index, start)
     try:
-        os.makedirs(workspace, exist_ok=True)
         args = server._agy_base_args(timeout_s, plan)
         if model:
             args += ["--model", model]
@@ -695,7 +692,6 @@ def _run_image_worker_serialized(
 
     try:
         os.makedirs(os.path.dirname(target) or ".", exist_ok=True)
-        os.makedirs(workspace, exist_ok=True)
         wrapped = server._wrap_image_prompt(prompt, target)
         agy_text: Optional[str] = None
         agy_error: Optional[RuntimeError] = None
@@ -739,7 +735,6 @@ def _run_image_worker(index, prompt, target, workspace, timeout_s) -> WorkerResu
     start = time.time()
     try:
         os.makedirs(os.path.dirname(target) or ".", exist_ok=True)
-        os.makedirs(workspace, exist_ok=True)
         wrapped = server._wrap_image_prompt(prompt, target)
         args = server._agy_base_args(timeout_s) + ["-p", wrapped]
         proc = proc_tree.run_captured(
@@ -830,7 +825,6 @@ def _run_image_worker_watched(index, prompt, target, workspace, timeout_s) -> Wo
     feed = _Feed(home, index, start)
     try:
         os.makedirs(os.path.dirname(target) or ".", exist_ok=True)
-        os.makedirs(workspace, exist_ok=True)
         wrapped = server._wrap_image_prompt(prompt, target)
         args = server._agy_base_args(timeout_s) + ["-p", wrapped]
         proc = proc_tree.popen(
@@ -1027,7 +1021,10 @@ def _normalize_tasks(tasks) -> list[dict]:
         if not prompt or not str(prompt).strip():
             raise ValueError(f"task {i}: 'prompt' is required")
         ws = t.get("workspace")
-        workspace = os.path.abspath(ws) if ws else os.getcwd()
+        try:
+            workspace = proc_tree.resolve_workspace(ws)
+        except ValueError as e:
+            raise ValueError(f"task {i}: {e}") from e
         sandbox = None
         model = None
         effort = None  # codex and claude only; any other backend refuses it below
@@ -1088,7 +1085,7 @@ def _normalize_tasks(tasks) -> list[dict]:
                     # the agy version gate and the slash-command guard that plan mode
                     # needs in place of --disable-slash-commands.
                     server._check_plan_mode(str(prompt))
-            except ValueError as e:
+            except (ValueError, proc_tree.CliNotFound) as e:  # CliNotFound: no agy at all
                 raise ValueError(f"task {i}: {e}") from e
         if backend not in ("codex", "claude") and str(t.get("effort") or "").strip():
             # Refuse rather than ignore: a worker that quietly ran at another level
@@ -1124,7 +1121,6 @@ def _run_codex_worker(
 
     start = time.time()
     try:
-        os.makedirs(workspace, exist_ok=True)
         ans = codex_bridge.run_codex(
             prompt, workspace, sandbox, model, False, timeout_s, pin=False, effort=effort
         )
@@ -1164,7 +1160,6 @@ def _run_codex_worker_watched(
             swarm_watch.worker_append(index, [{"kind": k, "text": x, "t": t} for k, x in lines])
 
     try:
-        os.makedirs(workspace, exist_ok=True)
         ans = codex_bridge.run_codex_streaming(
             prompt, workspace, sandbox, model, False, timeout_s, on_event, pin=False, effort=effort
         )
@@ -1194,7 +1189,6 @@ def _run_copilot_worker(index, prompt, workspace, sandbox, model, timeout_s) -> 
 
     start = time.time()
     try:
-        os.makedirs(workspace, exist_ok=True)
         ans = copilot_bridge.run_copilot(
             prompt, workspace, sandbox, model, False, timeout_s, pin=False
         )
@@ -1234,7 +1228,6 @@ def _run_copilot_worker_watched(
             swarm_watch.worker_append(index, [{"kind": k, "text": x, "t": t} for k, x in lines])
 
     try:
-        os.makedirs(workspace, exist_ok=True)
         ans = copilot_bridge.run_copilot_streaming(
             prompt, workspace, sandbox, model, False, timeout_s, on_event, pin=False
         )
@@ -1264,7 +1257,6 @@ def _run_cursor_worker(index, prompt, workspace, sandbox, model, timeout_s) -> W
 
     start = time.time()
     try:
-        os.makedirs(workspace, exist_ok=True)
         ans = cursor_bridge.run_cursor(
             prompt, workspace, sandbox, model, False, timeout_s, pin=False
         )
@@ -1302,7 +1294,6 @@ def _run_cursor_worker_watched(index, prompt, workspace, sandbox, model, timeout
             swarm_watch.worker_append(index, [{"kind": k, "text": x, "t": t} for k, x in lines])
 
     try:
-        os.makedirs(workspace, exist_ok=True)
         ans = cursor_bridge.run_cursor_streaming(
             prompt, workspace, sandbox, model, False, timeout_s, on_event, pin=False
         )
@@ -1334,7 +1325,6 @@ def _run_claude_worker(
 
     start = time.time()
     try:
-        os.makedirs(workspace, exist_ok=True)
         ans = claude_bridge.run_claude(
             prompt, workspace, sandbox, model, False, timeout_s, pin=False, effort=effort
         )
@@ -1374,7 +1364,6 @@ def _run_claude_worker_watched(
             swarm_watch.worker_append(index, [{"kind": k, "text": x, "t": t} for k, x in lines])
 
     try:
-        os.makedirs(workspace, exist_ok=True)
         ans = claude_bridge.run_claude_streaming(
             prompt, workspace, sandbox, model, False, timeout_s, on_event, pin=False, effort=effort
         )
@@ -1410,7 +1399,6 @@ def _run_grok_worker(index, prompt, workspace, sandbox, model, timeout_s) -> Wor
 
     start = time.time()
     try:
-        os.makedirs(workspace, exist_ok=True)
         ans = grok_bridge.run_grok(prompt, workspace, sandbox, model, False, timeout_s, pin=False)
         return WorkerResult(
             index,
@@ -1446,7 +1434,6 @@ def _run_grok_worker_watched(index, prompt, workspace, sandbox, model, timeout_s
             swarm_watch.worker_append(index, [{"kind": k, "text": x, "t": t} for k, x in lines])
 
     try:
-        os.makedirs(workspace, exist_ok=True)
         ans = grok_bridge.run_grok_streaming(
             prompt, workspace, sandbox, model, False, timeout_s, on_event, pin=False
         )
@@ -1495,7 +1482,6 @@ def _run_opencode_worker(index, prompt, workspace, sandbox, model, timeout_s) ->
     timeout_s = _opencode_timeout(timeout_s)
     start = time.time()
     try:
-        os.makedirs(workspace, exist_ok=True)
         ans = opencode_bridge.run_opencode(
             prompt, workspace, sandbox, model, False, timeout_s, pin=False
         )
@@ -1537,7 +1523,6 @@ def _run_opencode_worker_watched(
             swarm_watch.worker_append(index, [{"kind": k, "text": x, "t": t} for k, x in lines])
 
     try:
-        os.makedirs(workspace, exist_ok=True)
         ans = opencode_bridge.run_opencode_streaming(
             prompt, workspace, sandbox, model, False, timeout_s, on_event, pin=False
         )
@@ -1571,7 +1556,6 @@ def _run_muse_worker(index, prompt, workspace, sandbox, model, timeout_s) -> Wor
 
     start = time.time()
     try:
-        os.makedirs(workspace, exist_ok=True)
         ans = muse_bridge.run_muse(prompt, workspace, sandbox, model, False, timeout_s, pin=False)
         return WorkerResult(
             index,
@@ -1607,7 +1591,6 @@ def _run_muse_worker_watched(index, prompt, workspace, sandbox, model, timeout_s
             swarm_watch.worker_append(index, [{"kind": k, "text": x, "t": t} for k, x in lines])
 
     try:
-        os.makedirs(workspace, exist_ok=True)
         ans = muse_bridge.run_muse_streaming(
             prompt, workspace, sandbox, model, False, timeout_s, on_event, pin=False
         )

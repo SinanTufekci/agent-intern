@@ -196,7 +196,7 @@ def _spawn_kwargs() -> dict:
 
 def normalize_workspace(ws: Optional[str]) -> str:
     """Absolute path for `ws`, or the server's cwd when omitted."""
-    return os.path.abspath(ws) if ws else os.getcwd()
+    return proc_tree.resolve_workspace(ws)
 
 
 def validate_sandbox(mode: str) -> str:
@@ -412,7 +412,6 @@ def run_copilot(
     can be handed to server.py's _run_with_progress unchanged.
     """
     validate_sandbox(sandbox)
-    os.makedirs(workspace, exist_ok=True)  # copilot's cwd (-C) must exist
     session_id = _resolve_session(workspace, continue_conv)
     args = build_args(prompt, workspace, sandbox, model, session_id)
 
@@ -482,7 +481,6 @@ def run_copilot_streaming(
     leave a child holding the stdout pipe open after the turn finishes.
     """
     validate_sandbox(sandbox)
-    os.makedirs(workspace, exist_ok=True)  # copilot's cwd (-C) must exist
     session_id = _resolve_session(workspace, continue_conv)
     args = build_args(prompt, workspace, sandbox, model, session_id, json_stream=True)
 

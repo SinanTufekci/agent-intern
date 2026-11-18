@@ -437,8 +437,14 @@ def _diagnostic_prefix() -> list[str]:
 
 
 def check_supported_version() -> int:
-    """The installed opencode's major, or raise RuntimeError if the bridge won't run it."""
+    """The installed opencode's major, or raise RuntimeError if the bridge won't run it
+    (proc_tree.CliNotFound if there is no opencode at all)."""
     major = opencode_major()
+    # A path the user chose that has gone keeps its own message ("OPENCODE_BIN points
+    # at ..."); a missing opencode gets the shared install hint.
+    chosen_path = _BIN_EXPLICIT and (os.path.isabs(OPENCODE_BIN) or os.path.sep in OPENCODE_BIN)
+    if major is None and not chosen_path and proc_tree.cli_missing(OPENCODE_BIN):
+        raise proc_tree.not_found_error("opencode", OPENCODE_BIN)
     reason = unsupported_version_reason(major)
     if reason:
         raise RuntimeError(reason)
@@ -527,7 +533,7 @@ def _env(sandbox: Optional[str] = None, major: int = 1) -> dict:
 
 def normalize_workspace(ws: Optional[str]) -> str:
     """Absolute path for `ws`, or the server's cwd when omitted."""
-    return os.path.abspath(ws) if ws else os.getcwd()
+    return proc_tree.resolve_workspace(ws)
 
 
 def validate_sandbox(mode: str) -> str:
@@ -847,7 +853,6 @@ def _run_impl(
     """The one runner behind run_opencode and run_opencode_streaming."""
     validate_sandbox(sandbox)
     major = check_supported_version()  # before anything runs: fail closed
-    os.makedirs(workspace, exist_ok=True)
     resume_id, use_continue = _resume_flags(workspace, continue_conv)
     args = build_args(prompt, workspace, sandbox, model, resume_id, use_continue, agent, major)
 

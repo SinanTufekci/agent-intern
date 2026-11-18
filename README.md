@@ -36,7 +36,12 @@ opencode), the same server adds a Claude Code backend: `claude_status` answers i
 
 ## Quick start
 
-**1. Install it** (needs [uv](https://docs.astral.sh/uv/)). In Claude Code there are two ways; pick
+**0. Prerequisites.** [uv](https://docs.astral.sh/uv/getting-started/installation/) runs the server:
+`winget install --id=astral-sh.uv -e` on Windows, `brew install uv` on macOS, or
+`curl -LsSf https://astral.sh/uv/install.sh | sh` on Linux. The opencode CLI in step 2 installs through
+npm, so it needs Node.js with npm.
+
+**1. Install it.** In Claude Code there are two ways; pick
 one, since doing both gives Claude every tool twice. (Using another host? See [Works in](#works-in).)
 
 - **The plugin — recommended.** It registers the server and adds three slash commands:
@@ -58,7 +63,12 @@ one, since doing both gives Claude every tool twice. (Using another host? See [W
 | Cursor | [`cursor-agent`](https://cursor.com/cli) | `cursor-agent login` |
 | **nothing at all** | `npm i -g @opencode/cli` | not needed — its free models answer with zero credentials |
 
-**3. Restart Claude Code and just ask.** The server ships its own routing guide as MCP instructions,
+**3. Restart Claude Code and check it.** Run `/mcp`: `agent-intern` (shown as `intern` when you
+installed the plugin) should be connected. Then ask *"run opencode_status"* (or the `*_status` tool of the
+backend you installed): it spends no quota. If the server shows as failed, or no tools appear, see
+[Troubleshooting](https://github.com/SinanTufekci/agent-intern/blob/main/docs/setup.md#troubleshooting).
+
+**4. Just ask.** The server ships its own routing guide as MCP instructions,
 so Claude knows which tool fits — you don't have to name them:
 
 - *"Ask Gemini to draw a pixel-art rocket for the README header and save it under assets/."* → Gemini

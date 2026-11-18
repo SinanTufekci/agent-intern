@@ -1135,3 +1135,91 @@ def test_the_status_tools_work_at_the_limit(probes_at_the_limit):
     out = claude_tools.claude_status()
     assert "nesting" in out and "claude CLI" in out
     assert "Overall: PROBLEMS FOUND" in out  # the nesting row is a warning, not an error
+
+
+# --------------------------------------------- a backend CLI that is not installed
+
+
+def _no_such_file(filename=None):
+    """A Popen stand-in failing the way a missing executable does: Windows leaves
+    filename None, POSIX names the file."""
+
+    def popen(args, *a, **k):
+        raise FileNotFoundError(2, "No such file or directory", filename)
+
+    return popen
+
+
+@pytest.mark.parametrize("cli", sorted(proc_tree.CLIS))
+def test_a_missing_cli_is_named_with_its_install_hint(monkeypatch, cli):
+    import doctor
+
+    backend, var = proc_tree.CLIS[cli]
+    monkeypatch.setattr(subprocess, "Popen", _no_such_file())
+    with pytest.raises(proc_tree.CliNotFound) as info:
+        proc_tree.popen([os.path.join("nowhere", cli + ".exe"), "-p", "hi"])
+    text = str(info.value)
+    assert text.startswith(f"{cli} was not found (tried ")
+    assert "Errno" not in text and "WinError" not in text
+    # the same install hint `agent-intern doctor` gives, with the override variable
+    install = doctor._CHECKS[backend][2]
+    assert install.split(" (")[0].split(" `")[0][1:] in text
+    assert f"set {var} to its full path" in text
+    assert "uvx agent-intern doctor" in text and "restart the MCP host" in text
+
+
+def test_a_missing_cli_is_still_a_file_not_found_error(monkeypatch):
+    # the status probes read an OSError as "not installed"; that must keep working
+    monkeypatch.setattr(subprocess, "Popen", _no_such_file())
+    with pytest.raises(FileNotFoundError):
+        proc_tree.run_captured(["codex", "--version"], timeout=5, starts_agent=False)
+
+
+def test_posix_style_error_naming_the_executable_is_recognised(monkeypatch):
+    monkeypatch.setattr(subprocess, "Popen", _no_such_file("/usr/local/bin/grok"))
+    with pytest.raises(proc_tree.CliNotFound, match="^grok was not found"):
+        proc_tree.popen(["/usr/local/bin/grok", "-p", "hi"])
+
+
+def test_a_renamed_binary_is_recognised_through_its_override_variable(monkeypatch, tmp_path):
+    exe = str(tmp_path / "codex-nightly.exe")
+    monkeypatch.setenv("CODEX_BIN", exe)
+    monkeypatch.setattr(subprocess, "Popen", _no_such_file())
+    with pytest.raises(proc_tree.CliNotFound, match="^codex was not found"):
+        proc_tree.popen([exe, "exec", "hi"])
+
+
+def test_a_cli_launched_through_node_is_named(monkeypatch, tmp_path):
+    base = tmp_path / "cursor-agent" / "versions" / "2026.11.01-abc"
+    monkeypatch.setattr(subprocess, "Popen", _no_such_file())
+    with pytest.raises(proc_tree.CliNotFound, match="^cursor-agent was not found"):
+        proc_tree.popen([str(base / "node.exe"), str(base / "index.js"), "-p", "hi"])
+
+
+def test_an_unknown_program_keeps_the_os_error(monkeypatch):
+    monkeypatch.setattr(subprocess, "Popen", _no_such_file())
+    with pytest.raises(FileNotFoundError) as info:
+        proc_tree.popen(["some-other-tool", "x"], starts_agent=False)
+    assert not isinstance(info.value, proc_tree.CliNotFound)
+
+
+def test_a_missing_cwd_is_not_reported_as_a_missing_cli(monkeypatch, tmp_path):
+    gone = str(tmp_path / "gone")
+    monkeypatch.setattr(subprocess, "Popen", _no_such_file(gone))
+    with pytest.raises(FileNotFoundError) as info:
+        proc_tree.popen(["codex", "exec", "hi"], cwd=gone)
+    assert not isinstance(info.value, proc_tree.CliNotFound)
+
+
+def test_every_cli_has_a_doctor_hint():
+    # a backend added to CLIS without a doctor row would fall back to a generic hint
+    import doctor
+
+    assert {backend for backend, _ in proc_tree.CLIS.values()} <= set(doctor._CHECKS)
+
+
+def test_cli_missing(tmp_path):
+    here = tmp_path / "tool.exe"
+    here.write_text("x", encoding="utf-8")
+    assert proc_tree.cli_missing(str(tmp_path / "nope.exe"))
+    assert not proc_tree.cli_missing(str(here))

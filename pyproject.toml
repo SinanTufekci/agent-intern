@@ -1,7 +1,7 @@
 [project]
 name = "agent-intern"
 version = "0.38.0"
-description = "MCP server bridging the Antigravity (agy), OpenAI Codex, GitHub Copilot, Cursor, opencode, Grok Build, Kimi Code, and Muse Code CLIs so Claude Code can drive them as sub-agents"
+description = "MCP server that runs the Antigravity (agy), OpenAI Codex, GitHub Copilot, Cursor, Claude Code and opencode CLIs (plus experimental Grok Build, Kimi Code and Muse Code) as sub-agents for any MCP host"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }

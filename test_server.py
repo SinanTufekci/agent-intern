@@ -40,8 +40,47 @@ def test_normalize_workspace_none_returns_cwd():
 
 
 def test_normalize_workspace_relative_is_absolutised(tmp_path, monkeypatch):
+    (tmp_path / "sub" / "dir").mkdir(parents=True)
     monkeypatch.chdir(tmp_path)
     assert server._normalize_workspace("sub/dir") == os.path.abspath("sub/dir")
+
+
+def test_normalize_workspace_missing_dir_is_an_error_and_is_not_created(tmp_path):
+    ws = tmp_path / "typo" / "proj"
+    with pytest.raises(ValueError, match="does not exist"):
+        server._normalize_workspace(str(ws))
+    assert not (tmp_path / "typo").exists()
+
+
+def test_normalize_workspace_expands_the_home_marker(tmp_path, monkeypatch):
+    (tmp_path / "proj").mkdir()
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    assert os.path.samefile(server._normalize_workspace("~/proj"), tmp_path / "proj")
+
+
+def test_normalize_workspace_omitted_is_the_server_cwd(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    assert os.path.samefile(server._normalize_workspace(None), tmp_path)
+
+
+@pytest.mark.parametrize(
+    "module",
+    ["claude", "codex", "copilot", "cursor", "grok", "kimi", "muse", "opencode"],
+)
+def test_every_bridge_rejects_a_missing_workspace_and_expands_the_home_marker(
+    module, tmp_path, monkeypatch
+):
+    import importlib
+
+    bridge = importlib.import_module(f"{module}_bridge")
+    with pytest.raises(ValueError, match="does not exist"):
+        bridge.normalize_workspace(str(tmp_path / "nope"))
+    assert not (tmp_path / "nope").exists()
+    (tmp_path / "proj").mkdir()
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    assert os.path.samefile(bridge.normalize_workspace("~/proj"), tmp_path / "proj")
 
 
 # --------------------------------------------------------------------------
@@ -4525,7 +4564,15 @@ def test_rules_is_a_terminal_command_dispatched_lazily():
     assert "rules" in server._CLI_COMMANDS
 
 
-def test_rules_prints_exactly_the_server_instructions_as_utf8(monkeypatch):
+@pytest.fixture
+def host_is_not_claude_code(monkeypatch):
+    """The server as a host other than Claude Code starts it: claude not hidden.
+    (Without it the result depends on whether the suite itself runs inside
+    Claude Code, which sets CLAUDECODE=1 before this module is imported.)"""
+    monkeypatch.setattr(server, "CLAUDE_HIDDEN", False)
+
+
+def test_rules_prints_exactly_the_server_instructions_as_utf8(monkeypatch, host_is_not_claude_code):
     raw = io.BytesIO()
     fake = io.TextIOWrapper(raw, encoding="cp1252", errors="strict", write_through=True)
     monkeypatch.setattr(sys, "stdout", fake)
@@ -4534,7 +4581,7 @@ def test_rules_prints_exactly_the_server_instructions_as_utf8(monkeypatch):
     assert raw.getvalue() == (server.SERVER_INSTRUCTIONS + "\n").encode("utf-8")
 
 
-def test_rules_prints_the_enabled_backends_guide(monkeypatch, capsys):
+def test_rules_prints_the_enabled_backends_guide(monkeypatch, capsys, host_is_not_claude_code):
     monkeypatch.setattr(server, "SERVER_INSTRUCTIONS", server._server_instructions(("codex",)))
     assert doctor.cli(["rules"]) == 0
     out = capsys.readouterr().out
@@ -4542,14 +4589,40 @@ def test_rules_prints_the_enabled_backends_guide(monkeypatch, capsys):
     assert "codex_*" in out and "antigravity_*" not in out
 
 
-def test_rules_falls_back_to_text_when_stdout_has_no_buffer(monkeypatch):
+def test_rules_puts_the_claude_section_back_when_claude_code_hid_it(monkeypatch, capsys):
+    # What the server sends inside Claude Code: claude left out. `rules` writes a file
+    # for other hosts, which have the claude tools, so it must still describe them.
+    hidden = tuple(b for b in server.BACKENDS if b != "claude")
+    monkeypatch.setattr(server, "ENABLED_BACKENDS", hidden)
+    monkeypatch.setattr(server, "CLAUDE_HIDDEN", True)
+    monkeypatch.setattr(server, "SERVER_INSTRUCTIONS", server._server_instructions(hidden))
+    assert "claude_*" not in server.SERVER_INSTRUCTIONS
+    assert doctor.cli(["rules"]) == 0
+    out = capsys.readouterr().out
+    assert out == server._server_instructions(server.BACKENDS) + "\n"
+    assert "claude_*" in out
+
+
+def test_rules_claude_section_keeps_the_backends_filter(monkeypatch, capsys):
+    monkeypatch.setattr(server, "ENABLED_BACKENDS", ("codex",))
+    monkeypatch.setattr(server, "CLAUDE_HIDDEN", True)
+    monkeypatch.setattr(server, "SERVER_INSTRUCTIONS", server._server_instructions(("codex",)))
+    assert doctor.cli(["rules"]) == 0
+    out = capsys.readouterr().out
+    assert out == server._server_instructions(("codex", "claude")) + "\n"
+    assert "codex_*" in out and "claude_*" in out and "antigravity_*" not in out
+
+
+def test_rules_falls_back_to_text_when_stdout_has_no_buffer(monkeypatch, host_is_not_claude_code):
     out = io.StringIO()
     monkeypatch.setattr(sys, "stdout", out)
     assert doctor.cli(["rules"]) == 0
     assert out.getvalue().rstrip("\n") == server.SERVER_INSTRUCTIONS
 
 
-def test_main_rules_exits_zero_without_starting_the_server(monkeypatch, capsys):
+def test_main_rules_exits_zero_without_starting_the_server(
+    monkeypatch, capsys, host_is_not_claude_code
+):
     started = []
     monkeypatch.setattr(server.mcp, "run", lambda *a, **k: started.append(1))
     with pytest.raises(SystemExit) as exc:
@@ -4577,6 +4650,21 @@ def test_rules_in_a_real_process_honours_agent_intern_backends():
     assert proc.returncode == 0, proc.stderr.decode("utf-8", "replace")[-300:]
     assert proc.stdout == (server._server_instructions(("codex",)) + "\n").encode("utf-8")
     assert b"antigravity" not in proc.stdout
+
+
+def test_rules_in_a_real_process_under_claude_code_still_has_the_claude_section():
+    env = {k: v for k, v in os.environ.items() if k != "AGENT_INTERN_BACKENDS"}
+    env["CLAUDECODE"] = "1"
+    proc = subprocess.run(
+        [sys.executable, str(Path(__file__).parent / "server.py"), "rules"],
+        capture_output=True,
+        timeout=120,
+        env=env,
+        cwd=Path(__file__).parent,
+    )
+    assert proc.returncode == 0, proc.stderr.decode("utf-8", "replace")[-300:]
+    assert proc.stdout == (server._server_instructions(server.BACKENDS) + "\n").encode("utf-8")
+    assert b"claude_*" in proc.stdout
 
 
 def test_watch_state_carries_the_model_shown_next_to_the_backend():

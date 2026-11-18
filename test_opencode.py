@@ -16,10 +16,12 @@ import json
 import os
 import re
 import subprocess
+import sys
 
 import pytest
 
 import opencode_bridge
+import proc_tree
 import server
 import swarm
 from conftest import hide_env
@@ -1141,7 +1143,20 @@ def test_unsupported_major_from_the_version_string_refuses(
     assert popen_must_not_run == []
 
 
+def test_a_missing_opencode_gets_the_install_hint(tmp_path, monkeypatch, popen_must_not_run):
+    monkeypatch.setattr(opencode_bridge, "OPENCODE_BIN", "opencode-not-installed")
+    monkeypatch.setattr(opencode_bridge, "_BIN_EXPLICIT", False)
+    monkeypatch.setattr(opencode_bridge, "_MAJOR_CACHE", None)
+    monkeypatch.setattr(opencode_bridge, "opencode_version", lambda: None)
+    with pytest.raises(proc_tree.CliNotFound, match="^opencode was not found") as info:
+        opencode_bridge.run_opencode("hi", str(tmp_path))
+    assert "OPENCODE_BIN" in str(info.value) and "agent-intern doctor" in str(info.value)
+    assert popen_must_not_run == []
+
+
 def test_unreadable_version_refuses_and_is_not_cached(tmp_path, monkeypatch, popen_must_not_run):
+    # installed (OPENCODE_BIN names a real file), but its version can't be read
+    monkeypatch.setattr(opencode_bridge, "OPENCODE_BIN", sys.executable)
     monkeypatch.setattr(opencode_bridge, "_MAJOR_CACHE", None)
     monkeypatch.setattr(opencode_bridge, "opencode_version", lambda: None)
     with pytest.raises(RuntimeError, match="could not read opencode's version"):

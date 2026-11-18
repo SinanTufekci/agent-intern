@@ -14,7 +14,9 @@ allowed-tools:
 ---
 
 Call every agent-intern status tool you have in parallel. None of them spends quota. A backend turned
-off with `AGENT_INTERN_BACKENDS` has no status tool; the `backends` row of the others lists it.
+off with `AGENT_INTERN_BACKENDS` has no status tool; the `backends` row of the others lists it. If you
+have no agent-intern status tool at all, the server did not start: tell the user to run
+`uvx agent-intern doctor` in a terminal and check that uv is installed.
 
 - `antigravity_status`
 - `codex_status`
