@@ -4,8 +4,8 @@
 
 ### Give Claude Code (or Antigravity) an intern.
 
-Delegate to **Gemini, Codex, Copilot, Cursor and opencode** from inside Claude Code or Antigravity — as sub-agents,
-on the subscriptions you already pay for. Text answers, image generation, real repo work, parallel swarms.
+Claude Code runs out of quota while your Gemini, ChatGPT, Copilot and Cursor plans sit idle.
+**agent-intern** lets it hand them errands: a second opinion, an image, a parallel swarm of tasks.
 
 [![CI](https://github.com/SinanTufekci/agent-intern/actions/workflows/ci.yml/badge.svg)](https://github.com/SinanTufekci/agent-intern/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/agent-intern?logo=pypi&logoColor=white&color=2ea44f)](https://pypi.org/project/agent-intern/)
@@ -15,19 +15,48 @@ on the subscriptions you already pay for. Text answers, image generation, real r
 
 <img src="https://raw.githubusercontent.com/SinanTufekci/agent-intern/main/assets/bridge-animation.svg" width="100%" alt="agent-intern banner: you ask Claude Code (or another MCP host) for something; Clawd, its mascot, hands the task to Antigravity, Codex, opencode, Copilot and Cursor in turn. Each shows working… with a flowing line, then done ✓ as its answer comes back, and Clawd celebrates when all five are done" />
 
-[Quick start](#quick-start) · [Works in](#works-in) · [What it's for](#what-its-for) · [Backends](#backends) · [Security](#security) · [Docs](https://github.com/SinanTufekci/agent-intern/blob/main/docs/README.md)
+[Quick start](#quick-start) · [Antigravity CLI](#quick-start-antigravity-cli) · [Works in](#works-in) · [What it's for](#what-its-for) · [Backends](#backends) · [Security](#security) · [Docs](https://github.com/SinanTufekci/agent-intern/blob/main/docs/README.md)
 
 </div>
 
 <!-- mcp-name: io.github.SinanTufekci/agent-intern -->
 
-Claude Code is one model on one quota. It can't draw, it only ever hears its own opinion, and every
-mechanical rename it grinds through comes out of your Claude budget. Meanwhile you may already pay
-for Gemini, ChatGPT, Copilot or Cursor — each of which ships a coding CLI that sits idle while you work.
+agent-intern is an MCP server that runs the coding CLIs you are already signed in to (Gemini through
+Antigravity, Codex, Copilot, Cursor, opencode) as headless sub-agents of Claude Code or Antigravity.
+Claude stays in charge and the intern runs the errand under your own login, so it spends that CLI's
+plan instead of your Claude quota, and you get a second model family's opinion.
 
-**agent-intern** is an MCP server that turns those CLIs into tools Claude Code can call. Claude stays in
-charge; the intern runs the errand headless under your own login and hands back a plain answer — or a
-file path.
+**Try it** (needs [uv](https://docs.astral.sh/uv/getting-started/installation/), which is
+`winget install --id=astral-sh.uv -e` on Windows or `brew install uv` on macOS, and, for the second
+line, Node.js):
+
+```bash
+claude mcp add -s user agent-intern -- uvx agent-intern
+npm i -g @opencode/cli        # a backend with free models: no account, no key (shared free tier, so rate-limited)
+```
+
+Open a new terminal (a freshly installed `uv` or global npm package is often not on the PATH of one
+that was already open), then restart Claude Code and ask: *"run opencode_status"* (spends no quota),
+then *"have opencode summarise these three files in parallel with a swarm"*. The first start
+downloads the package, so it can take a little while. No tools, or the server shows as failed? Run
+`uvx agent-intern doctor` and see
+[Troubleshooting](https://github.com/SinanTufekci/agent-intern/blob/main/docs/setup.md#troubleshooting).
+
+- **Pay for Gemini, ChatGPT, Copilot or Cursor?** Install that CLI instead or as well and sign in
+  once: the table in [Quick start](#quick-start) has each install and sign-in command.
+- **Want the slash commands too?** Use the plugin in [Quick start](#quick-start) instead of the
+  first line, not both (every tool would load twice). Through the plugin the server is listed as
+  `intern`.
+- **Using Antigravity?** [Quick start: Antigravity CLI](#quick-start-antigravity-cli).
+
+<div align="center">
+<img src="https://raw.githubusercontent.com/SinanTufekci/agent-intern/main/assets/watch-swarm.gif" width="60%" alt="Agent Swarm dashboard: one card per worker with its backend's logo, prompt, a status chip with a live clock, its latest step and a time bar, under counters for running, queued, done and failed workers">
+<br>
+<sub><code>agent_swarm(..., watch=true)</code>: one card per worker.
+<a href="https://github.com/SinanTufekci/agent-intern/blob/main/docs/watch-and-swarm.md">More on watch mode and swarms →</a></sub>
+</div>
+
+<sub>About 2,000 offline tests (fake CLIs) run in CI on Linux, macOS and Windows, Python 3.10 to 3.15. Six backends are verified live against the CLI versions listed under [Backends](#backends); Grok, Kimi and Muse are experimental.</sub>
 
 It also runs the other way. In a host that isn't Claude Code (Antigravity, Copilot, Cursor or
 opencode), the same server adds a Claude Code backend: `claude_status` answers in all four, and
@@ -92,8 +121,9 @@ turned on and says what to fix. It spends no quota, and needs no host. Any `*_st
 
 > [!TIP]
 > A plain `uvx agent-intern` picks up a new release the next time your host starts the server. To decide
-> when updates land, pin it: `uvx agent-intern==X.Y.Z`. Every `*_status` call tells you when a newer
-> release is out, and **Watch → Custom → Releases** on GitHub emails you when one ships.
+> when updates land, pin it: `uvx agent-intern==X.Y.Z`. The plugin is already pinned to its own
+> release; `claude plugin update agent-intern@agent-intern` moves it. Every `*_status` call tells you
+> when a newer release is out, and **Watch → Custom → Releases** on GitHub emails you when one ships.
 > [Other install paths, from source included →](https://github.com/SinanTufekci/agent-intern/blob/main/docs/setup.md)
 
 ### Quick start: Antigravity CLI
@@ -120,13 +150,6 @@ one: Antigravity delegating to Antigravity buys you little).
 `uvx agent-intern doctor` flags a missing rule. The Antigravity IDE is not verified yet (it keeps its own MCP list); the `agy` CLI path above is the one checked
 ([details](https://github.com/SinanTufekci/agent-intern/blob/main/docs/setup.md#antigravity-the-agy-cli)).
 [More on the Antigravity setup ↓](#works-in)
-
-<div align="center">
-<img src="https://raw.githubusercontent.com/SinanTufekci/agent-intern/main/assets/watch-swarm.gif" width="40%" alt="Agent Swarm dashboard: one card per worker with its backend's logo, prompt, a status chip with a live clock, its latest step and a time bar, under counters for running, queued, done and failed workers">
-<br>
-<sub><code>agent_swarm(..., watch=true)</code> — one card per worker, each on a different backend.
-<a href="https://github.com/SinanTufekci/agent-intern/blob/main/docs/watch-and-swarm.md">More on watch mode and swarms →</a></sub>
-</div>
 
 ## Works in
 
@@ -303,7 +326,7 @@ its narration, the real commands it runs, then the answer or the finished image.
 </tr>
 </table>
 
-<sub>Swarms get a dashboard too (the animation under Quick start): one card per worker, and a click pops that
+<sub>Swarms get a dashboard too (the animation near the top): one card per worker, and a click pops that
 agent into its own window.
 <a href="https://github.com/SinanTufekci/agent-intern/blob/main/docs/watch-and-swarm.md">More on watch mode and swarms →</a></sub>
 
@@ -443,3 +466,7 @@ because of their report.
 ## License
 
 [MIT](https://github.com/SinanTufekci/agent-intern/blob/main/LICENSE). Do whatever you want with it.
+
+<sub>agent-intern is an independent open-source project. It is not affiliated with or endorsed by
+Anthropic, Google, OpenAI, GitHub, Cursor, the opencode project, xAI, Moonshot AI or Meta. Product
+and company names belong to their owners and are used only to say which tools it works with.</sub>
