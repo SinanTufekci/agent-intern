@@ -1533,9 +1533,10 @@ _IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".webp", ".gif"})
 def _taken_key(path: str) -> str:
     """How `taken` compares names: an image name by its stem alone, since the
     extension is corrected to the real bytes only after generation (a.png can end
-    up as a.jpg); any other name in full."""
+    up as a.jpg); any other name in full. The extension check ignores case on every
+    OS: normcase lowercases only on Windows, and a.JPEG is an image on Linux too."""
     stem, ext = os.path.splitext(os.path.normcase(os.path.abspath(path)))
-    return stem if ext in _IMAGE_SUFFIXES else stem + ext
+    return stem if ext.lower() in _IMAGE_SUFFIXES else stem + ext
 
 
 def _free_path(path: str, taken: frozenset = frozenset()) -> str:
