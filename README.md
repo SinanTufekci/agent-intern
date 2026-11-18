@@ -113,8 +113,9 @@ one: Antigravity delegating to Antigravity buys you little).
 3. **Give agy the routing guide,** since it shows the model no MCP instructions:
    `uvx agent-intern rules > AGENTS.md` in your project.
 4. **Ask,** naming the tool: in `agy`, *"run opencode_status"*, then *"use codex_ask to review my last
-   diff"* (example prompts; the registration and `opencode_status` path was verified on agy 1.5.x,
-   these exact steps were not run end to end in one go).
+   diff"* (example prompts; checked live on agy 1.5.11: registration, `rules > AGENTS.md` and
+   `opencode_status`, with the allow rules passed through `agy --settings`; the same rules in
+   `settings.json` itself were not re-run).
 
 `uvx agent-intern doctor` flags a missing rule. The Antigravity IDE is not verified yet (it keeps its own MCP list); the `agy` CLI path above is the one checked
 ([details](https://github.com/SinanTufekci/agent-intern/blob/main/docs/setup.md#antigravity-the-agy-cli)).

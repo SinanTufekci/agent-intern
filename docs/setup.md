@@ -205,9 +205,11 @@ Three things differ from Claude Code:
   `~/.gemini/antigravity-cli/settings.json` (keep the rules already there), or run `agy`
   interactively and approve each call. The `mcp(<server>/<tool>)` form is the one used for MCP grants in the
   automation skill that ships inside agy (`antigravity-cli/builtin/skills/automation/SKILL.md`, read on
-  agy 1.5.11, grants not exercised here), and the server name is the one you gave `agy mcp add`. To try a
-  rule without editing the file, `agy --settings '<json>'` takes settings.json keys for that session
-  only (from `agy --help`; not run here). `{"permissions":{"allow":["mcp(*)"]}}` in the file let headless
+  agy 1.5.11), and the server name is the one you gave `agy mcp add`. To try a rule without editing the
+  file, `agy --settings '<json>'` takes settings.json keys for that session only, inline or as a file
+  path: per-tool `mcp(<server>/opencode_status)` and `mcp(<server>/agent_swarm)` rules passed this way
+  let a headless `agy -p` call both tools on agy 1.5.11 (the same rules in `settings.json` itself were not
+  re-run). `{"permissions":{"allow":["mcp(*)"]}}` in the file let headless
   calls through too (verified on agy 1.5.3), but `mcp(*)` allows every MCP tool of every server you
   register, and that same skill file tells agents not to write it: prefer per-tool rules. Per-project
   permission files under `~/.gemini/config/projects/` outrank `settings.json`, according to agy's 1.0.12

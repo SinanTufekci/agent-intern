@@ -6,6 +6,24 @@ Version-by-version compatibility notes: what changed upstream, what the bridge d
 
 ## Status & caveats
 
+- ✅ **The 0.39 changes, loaded in both hosts (2026-11-18).** Working-tree server on Windows.
+  **Claude Code 2.1.327** (`--mcp-config` + `--strict-mcp-config`): 29 tools listed,
+  `opencode_status` answered, and a two-worker `agent_swarm` on a free opencode model came back 2/2.
+  **agy 1.5.11** on `gemini-4-argon-high`: the server registered with `agy mcp add` under a second
+  name, per-tool `mcp(<server>/opencode_status)` and `mcp(<server>/agent_swarm)` rules passed with
+  `--settings` (no `--dangerously-skip-permissions`), and `rules > AGENTS.md` in the workspace.
+  *"run opencode_status"* quoted the status; the swarm call returned, but its workers hit opencode's
+  free usage limit (an answer from opencode, not from the bridge). The agy MCP config was put back
+  byte for byte. **At the protocol level** (a script driving the stdio server, real opencode): a
+  swarm sent progress 0/2, 1/2, 2/2; cancelling an `opencode_ask` 8 s in, and a two-worker swarm
+  10 s in, left no process under the server 5-6 s later (5 and 9 before). **Found:** opencode 2.2.5
+  `run --standalone` started several times at once makes some runs fail within 0.5 s with
+  "Standalone server exited before reporting readiness" (reproduced without agent-intern; started
+  0.3 s apart, 10 of 10 ran). The bridge now retries that one error; live, each retried run got past
+  server start, but the free quota was spent by then, so a full answer after a retry was seen only
+  with the fake CLI. Not checked: cancelling from a host's UI, how a host shows progress,
+  `watch=true`, the Antigravity IDE. `VERIFIED_AGY_VERSION` stays `(1, 5, 8)`: agy as a backend was
+  not re-run on 1.5.11.
 - ✅ **Re-verified on agy 1.5.8 (five releases from 1.5.3). No break; the catalog grew.** Run through
   the working tree on Windows, 2026-11-13: ask and continue in the same conversation on
   `gemini-3.8-flash-high`, a watched ask (the viewer state carried the model), `--model
