@@ -6,6 +6,20 @@ Version-by-version compatibility notes: what changed upstream, what the bridge d
 
 ## Status & caveats
 
+- ✅ **`agent_stats` and the `plan` default, loaded in both hosts (2026-11-18).** Working-tree server
+  on Windows. **At the protocol level:** 33 tools listed (30 with `CLAUDECODE=1`), `agent_stats`
+  among them, and `antigravity_ask`/`antigravity_continue` publish `plan` as boolean-or-null with a
+  null default. **Claude Code 2.1.327** (`--mcp-config` + `--strict-mcp-config`): `antigravity_ask`
+  on `gemini-4-argon-high` with `plan` left out answered, and the `agent_stats` call after it showed
+  that call with the token counts agy reported and the Antigravity quota. **agy 1.5.11** on
+  `gemini-4-argon-high` (the server registered under a second name, per-tool rules passed with
+  `--settings`): `agent_stats` and `antigravity_status` answered. The agy MCP config was put back
+  byte for byte. **Found and fixed before release:** the test suite recorded its fake swarm calls into
+  the real `~/.agent-intern/stats.jsonl`; `conftest.py` now points every test at a temporary file and
+  fails the run if the real one changes. Not checked live: `AGENT_INTERN_AGY_DEFAULT=plan` against a
+  real agy (unit-tested), `agent_stats watch=true` in a real browser, the codex and cursor `--`
+  separator in a real run (checked with each CLI's parser only), and token counts from any backend but
+  agy.
 - ✅ **The 0.39 changes, loaded in both hosts (2026-11-18).** Working-tree server on Windows.
   **Claude Code 2.1.327** (`--mcp-config` + `--strict-mcp-config`): 29 tools listed,
   `opencode_status` answered, and a two-worker `agent_swarm` on a free opencode model came back 2/2.
