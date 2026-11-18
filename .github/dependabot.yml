@@ -1,0 +1,19 @@
+# Weekly update proposals. Actions are pinned to commit SHAs (see the workflows), so
+# without this nothing would ever move them.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "build(actions)"
+
+  # The root pyproject.toml only (the dev extras and the runtime dependencies).
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "build(deps)"
+    open-pull-requests-limit: 5

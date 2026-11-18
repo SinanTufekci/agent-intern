@@ -6,6 +6,14 @@ name: Publish to PyPI
 # https://pypi.org/manage/project/agent-intern/settings/publishing/
 #   Owner: SinanTufekci  Repo: agent-intern
 #   Workflow: publish.yml  Environment: pypi
+#
+# Three jobs, so the one that can mint a PyPI/registry identity never runs build code:
+#   build         checks out and builds, checks the tag and the wheel; no id-token
+#   publish       downloads what build made and uploads it; id-token, nothing else runs
+#   mcp-registry  lists the release in the MCP Registry once PyPI has it
+#
+# Every third-party action is pinned to a full commit SHA, with its version in the
+# trailing comment. Dependabot (.github/dependabot.yml) proposes the bumps.
 
 on:
   push:
@@ -15,17 +23,14 @@ permissions:
   contents: read
 
 jobs:
-  publish:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: pypi
-      url: https://pypi.org/p/agent-intern
-    permissions:
-      id-token: write # OIDC token for PyPI Trusted Publishing
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
 
@@ -52,8 +57,33 @@ jobs:
           cd "$RUNNER_TEMP"
           "$RUNNER_TEMP/venv/bin/python" -c "import server; print('agent-intern', server.__version__, 'imports cleanly')"
 
+      # The publish job uploads exactly these files, not a second build of the tag.
+      - name: Keep the built distributions for the publish job
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/agent-intern
+    permissions:
+      id-token: write # OIDC token for PyPI Trusted Publishing
+    steps:
+      - name: Download the built distributions
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist/
+
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        # pypa's docs recommend the release/v1 branch; pinned here to the SHA of its latest release tag
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
 
   # List the release in the official MCP Registry (registry.modelcontextprotocol.io),
   # which MCP clients and directories read from. It verifies we own the PyPI package
@@ -68,12 +98,23 @@ jobs:
       id-token: write
     env:
       MCP_PUBLISHER_VERSION: v1.8.7
+      # sha256 of mcp-publisher_linux_amd64.tar.gz for MCP_PUBLISHER_VERSION. It is the line
+      # in that release's own registry_1.8.7_checksums.txt, and it matches both the digest
+      # GitHub shows for the asset and a sha256sum of a download made when it was pinned.
+      # Whoever bumps MCP_PUBLISHER_VERSION must replace this with the new release's hash.
+      MCP_PUBLISHER_SHA256: 00b21004149a4ce66f0782508ae4a2bce67d1bea395a8da0bd8028159fb59579
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install mcp-publisher
         run: |
-          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+          set -euo pipefail
+          archive="$RUNNER_TEMP/mcp-publisher.tar.gz"
+          curl -fsSL -o "$archive" "https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz"
+          echo "${MCP_PUBLISHER_SHA256}  ${archive}" | sha256sum --check -
+          tar xzf "$archive" mcp-publisher
 
       - name: Authenticate to the MCP Registry
         run: ./mcp-publisher login github-oidc

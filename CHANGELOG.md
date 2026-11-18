@@ -25,6 +25,13 @@ human-facing summary.
   row now name that command next to the uvx one. Manual `uvx agent-intern` registrations are
   unchanged.
 
+### Security
+
+- **The release pipeline is pinned and split.** Every GitHub Action is pinned to a full commit SHA
+  (Dependabot now proposes updates for the actions and the Python dependency), the job that holds the
+  PyPI upload permission no longer builds anything (it uploads the artifact a separate build job
+  made), and the MCP Registry publisher is checked against its SHA-256 before it runs.
+
 ### Docs
 
 - **The README starts with what you gain.** The top now says in two lines why you would hand errands to
