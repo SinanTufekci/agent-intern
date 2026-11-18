@@ -1,10 +1,14 @@
 name: Release
 
-# On every version tag, cut a GitHub Release with auto-generated notes (commits
-# /PRs since the previous tag). Runs in parallel with publish.yml, which uploads
-# the same tag to PyPI. Tag a release with:
+# On every version tag, cut a GitHub Release. Runs in parallel with publish.yml, which
+# uploads the same tag to PyPI. Tag a release with:
 #   git tag vX.Y.Z && git push origin vX.Y.Z
 # (keep the tag in sync with pyproject.toml / server.py __version__).
+#
+# The release is titled "vX.Y.Z — <headline>", with the headline taken from the subject of
+# the tagged commit ("release: X.Y.Z — headline"), and its notes are the matching
+# "## [X.Y.Z]" section of CHANGELOG.md. If the subject or the section is missing, the
+# release falls back to the bare tag name and/or GitHub's auto-generated notes.
 
 on:
   push:
@@ -19,14 +23,57 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0 # full history so generated notes can diff from the prior tag
+          fetch-depth: 0 # full history so the tagged commit, the previous tag and generated notes resolve
 
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "$GITHUB_REF_NAME" \
-            --generate-notes \
-            --verify-tag
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          version="${tag#v}"
+
+          # Title: "vX.Y.Z — headline" from the release commit subject. The dash may be an
+          # em dash, an en dash or a hyphen; literal prefix matching keeps this locale-proof.
+          title="$tag"
+          subject="$(git log -1 --format=%s "${tag}^{commit}" 2>/dev/null || true)"
+          for dash in "—" "–" "-"; do
+            prefix="release: ${version} ${dash} "
+            if [[ "$subject" == "$prefix"* ]]; then
+              headline="${subject#"$prefix"}"
+              if [[ -n "$headline" ]]; then
+                title="${tag} — ${headline}"
+              fi
+              break
+            fi
+          done
+
+          # Notes: the "## [X.Y.Z]" section of CHANGELOG.md, without its heading (the title
+          # carries the version). The section ends at the next "## [" heading or at the
+          # link-reference block at the end of the file.
+          notes_file="$(mktemp)"
+          awk -v v="$version" '
+            index($0, "## [" v "]") == 1 { on = 1; started = 0; next }
+            on && /^## \[/ { exit }
+            on && /^\[[^]]+\]: / { exit }
+            on {
+              if (!started && $0 ~ /^[[:space:]]*$/) next
+              started = 1
+              print
+            }
+          ' CHANGELOG.md > "$notes_file"
+
+          args=(--repo "$GITHUB_REPOSITORY" --title "$title" --verify-tag)
+          if grep -q '[^[:space:]]' "$notes_file"; then
+            prev="$(git describe --tags --abbrev=0 "${tag}^" 2>/dev/null || true)"
+            if [[ -n "$prev" ]]; then
+              printf '\n**Full Changelog**: https://github.com/%s/compare/%s...%s\n' \
+                "$GITHUB_REPOSITORY" "$prev" "$tag" >> "$notes_file"
+            fi
+            args+=(--notes-file "$notes_file")
+          else
+            echo "No CHANGELOG.md section for ${version}; falling back to generated notes." >&2
+            args+=(--generate-notes)
+          fi
+
+          gh release create "$tag" "${args[@]}"
