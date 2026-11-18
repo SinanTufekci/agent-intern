@@ -10,6 +10,8 @@ human-facing summary.
 
 ## [Unreleased]
 
+## [0.40.0] - 2026-11-18
+
 ### Added
 
 - **`agent_stats` and `/agent-intern:stats`: a local usage summary.** One tool shows calls per backend
@@ -2233,7 +2235,8 @@ caller might copy becomes a guaranteed rejected call.
 
 - **BREAKING:** `antigravity_ask_stream` (superseded by watch mode).
 
-[Unreleased]: https://github.com/SinanTufekci/agent-intern/compare/v0.39.0...HEAD
+[Unreleased]: https://github.com/SinanTufekci/agent-intern/compare/v0.40.0...HEAD
+[0.40.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.39.0...v0.40.0
 [0.39.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.37.1...v0.38.0
 [0.37.1]: https://github.com/SinanTufekci/agent-intern/compare/v0.37.0...v0.37.1
