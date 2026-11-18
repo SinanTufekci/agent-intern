@@ -10,6 +10,8 @@ human-facing summary.
 
 ## [Unreleased]
 
+## [0.39.0] - 2026-11-18
+
 ### Added
 
 - **Swarm tools report progress and keep their replies inline.** `agent_swarm`, `preset_swarm` and
@@ -53,6 +55,11 @@ human-facing summary.
   `*_ask`, `*_continue` and swarm workers name the CLI and say how to install it or point `<X>_BIN`
   at it, instead of a bare `[WinError 2]` / `[Errno 2]` error. agy's plan and schema version gates and
   the claude and opencode version checks give the same message when the CLI is missing.
+- **opencode 2.x runs that lose the startup race are retried.** Several `opencode run`s started
+  together (for example an `agent_swarm` with two or more opencode workers) can fail with
+  "Standalone server exited before reporting readiness". A run whose private server never started is
+  now started again up to twice after a short random pause, within the same timeout; any other error
+  still fails at once.
 
 ### Docs
 
@@ -62,7 +69,8 @@ human-facing summary.
   opencode 2.x package is named in backends.md; the FAQ snippet works with either server name.
 - **The bug report template asks for the host and the install method.**
 - **README has a four-step "Quick start: Antigravity CLI"** (register, allow the tools, write the
-  routing guide, ask). docs/setup.md documents the per-tool `mcp(<server>/<tool>)` rule, the
+  routing guide, ask). On agy 1.5.11, registration, `rules > AGENTS.md` and an `opencode_status` call
+  were checked live, with the allow rules passed through `agy --settings`. docs/setup.md documents the per-tool `mcp(<server>/<tool>)` rule, the
   `--settings` flag and the per-project permission files, and says the Antigravity IDE is not
   verified yet.
 - **Swarm docs:** the 40,000/15,000-character reply budget, where longer answers are saved, and the
@@ -2156,7 +2164,8 @@ caller might copy becomes a guaranteed rejected call.
 
 - **BREAKING:** `antigravity_ask_stream` (superseded by watch mode).
 
-[Unreleased]: https://github.com/SinanTufekci/agent-intern/compare/v0.38.0...HEAD
+[Unreleased]: https://github.com/SinanTufekci/agent-intern/compare/v0.39.0...HEAD
+[0.39.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.37.1...v0.38.0
 [0.37.1]: https://github.com/SinanTufekci/agent-intern/compare/v0.37.0...v0.37.1
 [0.37.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.36.0...v0.37.0
