@@ -28,8 +28,9 @@ docs/superpowers/
 # Local git-bundle backups (e.g. agy-repo-backup-pre-scrub.bundle) — never publish.
 *.bundle
 
-# Claude Code session notes — local only, kept out of the public repo.
+# Claude Code session notes and plans — local only, kept out of the public repo.
 CLAUDE.md
+PLAN.md
 
 # macOS Finder metadata
 .DS_Store
