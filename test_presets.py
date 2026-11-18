@@ -22,6 +22,9 @@ def isolated_dirs(tmp_path, monkeypatch):
     ~/.agent-intern/swarms/ never leaks into a test."""
     home = tmp_path / "home" / ".agent-intern" / "swarms"
     monkeypatch.setattr(sp, "user_dir", lambda: home)
+    # Spilled panel output goes under ~/.agent-intern/runs/; never write there from a test.
+    runs = tmp_path / "home" / ".agent-intern" / "runs"
+    monkeypatch.setattr(swarm, "runs_root", lambda: runs)
     return home
 
 
@@ -364,6 +367,61 @@ def test_run_scores_a_jury(monkeypatch):
     monkeypatch.setattr(swarm, "swarm_agents", fake)
     out = sp.run("jury", "An application.")
     assert "| **Weighted total** | | **7.0** | **7.0** | **7.0** | **7.0** | 0 |" in out
+
+
+def test_run_passes_the_progress_listener_to_the_swarm(monkeypatch):
+    seen = {}
+
+    def fake(tasks, *a, **k):
+        seen["on_progress"] = k.get("on_progress")
+        return [WorkerResult(i, True, answer="a") for i in range(len(tasks))]
+
+    monkeypatch.setattr(swarm, "swarm_agents", fake)
+
+    def listener(done, total):
+        pass
+
+    sp.run("red-team", "Plan", on_progress=listener)
+    assert seen["on_progress"] is listener
+    sp.run("red-team", "Plan")  # without one, the swarm is called as before
+    assert seen["on_progress"] is None
+
+
+def test_a_long_panel_answer_is_cut_to_an_excerpt_and_a_file(monkeypatch, tmp_path):
+    runs = tmp_path / "runs"
+    monkeypatch.setattr(swarm, "runs_root", lambda: runs)
+    long_ = "begin " + "y" * (swarm.WORKER_OUTPUT_CAP + 500) + " finish"
+
+    def fake(tasks, *a, **k):
+        return [WorkerResult(i, True, answer=long_) for i in range(len(tasks))]
+
+    monkeypatch.setattr(swarm, "swarm_agents", fake)
+    out = sp.run("red-team", "Plan")
+    assert len(out) < swarm.TOTAL_OUTPUT_CAP
+    assert "begin" in out and "finish" in out and "characters omitted" in out
+    (run_dir,) = list(runs.iterdir())
+    spilled = (run_dir / "worker-0.md").read_text(encoding="utf-8")
+    assert spilled.count("y") > swarm.WORKER_OUTPUT_CAP
+
+
+def test_a_jury_is_scored_from_the_full_answer_but_prints_only_an_excerpt(monkeypatch, tmp_path):
+    runs = tmp_path / "runs"
+    monkeypatch.setattr(swarm, "runs_root", lambda: runs)
+    scores = {c: 7 for c in ("originality", "feasibility", "impact", "clarity")}
+    # Valid scores, then a rambling tail well past the worker cap.
+    good = json.dumps({"scores": scores}) + "\n" + "z" * (swarm.WORKER_OUTPUT_CAP + 500)
+    unscorable = "no json here " + "q" * (swarm.WORKER_OUTPUT_CAP + 500) + " the end"
+
+    def fake(tasks, *a, **k):
+        answers = [good, unscorable] + [json.dumps({"scores": scores})] * (len(tasks) - 2)
+        return [WorkerResult(i, True, answer=a) for i, a in enumerate(answers)]
+
+    monkeypatch.setattr(swarm, "swarm_agents", fake)
+    out = sp.run("jury", "An application.")
+    assert "7.0" in out  # the first juror's scores were read from the full answer
+    assert "the end" in out and "characters omitted" in out  # the unscorable one is excerpted
+    assert out.count("q") < swarm.WORKER_OUTPUT_CAP
+    assert (next(runs.iterdir()) / "worker-1.md").exists()
 
 
 def test_run_needs_material():

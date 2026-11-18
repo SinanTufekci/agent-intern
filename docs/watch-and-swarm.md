@@ -157,6 +157,11 @@ quota/rate-limit pressure for wall-clock.
   and a model that finishes early simply returns early.
 - **Error isolation** — a worker that fails is reported in place; the others still
   return.
+- **Output budget** — the combined reply is capped at about 40,000 characters, and no worker takes more than
+  15,000, so a swarm of talkative workers arrives inline instead of being rerouted by the host. A longer answer
+  is written in full to `~/.agent-intern/runs/<run>/worker-N.md` (never into your repo); the reply keeps an
+  excerpt of its start and end plus that path. Run folders older than 14 days are removed the next time a
+  swarm saves one. That folder can hold parts of your project's files, so delete it whenever you like. The swarm tools also send MCP progress ("3/8 workers done") to hosts that ask for it.
 - **`watch=true`** — opens a thin live **Agent Swarm** dashboard (one card per
   worker, with its **backend's logo**, repo, prompt, and latest step). **Click a card**
   to pop that agent into its own window streaming its full step log.

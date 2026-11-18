@@ -763,7 +763,10 @@ def run(
     timeout_s: Optional[int] = None,
     max_concurrency: int = 4,
     watch: bool = False,
+    on_progress=None,
 ) -> str:
+    """Run a preset and render its panel. `on_progress(done, total)`, if given, is called
+    as members finish (see swarm.swarm_agents)."""
     if not material or not material.strip():
         raise ValueError("material is required: the text the panel should work on")
     ws = os.path.abspath(workspace) if workspace else os.getcwd()
@@ -778,17 +781,29 @@ def run(
         }
         for m in p.members
     ]
+    extra = {"on_progress": on_progress} if on_progress is not None else {}
     results = swarm.swarm_agents(
         tasks,
         max_concurrency,
         timeout_s or p.timeout_s,
         watch,
         labels=[_label(m.role, material) for m in p.members],
+        **extra,
     )
+    # Jurors are scored from their full answers; only what is printed is held to the
+    # output budget (render_jury prints a juror's raw answer when it cannot be scored).
+    shown = swarm.budget_results(results)
     if p.kind == "jury":
-        pairs = zip(p.members, results, strict=True)
-        return render_jury(p, [score(p, m.role, m.backend, r) for m, r in pairs])
-    return render_panel(p, results)
+        verdicts = []
+        for m, r, b in zip(p.members, results, shown, strict=True):
+            v = score(p, m.role, m.backend, r)
+            if b.ok:
+                v.raw = b.answer or ""
+            else:
+                v.error = b.error or ""
+            verdicts.append(v)
+        return render_jury(p, verdicts)
+    return render_panel(p, shown)
 
 
 def describe(name: Optional[str] = None, workspace: Optional[str] = None) -> str:

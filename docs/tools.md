@@ -192,4 +192,7 @@ Antigravity:
 - **Antigravity:** `"read-only"` is **plan mode**, `"workspace-write"` is **refused**, and **omitting
   `sandbox` leaves the worker unrestricted** (see the note above this section).
 
+A swarm reply is capped at about 40,000 characters, 15,000 per worker; a longer answer is saved in full under
+`~/.agent-intern/runs/` and the reply keeps an excerpt and the path ([details](watch-and-swarm.md#swarm)).
+
 Kimi is not a swarm backend.

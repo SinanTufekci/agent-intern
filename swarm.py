@@ -43,17 +43,22 @@ functions) so this module can be imported by server.py without a circular import
 
 from __future__ import annotations
 
+import asyncio
+import contextvars
 import json
 import os
+import re
+import secrets
 import shutil
 import subprocess
 import tempfile
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 import proc_tree
 
@@ -334,6 +339,28 @@ class WorkerResult:
     image_format: Optional[str] = None
     image_size: Optional[int] = None
     backend: str = ""
+
+
+ProgressCallback = Callable[[int, int], None]
+
+
+def _notify(on_progress: Optional[ProgressCallback], done: int, total: int) -> None:
+    """Tell a progress listener how many of `total` workers have finished. A listener
+    that raises must not fail a swarm, so its errors are dropped."""
+    if on_progress is None:
+        return
+    try:
+        on_progress(done, total)
+    except Exception:  # noqa: BLE001 - progress is cosmetic; never break the run
+        pass
+
+
+def _submit_in_context(ex: ThreadPoolExecutor, fn: Callable, *args: Any):
+    """ex.submit(fn, *args) in a copy of the caller's context. Pool threads do not
+    inherit contextvars, and proc_tree.CURRENT_CALL (which lets a cancelled tool call
+    find the agent processes it started) is one. Each submit takes its own copy: a
+    Context cannot be entered by two threads at once."""
+    return ex.submit(contextvars.copy_context().run, fn, *args)
 
 
 def _normalize_workspaces(n: int, workspaces: Union[None, str, list]) -> list[str]:
@@ -904,8 +931,12 @@ def swarm_image(
     max_concurrency: int = DEFAULT_MAX_CONCURRENCY,
     timeout_s: int = 240,
     watch: bool = False,
+    on_progress: Optional[ProgressCallback] = None,
 ) -> list[WorkerResult]:
-    """Generate N images in parallel (one isolated agy worker each)."""
+    """Generate N images in parallel (one isolated agy worker each).
+
+    `on_progress(done, total)` is called from this thread: once with done=0, then after
+    each finished worker (see _notify)."""
     if len(output_paths) != len(prompts):
         raise ValueError("output_paths must align with prompts")
     ws = _normalize_workspaces(len(prompts), workspaces)
@@ -924,14 +955,16 @@ def swarm_image(
         )
         swarm_watch.open_window(len(prompts))
     results: list[Optional[WorkerResult]] = [None] * len(prompts)
+    _notify(on_progress, 0, len(prompts))
     with ThreadPoolExecutor(max_workers=max(1, max_concurrency)) as ex:
         futs = [
-            ex.submit(runner, i, prompts[i], targets[i], ws[i], timeout_s)
+            _submit_in_context(ex, runner, i, prompts[i], targets[i], ws[i], timeout_s)
             for i in range(len(prompts))
         ]
-        for fut in futs:
+        for done, fut in enumerate(as_completed(futs), start=1):
             r = fut.result()
             results[r.index] = r
+            _notify(on_progress, done, len(prompts))
     return [r for r in results if r is not None]
 
 
@@ -1621,6 +1654,7 @@ def swarm_agents(
     timeout_s: int = 180,
     watch: bool = False,
     labels: Optional[list[str]] = None,
+    on_progress: Optional[ProgressCallback] = None,
 ) -> list[WorkerResult]:
     """Run a heterogeneous swarm: each task dispatches to its named backend's worker,
     all concurrently in one pool (and, with watch, one shared dashboard).
@@ -1628,6 +1662,9 @@ def swarm_agents(
     `labels` are the dashboard's card captions, one per task; by default each is the
     first line of its prompt. A preset passes its members' roles instead, because
     all of its prompts open with the same boilerplate.
+
+    `on_progress(done, total)` is called from this thread: once with done=0 when the
+    tasks are validated, then after each finished worker (failed ones count).
     """
     norm = _normalize_tasks(tasks)
     n = len(norm)
@@ -1698,17 +1735,228 @@ def swarm_agents(
         return fn(i, t["prompt"], t["workspace"], t["model"], timeout_s, t["plan"])
 
     results: list[Optional[WorkerResult]] = [None] * n
+    _notify(on_progress, 0, n)
     with ThreadPoolExecutor(max_workers=max(1, max_concurrency)) as ex:
-        futs = [ex.submit(runner, i) for i in range(n)]
-        for fut in futs:
+        futs = [_submit_in_context(ex, runner, i) for i in range(n)]
+        for done, fut in enumerate(as_completed(futs), start=1):
             r = fut.result()
             r.backend = backends[r.index]  # authoritative, even if a runner left it blank
             results[r.index] = r
+            _notify(on_progress, done, n)
     return [r for r in results if r is not None]
 
 
+# ------------------------------------------------------------------- output budget
+# Claude Code saves an MCP text result to a file once it is over 50,000 characters (or
+# MAX_MCP_OUTPUT_TOKENS, 25,000 tokens by default) and hands the model only a path, and
+# its transcript viewer warns above 10,000 tokens. The reply therefore stays under
+# 40,000 characters and no worker takes more than 15,000, so a swarm of verbose workers
+# arrives inline instead of being rerouted by the host. Antigravity's own limit is
+# unknown. What does not fit is written in full under ~/.agent-intern/runs/, never in
+# the user's repo, and the reply carries an excerpt and the path.
+WORKER_OUTPUT_CAP = 15_000
+TOTAL_OUTPUT_CAP = 40_000
+EXCERPT_CHARS = 2_000  # head and tail of a spilled answer left in the reply
+MIN_EXCERPT_CHARS = 300  # the floor when even the excerpts do not fit
+_ENTRY_OVERHEAD = 200  # a worker's header line and separators
+_SPILL_NOTE = 400  # the omitted-characters marker and the path line
+RUNS_KEEP_DAYS = 14
+_RUN_DIR_RE = re.compile(r"^\d{8}-\d{6}-[0-9a-f]{6}$")
+
+
+def runs_root() -> Path:
+    return Path.home() / ".agent-intern" / "runs"
+
+
+def _prune_old_runs(root: Path) -> None:
+    """Drop run directories this module made more than RUNS_KEEP_DAYS ago. Best effort;
+    only entries named like a run id are touched."""
+    cutoff = time.time() - RUNS_KEEP_DAYS * 86400
+    try:
+        entries = list(root.iterdir())
+    except OSError:
+        return
+    for d in entries:
+        try:
+            if _RUN_DIR_RE.match(d.name) and d.is_dir() and not d.is_symlink():
+                if d.stat().st_mtime < cutoff:
+                    shutil.rmtree(d, ignore_errors=True)
+        except OSError:
+            continue
+
+
+def _new_run_dir() -> Path:
+    root = runs_root()
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    _prune_old_runs(root)
+    d = root / f"{time.strftime('%Y%m%d-%H%M%S')}-{secrets.token_hex(3)}"
+    d.mkdir(mode=0o700)
+    return d
+
+
+def _excerpt(text: str, n: int) -> str:
+    """The first two thirds and the last third of an `n`-character budget: an answer's
+    conclusion is often at its end."""
+    head = n * 2 // 3
+    tail = n - head
+    omitted = len(text) - head - tail
+    return f"{text[:head].rstrip()}\n[… {omitted:,} characters omitted …]\n{text[-tail:].lstrip()}"
+
+
+def budget_results(
+    results: list[WorkerResult],
+    worker_cap: int = WORKER_OUTPUT_CAP,
+    total_cap: int = TOTAL_OUTPUT_CAP,
+) -> list[WorkerResult]:
+    """Copies of `results` whose answers and errors fit the output budget.
+
+    A text over `worker_cap` is spilled; if the reply would still pass `total_cap`, the
+    longest remaining texts are spilled too, and if even excerpts of everything do not
+    fit, the excerpts shrink. A spilled text is written in full to
+    runs_root()/<run-id>/worker-N.md and replaced by an excerpt and that path (or by
+    the excerpt and the reason, if the file cannot be written). Nothing is written
+    when everything fits."""
+    texts = {r.index: ((r.answer or "") if r.ok else (r.error or "")) for r in results}
+    spill = {i for i, t in texts.items() if len(t) > worker_cap}
+    excerpt_n = EXCERPT_CHARS
+
+    def total() -> int:
+        return sum(
+            _ENTRY_OVERHEAD + (excerpt_n + _SPILL_NOTE if i in spill else len(t))
+            for i, t in texts.items()
+        )
+
+    while total() > total_cap:
+        rest = [i for i, t in texts.items() if i not in spill and len(t) > excerpt_n + _SPILL_NOTE]
+        if not rest:
+            break
+        spill.add(max(rest, key=lambda i: len(texts[i])))
+    if spill and total() > total_cap:
+        excerpt_n = max(MIN_EXCERPT_CHARS, total_cap // len(texts) - _ENTRY_OVERHEAD - _SPILL_NOTE)
+    if not spill:
+        return results
+
+    run_dir: Optional[Path] = None
+    run_dir_error = ""
+    out = []
+    for r in results:
+        if r.index not in spill:
+            out.append(r)
+            continue
+        text = texts[r.index]
+        note = ""
+        if not run_dir_error:
+            try:
+                run_dir = run_dir or _new_run_dir()
+                path = run_dir / f"worker-{r.index}.md"
+                state = "OK" if r.ok else "ERROR"
+                head = f"# worker {r.index} · {r.backend or '?'} · {state} ({r.elapsed}s)"
+                path.write_text(f"{head}\n\n{text}\n", encoding="utf-8")
+                try:
+                    path.chmod(0o600)
+                except OSError:
+                    pass
+                note = f"\n(full text, {len(text):,} characters: {path})"
+            except OSError as e:
+                run_dir_error = str(e)
+        if run_dir_error:
+            note = f"\n(the full text could not be saved: {run_dir_error})"
+        shown = _excerpt(text, excerpt_n) + note
+        out.append(replace(r, answer=shown) if r.ok else replace(r, error=shown))
+    return out
+
+
+# --------------------------------------------------------------------- MCP progress
+_PROGRESS_HEARTBEAT_S = 5.0  # a quiet swarm still reports this often
+_PROGRESS_FRACTION_S = 30.0  # how fast the part of a worker "in flight" creeps up
+
+
+async def run_with_worker_progress(
+    ctx: Any, run: Callable[[Optional[ProgressCallback]], str]
+) -> str:
+    """Run the blocking swarm `run(on_progress)` off the event loop and send MCP progress
+    while it works: progress is the number of finished workers over the total ("3/8
+    workers done"), which is real, unlike a single call's elapsed-time bar.
+
+    The spec wants progress to increase with every notification, so a swarm that is
+    quiet for a while still sends a heartbeat: the finished count plus a fraction below
+    one that grows with the time since the last worker finished. With `ctx` None (a
+    direct or test call, or a client that sent no progressToken) it is a plain threaded
+    call with no notifications. Reporting is best-effort and never fails the run.
+
+    A cancelled call (the client's notifications/cancelled) kills every agent process
+    tree the swarm started, as server._run_with_progress does for a single call: the
+    call is made proc_tree.CURRENT_CALL before the thread starts, and the swarm's pool
+    threads join that context (see _submit_in_context), so proc_tree.popen files each
+    worker's process under it. Workers still queued when it is cancelled fail at once
+    instead of starting."""
+    call = proc_tree.Call()
+    token = proc_tree.CURRENT_CALL.set(call)
+    try:
+        loop = asyncio.get_running_loop()
+        wake = asyncio.Event()
+        latest: list[Optional[tuple[int, int, float]]] = [None]  # set from the worker thread
+
+        def on_progress(done: int, total: int) -> None:
+            latest[0] = (done, total, time.monotonic())
+            loop.call_soon_threadsafe(wake.set)
+
+        # asyncio.to_thread copies the context, so the worker thread sees `call`
+        task = asyncio.ensure_future(asyncio.to_thread(run, on_progress if ctx else None))
+    finally:
+        proc_tree.CURRENT_CALL.reset(token)
+    try:
+        if ctx is None:
+            return await task
+        return await _report_until_done(ctx, task, latest, wake)
+    except asyncio.CancelledError:
+        # Off the event loop (wait=False): taskkill can take seconds.
+        proc_tree.cancel_call(call, wait=False)
+        raise
+
+
+async def _report_until_done(
+    ctx: Any,
+    task: "asyncio.Future[str]",
+    latest: list,
+    wake: asyncio.Event,
+) -> str:
+    """Send the finished/total progress until `task` is done; return its result."""
+    started = time.monotonic()
+    last = -1.0
+    while not task.done():
+        waiter = asyncio.ensure_future(wake.wait())
+        try:
+            await asyncio.wait(
+                {task, waiter}, timeout=_PROGRESS_HEARTBEAT_S, return_when=asyncio.FIRST_COMPLETED
+            )
+        finally:
+            waiter.cancel()
+        wake.clear()
+        snap = latest[0]
+        if snap is None:
+            continue
+        done, total, since = snap
+        age = time.monotonic() - since
+        progress = float(total) if done >= total else done + age / (age + _PROGRESS_FRACTION_S)
+        if progress <= last:
+            continue
+        last = progress
+        try:
+            await ctx.report_progress(
+                progress=progress,
+                total=float(total),
+                message=f"{done}/{total} workers done ({int(time.monotonic() - started)}s)",
+            )
+        except Exception:  # noqa: BLE001 - progress is cosmetic; never break the run
+            pass
+    return await task  # re-raises any error from the worker thread
+
+
 def format_agent_results(results: list[WorkerResult]) -> str:
-    """Render unified-swarm results as one block, tagged by backend per worker."""
+    """Render unified-swarm results as one block, tagged by backend per worker. Long
+    answers are cut down to an excerpt and a file path (see budget_results)."""
+    results = budget_results(results)
     parts = []
     for r in sorted(results, key=lambda r: r.index):
         head = f"[worker {r.index} · {r.backend or '?'}] {'OK' if r.ok else 'ERROR'} ({r.elapsed}s)"

@@ -6,16 +6,31 @@ AI Pro quota. The live parallel round-trip is in test_smoke.py.
     pytest test_swarm.py
 """
 
+import asyncio
+import inspect
 import io
 import os
 import subprocess
 import sys
+import threading
+import time
 
 import pytest
 
+import proc_tree
 import server
 import swarm
 import swarm_watch
+
+_REAL_RUNS_ROOT = swarm.runs_root  # before the fixture below redirects it
+
+
+@pytest.fixture(autouse=True)
+def _runs_in_tmp(tmp_path, monkeypatch):
+    """Spilled swarm output goes under ~/.agent-intern/runs/; never write there from a test."""
+    runs = tmp_path / "home" / ".agent-intern" / "runs"
+    monkeypatch.setattr(swarm, "runs_root", lambda: runs)
+    return runs
 
 
 @pytest.fixture(autouse=True)
@@ -1408,3 +1423,345 @@ def test_serialized_image_worker_still_returns_an_image_when_agy_failed(monkeypa
     monkeypatch.setattr(server, "_finalize_image", lambda t, txt, start: (target, "png", 9))
     res = swarm._run_image_worker_serialized(0, "draw", target, str(tmp_path), 5, 0.0)
     assert res.ok is True and res.image_path == target
+
+
+# --------------------------------------------------------------------------
+# progress: how many workers have finished
+# --------------------------------------------------------------------------
+
+
+def _fake_codex_answering(monkeypatch, delays=None):
+    def fake_codex(index, prompt, workspace, sandbox, model, timeout_s, effort=None):
+        if delays:
+            time.sleep(delays[index])
+        return swarm.WorkerResult(index, True, answer="cdx:" + prompt, workspace=workspace)
+
+    monkeypatch.setattr(swarm, "_run_codex_worker", fake_codex)
+
+
+def test_swarm_agents_reports_each_finished_worker(monkeypatch):
+    # The slowest worker is index 0, so completion order differs from index order: the
+    # count still climbs by one per worker.
+    _fake_codex_answering(monkeypatch, delays=[0.15, 0.0, 0.05])
+    seen = []
+    results = swarm.swarm_agents(
+        [{"backend": "codex", "prompt": f"p{i}"} for i in range(3)],
+        max_concurrency=3,
+        on_progress=lambda done, total: seen.append((done, total)),
+    )
+    assert seen == [(0, 3), (1, 3), (2, 3), (3, 3)]
+    assert [r.answer for r in results] == ["cdx:p0", "cdx:p1", "cdx:p2"]  # still in index order
+
+
+def test_swarm_agents_counts_a_failed_worker_as_finished(monkeypatch):
+    monkeypatch.setattr(server, "ENABLED_BACKENDS", ("codex",))
+    _fake_codex_answering(monkeypatch)
+    seen = []
+    swarm.swarm_agents(
+        [{"backend": "codex", "prompt": "p0"}, {"backend": "copilot", "prompt": "p1"}],
+        on_progress=lambda done, total: seen.append(done),
+    )
+    assert seen[-1] == 2
+
+
+def test_a_progress_listener_that_raises_does_not_fail_the_swarm(monkeypatch):
+    _fake_codex_answering(monkeypatch)
+
+    def boom(done, total):
+        raise RuntimeError("listener bug")
+
+    results = swarm.swarm_agents([{"backend": "codex", "prompt": "p0"}], on_progress=boom)
+    assert results[0].ok and results[0].answer == "cdx:p0"
+
+
+def test_swarm_image_reports_each_finished_worker(monkeypatch, tmp_path):
+    def fake_image(index, prompt, target, workspace, timeout_s):
+        return swarm.WorkerResult(index, True, image_path=target, image_format="png", image_size=1)
+
+    monkeypatch.setattr(swarm, "_run_image_worker", fake_image)
+    seen = []
+    swarm.swarm_image(
+        ["a", "b"],
+        [str(tmp_path / "a.png"), str(tmp_path / "b.png")],
+        workspaces=str(tmp_path),
+        on_progress=lambda done, total: seen.append((done, total)),
+    )
+    assert seen == [(0, 2), (1, 2), (2, 2)]
+
+
+class _Ctx:
+    """The part of fastmcp's Context the progress helper uses."""
+
+    def __init__(self, fail=False):
+        self.calls = []
+        self.fail = fail
+
+    async def report_progress(self, progress, total=None, message=None):
+        if self.fail:
+            raise RuntimeError("client went away")
+        self.calls.append((progress, total, message))
+
+
+def test_run_with_worker_progress_sends_finished_over_total():
+    def run(on_progress):
+        for done in range(0, 4):
+            on_progress(done, 3)
+            time.sleep(0.05)
+        return "answer"
+
+    ctx = _Ctx()
+    assert asyncio.run(swarm.run_with_worker_progress(ctx, run)) == "answer"
+    msgs = [m for _, _, m in ctx.calls]
+    assert any(m.startswith("3/3 workers done") for m in msgs)
+    assert all(total == 3.0 for _, total, _ in ctx.calls)
+    assert ctx.calls[-1][0] == 3.0  # the last report is exactly "all done", never past it
+
+
+def test_run_with_worker_progress_only_ever_increases(monkeypatch):
+    # A quiet swarm sends heartbeats; each must be larger than the last, and none may
+    # reach the next whole worker before it has finished.
+    monkeypatch.setattr(swarm, "_PROGRESS_HEARTBEAT_S", 0.03)
+
+    def run(on_progress):
+        on_progress(0, 2)
+        time.sleep(0.3)
+        on_progress(1, 2)
+        time.sleep(0.2)
+        on_progress(2, 2)
+        return "x"
+
+    ctx = _Ctx()
+    asyncio.run(swarm.run_with_worker_progress(ctx, run))
+    values = [p for p, _, _ in ctx.calls]
+    assert len(values) >= 4
+    assert values == sorted(values) and len(set(values)) == len(values)
+    first_done = next(i for i, (_, _, m) in enumerate(ctx.calls) if m.startswith("1/2"))
+    assert all(v < 1.0 for v in values[:first_done])
+
+
+def test_run_with_worker_progress_without_a_ctx_is_a_plain_threaded_call():
+    got = []
+
+    def run(on_progress):
+        got.append(on_progress)
+        return "plain"
+
+    assert asyncio.run(swarm.run_with_worker_progress(None, run)) == "plain"
+    assert got == [None]
+
+
+def test_run_with_worker_progress_survives_a_client_that_rejects_progress():
+    def run(on_progress):
+        on_progress(0, 1)
+        time.sleep(0.05)
+        on_progress(1, 1)
+        return "still done"
+
+    assert asyncio.run(swarm.run_with_worker_progress(_Ctx(fail=True), run)) == "still done"
+
+
+def test_run_with_worker_progress_propagates_the_swarms_error():
+    def run(on_progress):
+        raise ValueError("tasks must be a list")
+
+    with pytest.raises(ValueError, match="tasks must be a list"):
+        asyncio.run(swarm.run_with_worker_progress(_Ctx(), run))
+
+
+def test_the_swarm_tools_are_async_and_keep_ctx_out_of_their_schema():
+    import antigravity_tools  # noqa: F401 - registers antigravity_image_swarm
+    import swarm_tools  # noqa: F401
+
+    tools = {t.name: t for t in asyncio.run(server.mcp.list_tools())}
+    for name in ("agent_swarm", "preset_swarm", "antigravity_image_swarm"):
+        assert "ctx" not in tools[name].parameters["properties"], name
+        assert inspect.iscoroutinefunction(
+            getattr(tools[name], "fn", None) or getattr(server, name)
+        )
+
+
+def test_agent_swarm_reports_progress_through_the_mcp_client(monkeypatch):
+    # The whole seam: a real MCP client with a progress handler, the registered tool,
+    # the swarm underneath it. Only the workers are faked.
+    import fastmcp
+
+    _fake_codex_answering(monkeypatch, delays=[0.2, 0.0])
+    seen = []
+
+    async def handler(progress, total, message):
+        seen.append((progress, total, message))
+
+    async def go():
+        async with fastmcp.Client(server.mcp, progress_handler=handler) as client:
+            res = await client.call_tool(
+                "agent_swarm",
+                {
+                    "tasks": [
+                        {"backend": "codex", "prompt": "a"},
+                        {"backend": "codex", "prompt": "b"},
+                    ]
+                },
+            )
+        return res.content[0].text
+
+    text = asyncio.run(go())
+    assert "2/2 succeeded" in text and "cdx:a" in text
+    assert seen, "the swarm sent no progress"
+    assert seen[-1][1] == 2.0 and seen[-1][2].startswith("2/2 workers done")
+
+
+# --------------------------------------------------------------------------
+# cancel: cancelling the tool call stops the agent processes the swarm started
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("with_ctx", [False, True], ids=["no-ctx", "with-ctx"])
+def test_cancelling_a_swarm_kills_every_worker_process(monkeypatch, with_ctx):
+    """End to end with real (python) children: the tool's asyncio task is cancelled
+    while pool threads wait on their processes, and the processes die instead of
+    running to their timeout. This is also the proof that pool threads see the call:
+    without it nothing would be registered under it."""
+    started = threading.Barrier(3, timeout=60)  # two workers + the test
+    procs = []
+
+    def fake_codex(index, prompt, workspace, sandbox, model, timeout_s, effort=None):
+        proc = proc_tree.popen(
+            [sys.executable, "-c", "import time; time.sleep(180)"],
+            start_new_session=os.name != "nt",  # kill_tree's POSIX branch needs its group
+        )
+        procs.append(proc)
+        started.wait()
+        proc.wait()
+        return swarm.WorkerResult(index, False, error="killed", workspace=workspace)
+
+    monkeypatch.setattr(swarm, "_run_codex_worker", fake_codex)
+    ctx = _Ctx() if with_ctx else None
+
+    def run(on_progress):
+        results = swarm.swarm_agents(
+            [{"backend": "codex", "prompt": f"p{i}"} for i in range(2)],
+            max_concurrency=2,
+            on_progress=on_progress,
+        )
+        return swarm.format_agent_results(results)
+
+    async def scenario():
+        task = asyncio.ensure_future(swarm.run_with_worker_progress(ctx, run))
+        await asyncio.to_thread(started.wait)
+        assert len(proc_tree.live_processes()) == 2
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    t0 = time.monotonic()
+    try:
+        asyncio.run(scenario())  # returns only once the worker thread is free
+        for proc in procs:
+            assert proc.wait(timeout=60) is not None
+        assert time.monotonic() - t0 < 120  # well short of the children's 180 s
+        assert proc_tree.live_processes() == []
+    finally:
+        for proc in procs:  # never leave a sleeper behind if an assert failed
+            if proc.poll() is None:
+                proc_tree.kill_tree(proc)
+
+
+def test_a_swarm_that_is_not_cancelled_leaves_nothing_registered_as_cancelled(monkeypatch):
+    # a finished call must not poison the next one: each run gets its own Call
+    _fake_codex_answering(monkeypatch)
+
+    def run(on_progress):
+        return swarm.format_agent_results(
+            swarm.swarm_agents([{"backend": "codex", "prompt": "a"}], on_progress=on_progress)
+        )
+
+    for _ in range(2):
+        assert "1/1 succeeded" in asyncio.run(swarm.run_with_worker_progress(None, run))
+    assert proc_tree.CURRENT_CALL.get() is None  # the caller's context is left as it was
+
+
+# --------------------------------------------------------------------------
+# output budget: a long answer goes to a file, the reply keeps an excerpt and the path
+# --------------------------------------------------------------------------
+
+
+def _result(i, size, ok=True, backend="codex", char="x"):
+    text = f"start-{i} " + char * size + f" end-{i}"
+    if ok:
+        return swarm.WorkerResult(i, True, answer=text, backend=backend, elapsed=1.5)
+    return swarm.WorkerResult(i, False, error=text, backend=backend, elapsed=1.5)
+
+
+def test_budget_leaves_a_swarm_that_fits_alone_and_writes_nothing(_runs_in_tmp):
+    results = [_result(0, 5000), _result(1, 100)]
+    assert swarm.budget_results(results) is results
+    assert not _runs_in_tmp.exists()
+
+
+def test_a_long_answer_becomes_an_excerpt_and_a_path(_runs_in_tmp):
+    long_ = _result(1, swarm.WORKER_OUTPUT_CAP + 5000)
+    results = [_result(0, 300), long_]
+    out = swarm.format_agent_results(results)
+    assert len(out) < swarm.WORKER_OUTPUT_CAP
+    assert "start-1" in out and "end-1" in out  # the head and the tail survive
+    assert "characters omitted" in out
+    (run_dir,) = list(_runs_in_tmp.iterdir())
+    saved = run_dir / "worker-1.md"
+    assert str(saved) in out
+    assert saved.read_text(encoding="utf-8").endswith(long_.answer + "\n")
+    assert "# worker 1 · codex · OK" in saved.read_text(encoding="utf-8")
+    assert not (run_dir / "worker-0.md").exists()  # the short one stays inline
+    assert results[1].answer == long_.answer  # the caller's results are not changed
+
+
+def test_the_runs_directory_is_under_the_users_home_never_the_repo(monkeypatch, tmp_path):
+    monkeypatch.setattr(swarm.Path, "home", classmethod(lambda cls: tmp_path))
+    assert _REAL_RUNS_ROOT() == tmp_path / ".agent-intern" / "runs"
+
+
+def test_many_answers_under_the_worker_cap_still_respect_the_total_cap(_runs_in_tmp):
+    # Five answers of 12,000 characters each are fine one by one and 60,000 together.
+    results = [_result(i, 12_000) for i in range(5)]
+    out = swarm.format_agent_results(results)
+    assert len(out) <= swarm.TOTAL_OUTPUT_CAP
+    spilled = {p.name for p in next(_runs_in_tmp.iterdir()).iterdir()}
+    assert 0 < len(spilled) < 5  # only as many as it takes, the rest stay whole
+    for i in range(5):
+        assert f"end-{i}" in out  # every worker's conclusion is still in the reply
+
+
+def test_a_huge_swarm_shrinks_the_excerpts_to_fit(_runs_in_tmp):
+    results = [_result(i, 20_000) for i in range(30)]
+    out = swarm.format_agent_results(results)
+    assert len(out) <= swarm.TOTAL_OUTPUT_CAP
+    assert len(list(next(_runs_in_tmp.iterdir()).iterdir())) == 30
+
+
+def test_a_long_error_is_budgeted_too(_runs_in_tmp):
+    out = swarm.format_agent_results([_result(0, swarm.WORKER_OUTPUT_CAP + 100, ok=False)])
+    assert "(failed) start-0" in out and "worker-0.md" in out
+
+
+def test_an_unwritable_runs_directory_degrades_to_an_excerpt(monkeypatch, tmp_path):
+    blocker = tmp_path / "blocker"
+    blocker.write_text("a file where a directory is wanted")
+    monkeypatch.setattr(swarm, "runs_root", lambda: blocker / "runs")
+    out = swarm.format_agent_results([_result(0, swarm.WORKER_OUTPUT_CAP + 100)])
+    assert "the full text could not be saved" in out
+    assert len(out) < swarm.WORKER_OUTPUT_CAP
+
+
+def test_old_run_directories_are_pruned_and_other_entries_left_alone(_runs_in_tmp):
+    _runs_in_tmp.mkdir(parents=True)
+    old = _runs_in_tmp / "20200101-000000-abcdef"
+    fresh = _runs_in_tmp / "20991231-235959-abcdef"
+    other = _runs_in_tmp / "my-notes"
+    for d in (old, fresh, other):
+        d.mkdir()
+        (d / "keep.txt").write_text("x")
+    ancient = time.time() - (swarm.RUNS_KEEP_DAYS + 1) * 86400
+    for d in (old, other):
+        os.utime(d, (ancient, ancient))
+    swarm.format_agent_results([_result(0, swarm.WORKER_OUTPUT_CAP + 1)])
+    assert not old.exists()
+    assert fresh.exists() and other.exists()

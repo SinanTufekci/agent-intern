@@ -59,19 +59,21 @@ def main() -> int:
 
     print("\n=== smoke 4: agent_swarm runs tasks in parallel ===")
     t0 = time.time()
-    resp4 = agent_swarm(
-        tasks=[
-            {
-                "backend": "antigravity",
-                "prompt": "Reply with exactly this token and nothing else: ALPHA",
-            },
-            {
-                "backend": "antigravity",
-                "prompt": "Reply with exactly this token and nothing else: BETA",
-            },
-        ],
-        max_concurrency=2,
-        timeout_s=120,
+    resp4 = asyncio.run(
+        agent_swarm(
+            tasks=[
+                {
+                    "backend": "antigravity",
+                    "prompt": "Reply with exactly this token and nothing else: ALPHA",
+                },
+                {
+                    "backend": "antigravity",
+                    "prompt": "Reply with exactly this token and nothing else: BETA",
+                },
+            ],
+            max_concurrency=2,
+            timeout_s=120,
+        )
     )
     print(f"elapsed: {time.time() - t0:.1f}s")
     print(f"result:\n{resp4}")

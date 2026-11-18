@@ -11,6 +11,8 @@ Import server, not this module: server resolves every name in __all__ as
 
 from typing import Optional
 
+from fastmcp import Context
+
 import server
 
 # What server re-exposes as server.<name> (see server.__getattr__).
@@ -29,11 +31,12 @@ __all__ = [
         "openWorldHint": True,
     }
 )
-def agent_swarm(
+async def agent_swarm(
     tasks: list[dict],
     max_concurrency: int = 4,
     timeout_s: int = 180,
     watch: bool = False,
+    ctx: Optional[Context] = None,
 ) -> str:
     """Best for many independent sub-tasks: runs them IN PARALLEL across backends in one
     call. Each task names its backend (Antigravity, Codex, Copilot, Cursor, Claude Code,
@@ -65,8 +68,13 @@ def agent_swarm(
     """
     import swarm
 
-    results = swarm.swarm_agents(tasks, max_concurrency, timeout_s, watch)
-    return swarm.format_agent_results(results)
+    def run(on_progress):
+        results = swarm.swarm_agents(
+            tasks, max_concurrency, timeout_s, watch, on_progress=on_progress
+        )
+        return swarm.format_agent_results(results)
+
+    return await swarm.run_with_worker_progress(ctx, run)
 
 
 @server.mcp.tool(
@@ -77,13 +85,14 @@ def agent_swarm(
         "openWorldHint": True,
     }
 )
-def preset_swarm(
+async def preset_swarm(
     preset: str,
     material: str,
     workspace: Optional[str] = None,
     timeout_s: Optional[int] = None,
     max_concurrency: int = 4,
     watch: bool = False,
+    ctx: Optional[Context] = None,
 ) -> str:
     """Best for getting something JUDGED, RESEARCHED or ATTACKED by several model families:
     runs a predefined panel (jury, research, red-team, council, or the user's own;
@@ -104,9 +113,15 @@ def preset_swarm(
         watch: If true, open the live "Agent Swarm" dashboard, one card per
                member, captioned with its role.
     """
+    import swarm
     import swarm_presets
 
-    return swarm_presets.run(preset, material, workspace, timeout_s, max_concurrency, watch)
+    def run(on_progress):
+        return swarm_presets.run(
+            preset, material, workspace, timeout_s, max_concurrency, watch, on_progress
+        )
+
+    return await swarm.run_with_worker_progress(ctx, run)
 
 
 @server.mcp.tool(

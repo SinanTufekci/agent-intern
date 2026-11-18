@@ -255,13 +255,14 @@ def _broadcast_workspaces(workspaces: Optional[list], n: int):
         "openWorldHint": True,
     }
 )
-def antigravity_image_swarm(
+async def antigravity_image_swarm(
     prompts: list[str],
     output_paths: Optional[list[str]] = None,
     workspaces: Optional[list[str]] = None,
     max_concurrency: int = 4,
     timeout_s: int = 240,
     watch: bool = False,
+    ctx: Optional[Context] = None,
 ) -> str:
     """Best for several images at once: like antigravity_image, but one isolated worker per
     prompt, run in parallel (capped at `max_concurrency`). Returns each image's path,
@@ -285,15 +286,20 @@ def antigravity_image_swarm(
         stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
         base = workspaces[0] if workspaces else os.getcwd()
         output_paths = [os.path.join(base, f"agy-swarm-image-{stamp}-{i}.png") for i in range(n)]
-    results = swarm.swarm_image(
-        prompts,
-        output_paths,
-        workspaces=_broadcast_workspaces(workspaces, n),
-        max_concurrency=max_concurrency,
-        timeout_s=timeout_s,
-        watch=watch,
-    )
-    return swarm.format_image_results(results)
+
+    def run(on_progress):
+        results = swarm.swarm_image(
+            prompts,
+            output_paths,
+            workspaces=_broadcast_workspaces(workspaces, n),
+            max_concurrency=max_concurrency,
+            timeout_s=timeout_s,
+            watch=watch,
+            on_progress=on_progress,
+        )
+        return swarm.format_image_results(results)
+
+    return await swarm.run_with_worker_progress(ctx, run)
 
 
 @server.mcp.tool(
