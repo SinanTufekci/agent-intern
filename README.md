@@ -96,6 +96,30 @@ turned on and says what to fix. It spends no quota, and needs no host. Any `*_st
 > release is out, and **Watch → Custom → Releases** on GitHub emails you when one ships.
 > [Other install paths, from source included →](https://github.com/SinanTufekci/agent-intern/blob/main/docs/setup.md)
 
+### Quick start: Antigravity CLI
+
+Same prerequisites (step 0, and a backend CLI from step 2 other than `agy` itself is the most useful
+one: Antigravity delegating to Antigravity buys you little).
+
+1. **Register it:** `agy mcp add agent-intern uvx agent-intern`. No restart needed.
+2. **Allow the tools.** Interactive `agy` asks before each MCP call, but a headless `agy -p` denies
+   them. Allow the ones you use, one rule per tool, in `~/.gemini/antigravity-cli/settings.json`:
+
+   ```json
+   {"permissions": {"allow": ["mcp(agent-intern/opencode_status)", "mcp(agent-intern/codex_ask)"]}}
+   ```
+
+   (Keep any rules the file already has. `mcp(*)` also works but allows every tool of every server.)
+3. **Give agy the routing guide,** since it shows the model no MCP instructions:
+   `uvx agent-intern rules > AGENTS.md` in your project.
+4. **Ask,** naming the tool: in `agy`, *"run opencode_status"*, then *"use codex_ask to review my last
+   diff"* (example prompts; the registration and `opencode_status` path was verified on agy 1.5.x,
+   these exact steps were not run end to end in one go).
+
+`uvx agent-intern doctor` flags a missing rule. The Antigravity IDE is not verified yet (it keeps its own MCP list); the `agy` CLI path above is the one checked
+([details](https://github.com/SinanTufekci/agent-intern/blob/main/docs/setup.md#antigravity-the-agy-cli)).
+[More on the Antigravity setup ↓](#works-in)
+
 <div align="center">
 <img src="https://raw.githubusercontent.com/SinanTufekci/agent-intern/main/assets/watch-swarm.gif" width="40%" alt="Agent Swarm dashboard: one card per worker with its backend's logo, prompt, a status chip with a live clock, its latest step and a time bar, under counters for running, queued, done and failed workers">
 <br>
@@ -141,8 +165,8 @@ Remove it with `agy mcp remove agent-intern`. Three things differ from Claude Co
 
 `antigravity_ask` called from inside `agy` works, with no lock or conversation clash, and so does
 `claude_ask` (verified on claude 2.1.319). `watch=true`
-under `agy` hasn't been tested. The Antigravity IDE keeps its own MCP server list, which
-`agy mcp add` doesn't touch; adding agent-intern there is untested too.
+under `agy` hasn't been tested. The Antigravity IDE is not verified yet: it keeps its own MCP server list, which
+`agy mcp add` doesn't touch, and adding agent-intern there is untested. Reports welcome.
 
 </details>
 

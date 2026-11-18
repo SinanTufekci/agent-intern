@@ -10,8 +10,22 @@ human-facing summary.
 
 ## [Unreleased]
 
+### Added
+
+- **Swarm tools report progress and keep their replies inline.** `agent_swarm`, `preset_swarm` and
+  `antigravity_image_swarm` now send MCP progress as workers finish ("3/8 workers done"), so a host
+  sees a long swarm is alive. A reply is capped at 40,000 characters, and no worker takes more than
+  15,000: a longer answer is written in full to `~/.agent-intern/runs/<run>/worker-N.md` (never into
+  your repo) and the reply keeps an excerpt and the path, instead of Claude Code saving the whole
+  result to a file. Run folders can quote your project's files; they are cleaned up after 14 days
+  and can be deleted any time. Tool names and schemas are unchanged.
+
 ### Changed
 
+- **`agent-intern doctor` checks agy's headless MCP permission.** When agy is installed but its
+  `settings.json` has no `mcp(agent-intern/…)` (or `mcp(*)`) allow rule, doctor warns, since a
+  headless `agy -p` denies MCP calls without one, and points at the Antigravity setup section. It
+  only reads the file.
 - **A `workspace` that doesn't exist is now an error instead of being created.** A typo or an
   unexpanded `~/proj` used to give the sub-agent an empty directory to look at, and it answered as if
   the repo were empty; now the call names the path and the server's working directory. `~` is
@@ -32,6 +46,9 @@ human-facing summary.
 
 ### Fixed
 
+- **Cancelling a tool call now stops the agent it started.** The CLI's whole process tree is killed
+  instead of running on to its timeout, and agents still running when the server exits normally are
+  killed too. Cancelling a swarm stops its workers the same way.
 - **A missing CLI says which one and how to get it.** When a backend's CLI is not installed,
   `*_ask`, `*_continue` and swarm workers name the CLI and say how to install it or point `<X>_BIN`
   at it, instead of a bare `[WinError 2]` / `[Errno 2]` error. agy's plan and schema version gates and
@@ -44,6 +61,12 @@ human-facing summary.
   corrected from-source path and a Cursor install line that no longer assumes a POSIX shell; the
   opencode 2.x package is named in backends.md; the FAQ snippet works with either server name.
 - **The bug report template asks for the host and the install method.**
+- **README has a four-step "Quick start: Antigravity CLI"** (register, allow the tools, write the
+  routing guide, ask). docs/setup.md documents the per-tool `mcp(<server>/<tool>)` rule, the
+  `--settings` flag and the per-project permission files, and says the Antigravity IDE is not
+  verified yet.
+- **Swarm docs:** the 40,000/15,000-character reply budget, where longer answers are saved, and the
+  14-day cleanup.
 
 ## [0.38.0] - 2026-11-16
 

@@ -206,6 +206,75 @@ def test_assess_agy_failed_transcript_is_unusable():
     assert "agent-intern" in nxt
 
 
+def _agy_settings(tmp_path, monkeypatch, text=None):
+    monkeypatch.setattr(server, "AGY_DATA", tmp_path)
+    if text is not None:
+        (tmp_path / "settings.json").write_text(text, encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    "rule",
+    ["mcp(agent-intern/opencode_status)", "mcp(agent-intern/*)", "mcp(intern/codex_ask)", "mcp(*)"],
+)
+def test_agy_permission_row_ok_with_an_allow_rule_for_the_server(rule, tmp_path, monkeypatch):
+    _agy_settings(tmp_path, monkeypatch, json.dumps({"permissions": {"allow": ["x", rule]}}))
+    label, ok, _ = doctor._agy_permission_row()
+    assert label == doctor._AGY_PERMISSION_ROW and ok
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        None,  # no settings.json at all
+        "{}",
+        json.dumps({"permissions": {"allow": ["mcp(trello/list_boards)", "command(git)"]}}),
+        json.dumps({"permissions": {"allow": "mcp(*)"}}),  # not a list
+        json.dumps({"permissions": {"allow": [3, None]}}),
+        json.dumps([1, 2]),
+    ],
+)
+def test_agy_permission_row_fails_without_a_rule_for_the_server(text, tmp_path, monkeypatch):
+    _agy_settings(tmp_path, monkeypatch, text)
+    _, ok, detail = doctor._agy_permission_row()
+    assert not ok and "no mcp(agent-intern/...) allow rule" in detail
+
+
+def test_agy_permission_row_is_not_a_failure_when_settings_cannot_be_read(tmp_path, monkeypatch):
+    _agy_settings(tmp_path, monkeypatch, "{not json")
+    _, ok, detail = doctor._agy_permission_row()
+    assert ok and "not checked" in detail
+
+
+def test_assess_agy_without_a_permission_rule_is_a_warning_that_points_at_the_docs():
+    rows = _rows("agy CLI", extra=[(doctor._AGY_PERMISSION_ROW, False, "no rule")])
+    state, _, nxt, blocked = doctor.assess("antigravity", rows)
+    assert state == doctor.WARNING and blocked is None
+    assert "docs/setup.md#antigravity-the-agy-cli" in nxt
+
+
+def test_assess_agy_with_a_permission_rule_is_ready():
+    rows = _rows("agy CLI", extra=[(doctor._AGY_PERMISSION_ROW, True, "set")])
+    assert doctor.assess("antigravity", rows)[0] == doctor.READY
+
+
+def test_backend_rows_adds_the_permission_row_only_when_agy_is_installed(monkeypatch):
+    monkeypatch.setattr(
+        doctor, "_agy_permission_row", lambda: (doctor._AGY_PERMISSION_ROW, True, "x")
+    )
+    monkeypatch.setattr(server, "_agy_status_rows", lambda: _rows("agy CLI"))
+    assert doctor._AGY_PERMISSION_ROW in [r[0] for r in doctor._backend_rows("antigravity")]
+    monkeypatch.setattr(server, "_agy_status_rows", lambda: _rows("agy CLI", cli=False))
+    assert doctor._AGY_PERMISSION_ROW not in [r[0] for r in doctor._backend_rows("antigravity")]
+
+
+def test_a_missing_permission_rule_is_shown_in_the_table_with_its_next_step(tmp_path, monkeypatch):
+    rows = _rows("agy CLI", extra=[(doctor._AGY_PERMISSION_ROW, False, "no rule")])
+    text = doctor.render(_data(antigravity=rows))
+    assert "[!!] headless MCP permission: no rule" in text
+    assert "next: a headless `agy -p` run denies MCP calls" in text
+    assert "1 of 1 backend(s) usable." in text  # a warning, not a blocker
+
+
 def test_assess_quota_rows_do_not_block_other_backends():
     rows = _rows("codex CLI", extra=[("quota: x", False, "0%")])
     state, *_ = doctor.assess("codex", rows)

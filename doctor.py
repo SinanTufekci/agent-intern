@@ -101,13 +101,49 @@ _AGY_TRANSCRIPT_ROW = "newest transcript"
 _ISSUES_URL = "https://github.com/SinanTufekci/agent-intern/issues"
 
 
+_AGY_PERMISSION_ROW = "headless MCP permission"
+_AGY_PERMISSION_NEXT = (
+    "a headless `agy -p` run denies MCP calls until settings.json allows them (an interactive "
+    "`agy` asks instead): add `mcp(agent-intern/<tool>)` rules, see "
+    "https://github.com/SinanTufekci/agent-intern/blob/main/docs/setup.md#antigravity-the-agy-cli"
+)
+# The server name a user registered it under: `agy mcp add agent-intern ...` is the documented
+# one; `intern` is what the Claude Code plugin calls it. `mcp(*)` allows every server.
+_AGY_ALLOW_PREFIXES = ("mcp(agent-intern/", "mcp(intern/")
+
+
+def _agy_permission_row() -> Row:
+    """Whether agy's settings.json has an allow rule that lets a headless run call this
+    server's tools. Reads the file only; agy is not started.
+
+    Only the user-level settings.json is read. agy 1.0.12 added per-project files under
+    ~/.gemini/config/projects/ that outrank it, which this does not parse, so a failed row
+    is a hint to look, not proof that calls are denied."""
+    path = server.AGY_DATA / "settings.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        data = {}
+    except (OSError, ValueError):
+        return (_AGY_PERMISSION_ROW, True, f"{path} is unreadable; not checked")
+    permissions = data.get("permissions") if isinstance(data, dict) else None
+    allow = permissions.get("allow") if isinstance(permissions, dict) else None
+    rules = [r for r in allow if isinstance(r, str)] if isinstance(allow, list) else []
+    if any(r == "mcp(*)" or r.startswith(_AGY_ALLOW_PREFIXES) for r in rules):
+        return (_AGY_PERMISSION_ROW, True, "an allow rule for agent-intern is set")
+    return (_AGY_PERMISSION_ROW, False, f"no mcp(agent-intern/...) allow rule in {path}")
+
+
 def _backend_rows(name: str) -> list[Row]:
     """`name`'s own status rows, without the bridge rows every backend shares.
 
     Looked up at call time, so tests patch server._agy_status_rows or
     <name>_bridge.status_rows."""
     if name == "antigravity":
-        return server._agy_status_rows()
+        rows = server._agy_status_rows()
+        if any(label == "agy CLI" and ok for label, ok, _ in rows):
+            rows.append(_agy_permission_row())
+        return rows
     return importlib.import_module(f"{name}_bridge").status_rows()
 
 
@@ -149,7 +185,9 @@ def assess(name: str, rows: list[Row]) -> tuple[str, str, str, Optional[str]]:
     summary = cli[1]
     if all(ok for _, ok, _ in rows):
         return READY, summary, "", None
-    return WARNING, summary, "", None
+    permission = by_label.get(_AGY_PERMISSION_ROW)
+    next_step = _AGY_PERMISSION_NEXT if permission is not None and not permission[0] else ""
+    return WARNING, summary, next_step, None
 
 
 def _probe(name: str) -> list[Row]:

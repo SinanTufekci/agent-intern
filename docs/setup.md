@@ -200,12 +200,20 @@ agy mcp remove agent-intern     # take it out again
 
 Three things differ from Claude Code:
 
-- **Headless `agy -p` auto-denies MCP tool calls.** Add a rule such as
-  `mcp(agent-intern/opencode_status)` to `permissions.allow` in
-  `~/.gemini/antigravity-cli/settings.json`, or run `agy` interactively and approve each call.
-  `{"permissions":{"allow":["mcp(*)"]}}` in that file let headless calls through too (verified on agy
-  1.5.3). `mcp(*)` is a wildcard: treat it as allowing every MCP tool of every server you register,
-  and prefer per-tool rules where you can.
+- **Headless `agy -p` auto-denies MCP tool calls.** Add one rule per tool, such as
+  `mcp(agent-intern/opencode_status)`, to `permissions.allow` in
+  `~/.gemini/antigravity-cli/settings.json` (keep the rules already there), or run `agy`
+  interactively and approve each call. The `mcp(<server>/<tool>)` form is the one used for MCP grants in the
+  automation skill that ships inside agy (`antigravity-cli/builtin/skills/automation/SKILL.md`, read on
+  agy 1.5.11, grants not exercised here), and the server name is the one you gave `agy mcp add`. To try a
+  rule without editing the file, `agy --settings '<json>'` takes settings.json keys for that session
+  only (from `agy --help`; not run here). `{"permissions":{"allow":["mcp(*)"]}}` in the file let headless
+  calls through too (verified on agy 1.5.3), but `mcp(*)` allows every MCP tool of every server you
+  register, and that same skill file tells agents not to write it: prefer per-tool rules. Per-project
+  permission files under `~/.gemini/config/projects/` outrank `settings.json`, according to agy's 1.0.12
+  changelog as this project's notes record it (not re-checked against agy). `uvx agent-intern doctor` reads `settings.json` only and warns when it has no
+  `mcp(agent-intern/…)` or `mcp(*)` rule; because of those project files, treat the warning as a hint
+  to look, not as proof that calls are denied.
 - **agy shows the model no server instructions**, and lists an MCP tool by name only. agy reads
   `AGENTS.md` and `GEMINI.md`: write the guide into one with `uvx agent-intern rules > AGENTS.md` (see
   [Give a host the routing guide](#give-a-host-the-routing-guide)), or name the tool in your prompt:
@@ -214,8 +222,14 @@ Three things differ from Claude Code:
   `uvx agent-intern doctor` instead.
 
 Tested: `antigravity_ask` called from inside `agy` answers, with no lock or conversation clash with
-the host. Not tested: `watch=true` under `agy`, and the Antigravity IDE, which keeps its own MCP
-server list that `agy mcp add` doesn't touch.
+the host. Not tested: `watch=true` under `agy`.
+
+**The Antigravity IDE is not verified yet; the `agy` CLI path above is the one checked.** `agy mcp add`
+writes only the CLI's list (`~/.gemini/config/mcp_config.json`); the IDE keeps its own MCP list, and
+agent-intern has never been loaded from it, so there are no verified IDE steps to give. It is the same
+stdio server, so nothing is known to fail there. If you try it, please
+[open an issue](https://github.com/SinanTufekci/agent-intern/issues/new/choose) with what happened, and
+this section will say what works.
 
 > [!CAUTION]
 > Don't paste the output of `agy mcp list` into an issue or a chat: it prints each registered
