@@ -50,9 +50,11 @@ downloads the package, so it can take a little while. No tools, or the server sh
 - **Using Antigravity?** [Quick start: Antigravity CLI](#quick-start-antigravity-cli).
 
 <div align="center">
-<img src="https://raw.githubusercontent.com/SinanTufekci/agent-intern/main/assets/watch-swarm.gif" width="60%" alt="Agent Swarm dashboard: one card per worker with its backend's logo, prompt, a status chip with a live clock, its latest step and a time bar, under counters for running, queued, done and failed workers">
+<img src="https://raw.githubusercontent.com/SinanTufekci/agent-intern/main/assets/demo-swarm.gif" width="100%" alt="Claude Code is asked to summarise utils.py, parser.py and cli.py in parallel with a swarm on Antigravity. It calls agent_swarm with watch=true; an Agent Swarm window opens beside the terminal with one card per file, each on gemini-4-argon-high with a live clock, and the cards turn done one by one. Claude then prints one answer with two lines per file. An end card shows the install command and the repository address">
 <br>
-<sub><code>agent_swarm(..., watch=true)</code>: one card per worker.
+<sub>One <code>agent_swarm(..., watch=true)</code> call from Claude Code, three Gemini workers, one answer back.
+Sped up: the real run took about three minutes. To try it, ask <i>"Summarise these three files in two
+lines each, in parallel, with a swarm, and watch it"</i>.
 <a href="https://github.com/SinanTufekci/agent-intern/blob/main/docs/watch-and-swarm.md">More on watch mode and swarms →</a></sub>
 </div>
 
@@ -123,6 +125,12 @@ Antigravity quota; `watch=true` opens a chart page on the local watch server. It
 `~/.agent-intern/stats.jsonl`, with numbers and error categories only: no prompts, answers, paths or
 raw errors, kept 90 days. Turn recording off with `AGENT_INTERN_NO_STATS=1`. Tokens appear only for
 backends that report them (Antigravity today).
+
+<div align="center">
+<img src="https://raw.githubusercontent.com/SinanTufekci/agent-intern/main/assets/stats.png" width="85%" alt="agent-intern stats page, 30-day view of sample data: a 24h, 7d, 30d and 90d range switch; totals for delegated calls, success rate, average time and tokens; a bar chart of OK and failed calls per day; and one row per backend with its logo, calls, a success meter, average time, tokens and its last failure">
+<br>
+<sub><code>agent_stats(watch=true)</code>, the 30-day view (sample data). Recent swarms and the Antigravity quota meters sit below the table.</sub>
+</div>
 
 Without the plugin, run `uvx agent-intern doctor` in a terminal: it checks every backend you have
 turned on and says what to fix. It spends no quota, and needs no host. Any `*_status` tool (say,

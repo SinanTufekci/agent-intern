@@ -73,6 +73,8 @@ human-facing summary.
   line at the end says agent-intern is independent and not affiliated with or endorsed by the vendors
   of the tools it works with.
 - **The card and social preview are redrawn without the mascot,** with a not-affiliated line.
+- **The README shows the new stats page** (sample data) **and a short clip of a swarm run from Claude
+  Code**, with the prompt to reproduce it.
 - **docs/security.md says what reaches a sub-agent:** every agent inherits the server's environment,
   so start the host with only the keys you need; Grok, Kimi and Muse are experimental and on by
   default, Kimi with no sandbox at all, and `AGENT_INTERN_BACKENDS` turns them off.
