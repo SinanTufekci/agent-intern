@@ -10,6 +10,21 @@ human-facing summary.
 
 ## [Unreleased]
 
+## [0.40.1] - 2026-11-25
+
+### Fixed
+
+- **Antigravity swarm workers run in parallel on macOS again**
+  ([#13](https://github.com/SinanTufekci/agent-intern/issues/13)). Each worker runs in a throwaway
+  `HOME` so agy's state can't collide, and macOS resolves the login keychain through
+  `$HOME/Library/Keychains`, so agy could not sign in there: the startup probe failed and every
+  antigravity worker ran one at a time in the real HOME (the fallback added for #2). On macOS the
+  throwaway HOME now links the real `~/Library/Keychains` folder in, so the probe can pass and the
+  workers run side by side. Removing the throwaway HOME deletes only the link, never the keychain
+  behind it. Nothing changes on Windows or Linux, and if agy still can't sign in, the serialized
+  fallback works as before. The reporter checked that agy signs in through the link (agy 1.5.17,
+  macOS arm64); a full parallel swarm on a Mac has not been run yet.
+
 ## [0.40.0] - 2026-11-18
 
 ### Added
@@ -2235,7 +2250,8 @@ caller might copy becomes a guaranteed rejected call.
 
 - **BREAKING:** `antigravity_ask_stream` (superseded by watch mode).
 
-[Unreleased]: https://github.com/SinanTufekci/agent-intern/compare/v0.40.0...HEAD
+[Unreleased]: https://github.com/SinanTufekci/agent-intern/compare/v0.40.1...HEAD
+[0.40.1]: https://github.com/SinanTufekci/agent-intern/compare/v0.40.0...v0.40.1
 [0.40.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.39.0...v0.40.0
 [0.39.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/SinanTufekci/agent-intern/compare/v0.37.1...v0.38.0

@@ -3,7 +3,7 @@
     "intern": {
       "command": "uvx",
       "args": [
-        "agent-intern==0.40.0"
+        "agent-intern==0.40.1"
       ]
     }
   }
