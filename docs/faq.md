@@ -188,8 +188,10 @@ For real parallelism use **[`agent_swarm`](watch-and-swarm.md#swarm)** — each 
 dir (and Codex/Copilot/Cursor workers need none), so they don't race and the lock isn't needed (~2.8×
 at 3 workers). That's the supported way to run many calls at once, across any backend.
 
-The isolated state dir is a redirected `HOME`, and on **macOS** that also hides agy's stored
-credentials (the login keychain is resolved through `$HOME`), so isolated workers there fall back to
-running **serialized** in your real HOME — correct, but without the speedup. Windows is unaffected
-(Credential Manager is HOME-independent). See the [swarm auth note](status.md#status--caveats).
+The isolated state dir is a redirected `HOME`. On **macOS** the login keychain is resolved through
+`$HOME`, so since 0.40.1 each isolated HOME links your real `~/Library/Keychains` in, and the workers
+keep seeing agy's stored credentials and run in parallel. If agy still can't sign in there, the
+workers fall back to running **serialized** in your real HOME — correct, but without the speedup.
+Windows is unaffected (Credential Manager is HOME-independent). See the
+[swarm auth note](status.md#status--caveats).
 </details>

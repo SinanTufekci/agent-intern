@@ -18,6 +18,12 @@ worker dies at the 60 s "authentication timed out" while the non-swarm tools --
 which never touch HOME -- keep working. Reported as issue #2 (macOS 15 arm64, agy
 1.1.11); reproduced by inspection, not on a Mac.
 
+Since issue #13 the isolated HOME on macOS gets a symlink to the real
+~/Library/Keychains (see _link_keychains), so the keychain stays visible and the
+probe below can pass, letting workers run in parallel again. The reporter checked
+that `agy -p "/usage"` authenticates in such a HOME (agy 1.5.17, macOS 27 arm64).
+The conditional machinery stays as the net for when the link isn't enough.
+
 So isolation is now CONDITIONAL, decided by isolation_ok() two ways:
 
 * proactively, by probing once per process (`agy -p "/usage"` inside a throwaway
@@ -51,6 +57,7 @@ import re
 import secrets
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -73,8 +80,45 @@ _TEXT = {"encoding": "utf-8", "errors": "replace"}
 
 
 # ----------------------------------------------------------------------------- isolation
+def _macos_keychains() -> Optional[Path]:
+    """The real ~/Library/Keychains to link into an isolated HOME, or None.
+
+    Only on macOS, where the login keychain is resolved through $HOME (issue #2):
+    without it a worker in an isolated HOME cannot see agy's stored credentials and
+    the swarm falls back to running serialized. Linking just this folder restores
+    auth (issue #13). Its own function so tests can point it at a temp dir without
+    patching sys.platform.
+    """
+    if sys.platform != "darwin":
+        return None
+    real = Path.home() / "Library" / "Keychains"
+    return real if real.is_dir() else None
+
+
+def _link_keychains(home: Path) -> None:
+    """Symlink the real keychain folder into an isolated HOME (macOS only).
+
+    Best effort: if the link can't be made the worker is no worse off than before,
+    and the probe plus the reactive fallback still route it to serialized mode.
+    Cleanup is safe: shutil.rmtree unlinks a symlink it finds inside the tree and
+    never follows it into the real keychain.
+    """
+    real = _macos_keychains()
+    if real is None:
+        return
+    try:
+        (home / "Library").mkdir(exist_ok=True)
+        (home / "Library" / "Keychains").symlink_to(real, target_is_directory=True)
+    except OSError:
+        pass
+
+
 def _make_isolated_home() -> Path:
-    """Fresh temp HOME seeded with settings.json (to keep the same model)."""
+    """Fresh temp HOME seeded with settings.json (to keep the same model).
+
+    On macOS it also links the real login keychain folder, so agy's stored
+    credentials stay visible (see _link_keychains).
+    """
     home = Path(tempfile.mkdtemp(prefix="agy_swarm_"))
     dst = home / ".gemini" / "antigravity-cli"
     dst.mkdir(parents=True, exist_ok=True)
@@ -83,6 +127,7 @@ def _make_isolated_home() -> Path:
             (dst / "settings.json").write_text(_REAL_SETTINGS.read_text("utf-8"), "utf-8")
         except OSError:
             pass
+    _link_keychains(home)
     return home
 
 

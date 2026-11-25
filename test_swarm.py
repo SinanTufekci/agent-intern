@@ -10,6 +10,7 @@ import asyncio
 import inspect
 import io
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -138,6 +139,67 @@ def test_make_isolated_home_creates_state_dir():
     finally:
         import shutil
 
+        shutil.rmtree(home, ignore_errors=True)
+
+
+def test_macos_keychains_is_none_off_macos(monkeypatch):
+    monkeypatch.setattr(swarm.sys, "platform", "win32")
+    assert swarm._macos_keychains() is None
+    monkeypatch.setattr(swarm.sys, "platform", "linux")
+    assert swarm._macos_keychains() is None
+
+
+def test_macos_keychains_finds_the_real_folder(monkeypatch, tmp_path):
+    monkeypatch.setattr(swarm.sys, "platform", "darwin")
+    monkeypatch.setattr(swarm.Path, "home", classmethod(lambda cls: tmp_path))
+    assert swarm._macos_keychains() is None  # no such folder: nothing to link
+    (tmp_path / "Library" / "Keychains").mkdir(parents=True)
+    assert swarm._macos_keychains() == tmp_path / "Library" / "Keychains"
+
+
+def test_isolated_home_has_no_keychain_link_off_macos(monkeypatch):
+    monkeypatch.setattr(swarm, "_macos_keychains", lambda: None)
+    home = swarm._make_isolated_home()
+    try:
+        assert not (home / "Library").exists()
+    finally:
+        shutil.rmtree(home, ignore_errors=True)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="a symlink needs a privilege on Windows")
+def test_isolated_home_links_the_keychain_and_cleanup_leaves_it_alone(monkeypatch, tmp_path):
+    # Issue #13: on macOS the login keychain is resolved through $HOME, so the
+    # isolated HOME links the real folder in. Removing that HOME must delete only
+    # the link, never the keychain behind it.
+    real = tmp_path / "Keychains"
+    real.mkdir()
+    (real / "login.keychain-db").write_text("secret", "utf-8")
+    monkeypatch.setattr(swarm, "_macos_keychains", lambda: real)
+    home = swarm._make_isolated_home()
+    try:
+        link = home / "Library" / "Keychains"
+        assert link.is_symlink()
+        assert (link / "login.keychain-db").read_text("utf-8") == "secret"
+    finally:
+        shutil.rmtree(home, ignore_errors=True)
+    assert not home.exists()
+    assert (real / "login.keychain-db").read_text("utf-8") == "secret"
+
+
+def test_isolated_home_survives_a_failed_keychain_link(monkeypatch, tmp_path):
+    real = tmp_path / "Keychains"
+    real.mkdir()
+    monkeypatch.setattr(swarm, "_macos_keychains", lambda: real)
+
+    def refuse(self, *a, **k):
+        raise OSError("symlink not permitted")
+
+    monkeypatch.setattr(swarm.Path, "symlink_to", refuse)
+    home = swarm._make_isolated_home()
+    try:
+        assert (home / ".gemini" / "antigravity-cli").is_dir()
+        assert not (home / "Library" / "Keychains").exists()
+    finally:
         shutil.rmtree(home, ignore_errors=True)
 
 

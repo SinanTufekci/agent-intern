@@ -6,6 +6,18 @@ Version-by-version compatibility notes: what changed upstream, what the bridge d
 
 ## Status & caveats
 
+- 🐛 **macOS antigravity swarm stayed serialized — fixed in 0.40.1**
+  ([#13](https://github.com/SinanTufekci/agent-intern/issues/13)). The #2 fallback below worked, but
+  on macOS the startup probe always failed: the throwaway `HOME` hid `~/Library/Keychains`, so agy
+  could not sign in and every antigravity worker ran one at a time (a 9-worker swarm took about as
+  long as nine single calls). The throwaway HOME now links the real keychain folder in on macOS;
+  `shutil.rmtree` removes the link without following it. **Checked:** the reporter ran
+  `agy -p "/usage"` in such a HOME and got the quota table instead of the sign-in prompt (agy 1.5.17,
+  macOS arm64); the link and its cleanup were exercised on Linux (WSL) with a stand-in keychain
+  folder, and the unit tests cover the platform rule and a failed link. **Not checked:** a full
+  parallel swarm on a Mac, and whether workers that refresh the OAuth token in the shared keychain at
+  the same moment can race (Windows workers already share one credential store this way). The
+  serialized fallback still catches an authentication failure.
 - ✅ **`agent_stats` and the `plan` default, loaded in both hosts (2026-11-18).** Working-tree server
   on Windows. **At the protocol level:** 33 tools listed (30 with `CLAUDECODE=1`), `agent_stats`
   among them, and `antigravity_ask`/`antigravity_continue` publish `plan` as boolean-or-null with a
